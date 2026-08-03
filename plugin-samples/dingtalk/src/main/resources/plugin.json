@@ -1,0 +1,9 @@
+{
+  "id": "emailclaw-plugin-channel-dingtalk",
+  "name": "Emailclaw DingTalk Channel Plugin",
+  "version": "1.0.0",
+  "author": "Example Author",
+  "type": "channel",
+  "entry_point": "ai.emailclaw.emailclaw.channel.dingtalk.DingTalkPlugin",
+  "description": "Third-party DingTalk channel plugin for Emailclaw."
+}

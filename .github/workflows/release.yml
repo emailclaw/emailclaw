@@ -1,0 +1,151 @@
+name: Release Desktop Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  actions: write # Cleaning up artifact requires additional write permission for actions
+
+jobs:
+  # =========================================================
+  # 1. Build desktop installers
+  # =========================================================
+  build_desktop:
+    name: Build desktop installers
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            profile: linux
+            ext: deb
+          - os: macos-latest
+            profile: mac
+            ext: dmg
+          - os: windows-latest
+            profile: windows
+            ext: exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+
+      - name: Build and package
+        run: mvn -B -P${{ matrix.profile }} package -DskipTests
+        working-directory: emailclaw
+
+      # Upload installer artifacts (deb, dmg, exe), and set minimum retention period (1 day)
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.ext }}
+          path: emailclaw/target/release/*.${{ matrix.ext }}
+          if-no-files-found: error
+          retention-days: 1
+
+      # [New] If it is a Linux platform, additionally upload the generated tar.gz package
+      - name: Upload tar.gz artifact (Linux only)
+        if: matrix.profile == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-tar-gz
+          path: emailclaw/target/release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  # =========================================================
+  # 2. Create GitHub Release
+  # =========================================================
+  create_release:
+    name: Create GitHub Release
+    needs: build_desktop
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract tag and check pre-release
+        id: vars
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          
+          # if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.+$ ]]; then
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]{3,}$ ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "::notice::Detected Pre-Release tag: $TAG"
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+            echo "::notice::Detected Stable Release tag: $TAG"
+          fi
+
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Prepare latest release assets
+        shell: bash
+        run: |
+          mv artifacts/* . || true
+          # cp plugin-samples/release/emailclaw-plug*.jar . 2>/dev/null || true
+
+          IS_PRERELEASE="${{ steps.vars.outputs.prerelease }}"
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            echo "Skipping generation of 'latest' static assets for pre-releases."
+            exit 0
+          fi
+
+          # [Modified] Appended *.tar.gz in the loop
+          for f in *.exe *.dmg *.deb *.tar.gz emailclaw-plug*.jar; do
+            if [ -f "$f" ] && [[ "$f" != *"-latest-"* ]]; then
+              replaced=$(echo "$f" | sed -E 's/v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?/latest/')
+              cp "$f" "$replaced"
+              
+              if [[ "$f" == *.exe && "$replaced" != "emailclaw-win-latest.exe" ]]; then cp "$f" "emailclaw-win-latest.exe"; fi
+              if [[ "$f" == *.dmg && "$replaced" != "emailclaw-mac-latest.dmg" ]]; then cp "$f" "emailclaw-mac-latest.dmg"; fi
+              if [[ "$f" == *.deb && "$replaced" != "emailclaw-linux-latest.deb" ]]; then cp "$f" "emailclaw-linux-latest.deb"; fi
+              # [New] For tar.gz files, properly copy a latest file without version number
+              if [[ "$f" == *.tar.gz && "$replaced" != "emailclaw-linux-latest.tar.gz" ]]; then cp "$f" "emailclaw-linux-latest.tar.gz"; fi
+            fi
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ steps.vars.outputs.prerelease == 'true' }}
+          files: |
+            *.deb
+            *.dmg
+            *.exe
+            *.tar.gz
+            emailclaw-plug*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # =========================================================
+      # Ultimate cleanup: Immediately delete intermediate Artifacts uploaded after release is completed to free up GitHub storage space
+      # =========================================================
+      - name: Delete intermediate artifacts
+        if: always()  # Ensure that even if previous steps fail (e.g. duplicate Release name error), garbage can still be cleaned up
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            installer-deb
+            installer-dmg
+            installer-exe
+            installer-tar-gz

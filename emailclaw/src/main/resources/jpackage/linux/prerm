@@ -1,0 +1,49 @@
+#!/bin/sh
+# prerm script for emailclaw
+#
+# see: dh_installdeb(1)
+
+set -e
+
+# summary of how this script can be called:
+#        * <prerm> `remove'
+#        * <old-prerm> `upgrade' <new-version>
+#        * <new-prerm> `failed-upgrade' <old-version>
+#        * <conflictor-prerm> `remove' `in-favour' <package> <new-version>
+#        * <deconfigured-prerm> `deconfigure' `in-favour' <package-to-deconfigure>
+#          <version> `removing' <conflicting-package> <version>
+# for details, see https://www.debian.org/doc/debian-policy/ or
+# the debian-policy package
+
+case "$1" in
+    remove|deconfigure)
+        # 1. Clean up shortcuts
+        rm -f /usr/local/bin/emailclaw || true
+        rm -f /usr/share/applications/emailclaw-emailclaw.desktop || true
+        if [ -x /usr/bin/update-desktop-database ]; then
+            update-desktop-database -q /usr/share/applications || true
+        fi
+
+        # 2. Safely stop and clean up background services
+        if [ -d /run/systemd/system ]; then
+            echo "=========================================================="
+            echo " [emailclaw] Stopping and unregistering emailclaw background service..."
+            systemctl stop emailclaw || true
+            systemctl disable emailclaw || true
+            rm -f /etc/systemd/system/emailclaw.service || true
+            systemctl daemon-reload || true
+            echo " [emailclaw] Background service unregistration completed."
+            echo "=========================================================="
+        fi
+    ;;
+
+    upgrade|failed-upgrade)
+    ;;
+
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0

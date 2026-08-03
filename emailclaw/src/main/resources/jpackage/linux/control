@@ -1,0 +1,8 @@
+Package: APPLICATION_PACKAGE
+Version: APPLICATION_VERSION
+Section: APPLICATION_SECTION
+Maintainer: APPLICATION_MAINTAINER
+Architecture: APPLICATION_ARCH
+Depends: libc6, libgcc-s1 | libgcc1, libstdc++6, zlib1g
+Recommends: PACKAGE_DEPENDENCIES
+Description: APPLICATION_DESCRIPTION

@@ -1,0 +1,105 @@
+#!/bin/sh
+# postinst script for emailclaw
+#
+# see: dh_installdeb(1)
+
+set -e
+
+# summary of how this script can be called:
+#        * <postinst> `configure' <most-recently-configured-version>
+#        * <old-postinst> `abort-upgrade' <new version>
+#        * <conflictor-postinst> `abort-remove' `in-favour' <package>
+#          <new-version>
+#        * <postinst> `abort-deconfigure' `in-favour' <conflicted-package>
+#          <version> `removing' <old-package> <version>
+# for details, see https://www.debian.org/doc/debian-policy/ or
+# the debian-policy package
+
+case "$1" in
+    configure)
+        # 1. Create symlink for global access
+        ln -sf /home/emailclaw/.local/emailclaw/bin/emailclaw /usr/local/bin/emailclaw || true
+
+        # 1.5 Create desktop menu shortcut and refresh desktop database and icon cache
+        if [ -d /usr/share/applications ] && [ -f /home/emailclaw/.local/emailclaw/lib/emailclaw-emailclaw.desktop ]; then
+            ln -sf /home/emailclaw/.local/emailclaw/lib/emailclaw-emailclaw.desktop /usr/share/applications/emailclaw-emailclaw.desktop || true
+            if [ -x /usr/bin/update-desktop-database ]; then
+                update-desktop-database -q /usr/share/applications || true
+            fi
+            if [ -x /usr/bin/gtk-update-icon-cache ]; then
+                gtk-update-icon-cache -qtf /usr/share/icons/hicolor || true
+            fi
+        fi
+
+        # 2. Detect if system uses systemd, and register system service
+        if [ -d /run/systemd/system ]; then
+            echo "=========================================================="
+            echo " [emailclaw] Systemd environment detected, configuring background daemon service..."
+            
+            # Create independent system non-privileged account 'emailclaw' (principle of least privilege)
+            if ! id -u emailclaw >/dev/null 2>&1; then
+                useradd -r -m -d /home/emailclaw -s /sbin/nologin -c "emailclaw Service Daemon User" emailclaw || true
+            fi
+            
+            # Establish default working home directory and permission assignment
+            mkdir -p /home/emailclaw/emailclaw/.config
+            chown -R emailclaw:emailclaw /home/emailclaw
+            chown -R emailclaw:emailclaw /home/emailclaw/.local/emailclaw
+            # If allowing other normal users to see emailclaw directory then: chmod o+xr /home/emailclaw
+
+            # Write production-grade systemd unit configuration file
+            cat << 'EOF' > /etc/systemd/system/emailclaw.service
+[Unit]
+Description=emailclaw Headless Agent Daemon Service
+After=network.target syslog.target
+
+[Service]
+Type=simple
+User=emailclaw
+Group=emailclaw
+Environment="JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC"
+Environment="EMAILCLAW_HOME=/home/emailclaw/emailclaw"
+ExecStart=/home/emailclaw/.local/emailclaw/bin/emailclaw --service
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+            # Reload system service manager configuration
+            systemctl daemon-reload || true
+            
+            # Set service to start on boot by default
+            systemctl enable emailclaw || true
+            
+            echo " [emailclaw] Daemon configuration successful!"
+            echo " - Service binary path: /home/emailclaw/.local/emailclaw/bin/emailclaw"
+            echo " - Global command line shortcut: emailclaw"
+            echo " - Data and config directory: /home/emailclaw/emailclaw"
+            echo " - Config file path: /home/emailclaw/emailclaw/.config/channels.json"
+            echo " - Start background service: sudo systemctl start emailclaw"
+            echo " - Stop background service: sudo systemctl stop emailclaw"
+            echo " - View service status: sudo systemctl status --no-pager emailclaw"
+            echo " - View live running logs: sudo journalctl -u emailclaw -f"
+			echo " - Uninstall emailclaw: sudo apt remove -y emailclaw"
+			echo " - Modify model config file: sudo nano /home/emailclaw/emailclaw/.config/providers.json"
+			echo " - Modify agent config file (providerId&modelId): sudo nano /home/emailclaw/emailclaw/.config/agents.json"
+			echo " - Modify channel config file: sudo nano /home/emailclaw/emailclaw/.config/channels.json"
+			echo " - Modify global config file: sudo nano /home/emailclaw/emailclaw/.config/global-config.json"
+            echo "=========================================================="
+        fi
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0
