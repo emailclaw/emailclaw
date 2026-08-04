@@ -48,8 +48,6 @@
                     <argument>Utility</argument>
                     <argument>--resource-dir</argument>
                     <argument>${project.basedir}/src/main/resources/jpackage/linux</argument>
-                    <argument>--install-dir</argument>
-                    <argument>/opt</argument>
                   </arguments>
                 </configuration>
               </execution>
@@ -126,8 +124,6 @@
                     <argument>--win-menu</argument>
                     <argument>--resource-dir</argument>
                     <argument>${project.basedir}/src/main/resources/jpackage/linux</argument>
-                    <argument>--install-dir</argument>
-                    <argument>/opt</argument>
                   </arguments>
                 </configuration>
               </execution>
