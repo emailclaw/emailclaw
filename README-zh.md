@@ -138,15 +138,20 @@ Emailclaw 的目标不是让 Agent 获得不受限制的机器权限。
 
 ## Linux 后台服务
 
-Linux `.deb` 安装包会创建不可登录的 `emailclaw` 系统账户、systemd 服务和独立数据目录 `/home/emailclaw/emailclaw`。安装完成后手动启动：
+Linux `.tar.gz` 包可直接解压到主目录下运行，无需 root 权限。用户级 systemd 服务（`~/.config/systemd/user/emailclaw.service`）以你自己的用户身份运行，与桌面应用共用**同一个 `~/emailclaw` 数据目录**，无需迁移配置。
+
+`.deb` 包安装到 `/opt/emailclaw/`（需 `sudo apt install`）；安装器会在 `~/.local/bin/` 创建符号链接并为你注册同样的用户级服务。
+
+安装完成后，启用后台服务（无需 sudo）：
 
 ```sh
-sudo systemctl start emailclaw
-sudo systemctl status --no-pager emailclaw
-sudo journalctl -u emailclaw -f
+loginctl enable-linger "$USER"   # 让守护进程在退出登录后继续运行
+systemctl --user enable --now emailclaw
+systemctl --user status emailclaw
+journalctl --user -u emailclaw -f
 ```
 
-服务数据目录不同于桌面用户的 `~/emailclaw`。推荐先在桌面界面配置 Provider、Agent 和邮件渠道，然后在停止服务后把配置复制给服务账户并调整所有权。完整、适合 Linux 入门者的逐步教程（含依赖修复、配置迁移、日志、备份、更新和卸载）见 [用户手册](docs/Emailclaw-User-Manual.md)。
+每个 Linux 用户可启用独立实例；各实例的数据与配置分别保存在各自的 `~/emailclaw`。完整教程见 [用户手册](docs/Emailclaw-User-Manual-zh.md)。
 
 ## 从源码构建
 

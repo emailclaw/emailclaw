@@ -3,31 +3,22 @@
 #
 # see: dh_installdeb(1)
 
-set -e
-
-# summary of how this script can be called:
-#        * <postrm> `remove'
-#        * <postrm> `purge'
-#        * <old-postrm> `upgrade' <new-version>
-#        * <new-postrm> `failed-upgrade' <old-version>
-#        * <new-postrm> `abort-install'
-#        * <new-postrm> `abort-install' <old-version>
-#        * <new-postrm> `abort-upgrade' <old-version>
-#        * <disappear-postrm> `disappear' <overwriter> <new-version>
-# for details, see https://www.debian.org/doc/debian-policy/ or
-# the debian-policy package
-
 case "$1" in
     purge)
-        # Clean up unprivileged accounts and data directories (only takes effect when the user explicitly executes apt purge)
+        # Clean up legacy files created by older versions that used a system
+        # account. New versions use user-level systemd units entirely.
+        echo "=========================================================="
+        echo " [emailclaw] Cleaning up legacy service files (if any)..."
+        rm -f /etc/systemd/system/emailclaw.service || true
+        rm -f /etc/systemd/user/emailclaw.service || true
         if id -u emailclaw >/dev/null 2>&1; then
-            echo "=========================================================="
-            echo " [emailclaw] Cleaning up persistent data directory and system account..."
             userdel -r emailclaw || true
-            rm -rf /home/emailclaw || true
-            echo " [emailclaw] Data cleanup completed."
-            echo "=========================================================="
         fi
+        if [ -d /home/emailclaw ]; then
+            rm -rf /home/emailclaw || true
+        fi
+        echo " [emailclaw] Done."
+        echo "=========================================================="
     ;;
 
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)

@@ -139,15 +139,20 @@ Emailclaw's goal is not to give the Agent unrestricted machine access.
 
 ## Linux Background Service
 
-The Linux `.deb` installation package will create a non-login `emailclaw` system account, a systemd service, and an independent data directory `/home/emailclaw/emailclaw`. Manually start it after installation:
+The Linux `.tar.gz` package can be extracted and run directly in your home directory without root privileges. A user-level systemd service (`~/.config/systemd/user/emailclaw.service`) runs the daemon under your own user, sharing the **same `~/emailclaw` data directory** as the desktop app. No config migration is needed.
+
+The `.deb` package installs to `/opt/emailclaw/` (requires `sudo apt install`); the installer creates a symlink at `~/.local/bin/emailclaw` and registers the same user-level service for you.
+
+After installation, enable the background service (no sudo required):
 
 ```sh
-sudo systemctl start emailclaw
-sudo systemctl status --no-pager emailclaw
-sudo journalctl -u emailclaw -f
+loginctl enable-linger "$USER"   # keep the daemon running after logout
+systemctl --user enable --now emailclaw
+systemctl --user status emailclaw
+journalctl --user -u emailclaw -f
 ```
 
-The service data directory is different from the desktop user's `~/emailclaw`. It is recommended to configure Providers, Agents, and email channels in the desktop interface first, then stop the service, copy the configuration to the service account, and adjust ownership. For a complete step-by-step tutorial suitable for Linux beginners (including dependency fixes, configuration migration, logs, backups, updates, and uninstalls), see the [User Manual](docs/Emailclaw-User-Manual.md).
+Each Linux user can enable their own independent instance; every instance keeps its own `~/emailclaw` data and configuration. For a complete step-by-step tutorial, see the [User Manual](docs/Emailclaw-User-Manual.md).
 
 ## Build from Source
 

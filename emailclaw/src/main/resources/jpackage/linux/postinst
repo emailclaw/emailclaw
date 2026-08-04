@@ -5,90 +5,90 @@
 
 set -e
 
-# summary of how this script can be called:
-#        * <postinst> `configure' <most-recently-configured-version>
-#        * <old-postinst> `abort-upgrade' <new version>
-#        * <conflictor-postinst> `abort-remove' `in-favour' <package>
-#          <new-version>
-#        * <postinst> `abort-deconfigure' `in-favour' <conflicted-package>
-#          <version> `removing' <old-package> <version>
-# for details, see https://www.debian.org/doc/debian-policy/ or
-# the debian-policy package
-
 case "$1" in
     configure)
-        # 1. Create symlink for global access
-        ln -sf /home/emailclaw/.local/emailclaw/bin/emailclaw /usr/local/bin/emailclaw || true
+        # Determine the installing user
+        INSTALL_USER="${SUDO_USER:-}"
+        if [ -z "$INSTALL_USER" ] || [ "$INSTALL_USER" = "root" ]; then
+            INSTALL_USER="$(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $3}' | grep -vx root | sort -u | head -n1)"
+        fi
+        [ -n "$INSTALL_USER" ] || INSTALL_USER="$(getent passwd | awk -F: '$3 >= 1000 {print $1; exit}')"
 
-        # 1.5 Create desktop menu shortcut and refresh desktop database and icon cache
-        if [ -d /usr/share/applications ] && [ -f /home/emailclaw/.local/emailclaw/lib/emailclaw-emailclaw.desktop ]; then
-            ln -sf /home/emailclaw/.local/emailclaw/lib/emailclaw-emailclaw.desktop /usr/share/applications/emailclaw-emailclaw.desktop || true
-            if [ -x /usr/bin/update-desktop-database ]; then
-                update-desktop-database -q /usr/share/applications || true
-            fi
-            if [ -x /usr/bin/gtk-update-icon-cache ]; then
-                gtk-update-icon-cache -qtf /usr/share/icons/hicolor || true
-            fi
+        USER_HOME="$(eval echo "~$INSTALL_USER" 2>/dev/null || true)"
+        [ -n "$USER_HOME" ] || USER_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+        [ -n "$USER_HOME" ] || USER_HOME="/home/$INSTALL_USER"
+
+        APP_DIR="/opt/emailclaw"
+
+        # 1. Create symlink for user-local access
+        mkdir -p "$USER_HOME/.local/bin" 2>/dev/null || true
+        if [ -x "$APP_DIR/bin/emailclaw" ]; then
+            ln -sf "$APP_DIR/bin/emailclaw" "$USER_HOME/.local/bin/emailclaw" 2>/dev/null || true
         fi
 
-        # 2. Detect if system uses systemd, and register system service
-        if [ -d /run/systemd/system ]; then
-            echo "=========================================================="
-            echo " [emailclaw] Systemd environment detected, configuring background daemon service..."
-            
-            # Create independent system non-privileged account 'emailclaw' (principle of least privilege)
-            if ! id -u emailclaw >/dev/null 2>&1; then
-                useradd -r -m -d /home/emailclaw -s /sbin/nologin -c "emailclaw Service Daemon User" emailclaw || true
-            fi
-            
-            # Establish default working home directory and permission assignment
-            mkdir -p /home/emailclaw/emailclaw/.config
-            chown -R emailclaw:emailclaw /home/emailclaw
-            chown -R emailclaw:emailclaw /home/emailclaw/.local/emailclaw
-            # If allowing other normal users to see emailclaw directory then: chmod o+xr /home/emailclaw
+        # 1.5 Create desktop menu shortcut
+        if [ -f "$APP_DIR/lib/emailclaw-emailclaw.desktop" ]; then
+            mkdir -p "$USER_HOME/.local/share/applications" 2>/dev/null || true
+            ln -sf "$APP_DIR/lib/emailclaw-emailclaw.desktop" \
+                    "$USER_HOME/.local/share/applications/emailclaw-emailclaw.desktop" 2>/dev/null || true
+        fi
 
-            # Write production-grade systemd unit configuration file
-            cat << 'EOF' > /etc/systemd/system/emailclaw.service
+        # 2. Register a user-level systemd service
+        if [ -n "$INSTALL_USER" ]; then
+            UNIT_DIR="$USER_HOME/.config/systemd/user"
+            mkdir -p "$UNIT_DIR" 2>/dev/null || true
+
+            cat > "$UNIT_DIR/emailclaw.service" << EOF
 [Unit]
-Description=emailclaw Headless Agent Daemon Service
-After=network.target syslog.target
+Description=emailclaw Background Daemon Service
+After=network.target
 
 [Service]
 Type=simple
-User=emailclaw
-Group=emailclaw
 Environment="JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC"
-Environment="EMAILCLAW_HOME=/home/emailclaw/emailclaw"
-ExecStart=/home/emailclaw/.local/emailclaw/bin/emailclaw --service
+ExecStart=$APP_DIR/bin/emailclaw --service
 TimeoutStopSec=20
 Restart=on-failure
 RestartSec=5s
 LimitNOFILE=65535
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
+            chown -R "$INSTALL_USER":"$INSTALL_USER" "$USER_HOME/.config/systemd" 2>/dev/null || true
 
-            # Reload system service manager configuration
-            systemctl daemon-reload || true
-            
-            # Set service to start on boot by default
-            systemctl enable emailclaw || true
-            
+            loginctl enable-linger "$INSTALL_USER" 2>/dev/null || true
+
+            uid="$(id -u "$INSTALL_USER" 2>/dev/null || true)"
+            if [ -n "$uid" ]; then
+                if command -v runuser >/dev/null 2>&1; then
+                    runuser -u "$INSTALL_USER" -- sh -c \
+                        "XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload; \
+                         XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now emailclaw" || true
+                else
+                    su -s /bin/sh "$INSTALL_USER" -c \
+                        "XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload; \
+                         XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now emailclaw" || true
+                fi
+            fi
+
+            echo "=========================================================="
             echo " [emailclaw] Daemon configuration successful!"
-            echo " - Service binary path: /home/emailclaw/.local/emailclaw/bin/emailclaw"
-            echo " - Global command line shortcut: emailclaw"
-            echo " - Data and config directory: /home/emailclaw/emailclaw"
-            echo " - Config file path: /home/emailclaw/emailclaw/.config/channels.json"
-            echo " - Start background service: sudo systemctl start emailclaw"
-            echo " - Stop background service: sudo systemctl stop emailclaw"
-            echo " - View service status: sudo systemctl status --no-pager emailclaw"
-            echo " - View live running logs: sudo journalctl -u emailclaw -f"
-			echo " - Uninstall emailclaw: sudo apt remove -y emailclaw"
-			echo " - Modify model config file: sudo nano /home/emailclaw/emailclaw/.config/providers.json"
-			echo " - Modify agent config file (providerId&modelId): sudo nano /home/emailclaw/emailclaw/.config/agents.json"
-			echo " - Modify channel config file: sudo nano /home/emailclaw/emailclaw/.config/channels.json"
-			echo " - Modify global config file: sudo nano /home/emailclaw/emailclaw/.config/global-config.json"
+            echo " - Binary:      $APP_DIR/bin/emailclaw"
+            echo " - Shortcut:    ~/.local/bin/emailclaw"
+            echo " - Data:        ~/emailclaw (same as the desktop app)"
+            echo " - Config:      ~/emailclaw/.config/channels.json"
+            echo " - Unit file:   ~/.config/systemd/user/emailclaw.service"
+            echo ""
+            echo " Commands (no sudo required):"
+            echo "   systemctl --user start emailclaw"
+            echo "   systemctl --user stop emailclaw"
+            echo "   systemctl --user status emailclaw"
+            echo "   journalctl --user -u emailclaw -f"
+            echo ""
+            echo " Other users can enable their own instance:"
+            echo "   loginctl enable-linger <username>"
+            echo "   systemctl --user enable --now emailclaw"
             echo "=========================================================="
         fi
     ;;

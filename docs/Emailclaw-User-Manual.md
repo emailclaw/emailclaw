@@ -157,31 +157,28 @@ Third-party plugins have the potential for code execution and network access. In
 
 This section applies to Ubuntu, Debian, and other Debian-based Linux distributions using **systemd**. The background service is suitable for users who want their computer to automatically receive task emails after booting: it has no desktop window, but runs the Emailclaw Channel, cron jobs, and Agents continuously. You still interact with it via email.
 
-> This section only applies to the `.deb` file in the release package. It does not apply to macOS, Windows, nor to minimal containers without systemd or some WSL environments. If you only want to use it by opening a graphical window on your own computer, please skip this section and install it in the standard desktop manner.
+> This section applies to the `.tar.gz` and `.deb` files in the release package. It does not apply to macOS, Windows, nor to minimal containers without systemd or some WSL environments. If you only want to use it by opening a graphical window on your own computer, please skip this section and install it in the standard desktop manner.
 
 ### 9.1 Understand What Happens After Installation First
 
-When running the `.deb` installation package, the installation script will automatically do the following things:
-
-| Item | Actual Behavior of the Installation Script |
+| Item | What Happens |
 | --- | --- |
-| Program | Installs to `/home/emailclaw/.local/emailclaw/`, and creates the `emailclaw` command shortcut |
-| Independent Account | Creates a non-login system account `emailclaw`, instead of using your daily account to run Agents |
-| Service | Creates `/etc/systemd/system/emailclaw.service`, the service runs as the `emailclaw` user with the `--service` parameter |
-| Data Directory | Fixes the service's `EMAILCLAW_HOME` to `/home/emailclaw/emailclaw` |
-| Boot Startup | Registers to start automatically on boot; **you still need to manually run the start command once after installation completes** |
+| Program | Installs to `/opt/emailclaw/`; a symlink is created at `~/.local/bin/emailclaw` |
+| Account | No dedicated system account; the service runs under your own Linux user |
+| Service | Creates the user-level unit `~/.config/systemd/user/emailclaw.service` |
+| Data Directory | Uses the same `~/emailclaw` directory as the desktop app; no separate service directory |
+| Boot Startup | Enables `loginctl enable-linger` and registers the service for the installing user |
 
-This means the service configuration and your `~/emailclaw` when you usually log into the desktop are **not the same directory**. If you first complete the model and email configuration using the desktop interface, you need to copy the configuration to the service account directory; this will be explained step-by-step below.
+This means the service configuration and the `~/emailclaw` you use when you log into the desktop are **the same directory**. Configurations made in the desktop interface are automatically available to the service; no copying or ownership changes are needed.
 
 ### 9.2 Pre-installation Checklist
 
 Prepare the following:
 
 1. A 64-bit Ubuntu/Debian computer or server, with internet access.
-2. Administrator privileges. The `sudo` in the installation commands will prompt for your current Linux user password; characters or asterisks won't show on the screen when typing, which is normal, just press Enter when done.
-3. The Linux `.deb` file downloaded from the project Release, e.g., `emailclaw-linux-latest.deb`.
-4. A dedicated email account with IMAP and SMTP enabled, and the **app-specific password/authorization code** for that email.
-5. A usable model Provider's API Key.
+2. The Linux `.tar.gz` or `.deb` file downloaded from the project Release, e.g., `emailclaw-linux-latest.tar.gz` or `emailclaw-linux-latest.deb`.
+3. A dedicated email account with IMAP and SMTP enabled, and the **app-specific password/authorization code** for that email.
+4. A usable model Provider's API Key.
 
 The method to open the terminal is usually pressing <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd>. In the commands below, the `$` at the beginning is just a prompt, **do not type the `$` itself**.
 
@@ -193,9 +190,50 @@ ps -p 1 -o comm=
 
 If the output is `systemd`, you can continue. If not, please use the normal desktop mode or seek assistance from someone familiar with Linux service management for deployment.
 
-### 9.3 Install the `.deb` Package
+### 9.3 Install the Package
 
-Assuming the browser downloaded the file to the "Downloads" directory. Execute these three steps.
+**Method A — `.tar.gz` (recommended, sudo-free)**
+
+Download and extract the archive to your home directory:
+
+```sh
+cd ~/Downloads
+tar -xzf emailclaw-linux-latest.tar.gz -C ~/
+```
+
+The archive contains a `~/.local/emailclaw/` directory with the binary at `~/.local/emailclaw/bin/emailclaw`. You can run the desktop application directly:
+
+```sh
+~/.local/emailclaw/bin/emailclaw
+```
+
+To set up the **headless background service**, create the systemd unit manually:
+
+```sh
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/emailclaw.service << EOF
+[Unit]
+Description=emailclaw Background Daemon Service
+After=network.target
+
+[Service]
+Type=simple
+Environment="JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC"
+ExecStart=$HOME/.local/emailclaw/bin/emailclaw --service
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=default.target
+EOF
+```
+
+**Method B — `.deb` (requires sudo)**
+
+The `.deb` installer runs the same steps automatically (symlink, systemd unit, linger):
 
 ```sh
 cd ~/Downloads
@@ -205,62 +243,59 @@ sudo apt install ./emailclaw-linux-latest.deb
 
 Please do not delete the installation package, at least keep it until the service test passes.
 
-Upon successful installation, the terminal will show the service binary path, data directory, and `systemctl` command prompts.
-
 ### 9.4 Prepare Configuration with the Desktop Interface (Recommended and Best for Beginners)
 
-If installed on a computer with a desktop environment, first launch **Emailclaw** from the application menu, and complete the steps from the earlier sections of this manual:
+If installed on a computer with a desktop environment, first launch **Emailclaw** from the application menu or by running `~/.local/emailclaw/bin/emailclaw` (Method A) or `/opt/emailclaw/bin/emailclaw` (Method B), and complete the steps from the earlier sections of this manual:
 
 1. In **Providers**, add the model service, API Key, and model ID.
 2. In **Agents**, select or create the default Agent, and choose the model.
 3. In **Channels → Emailclaw**, fill in the dedicated email, app password, IMAP/SMTP parameters, and allowed senders; save and enable the channel.
-4. Close desktop Emailclaw to prevent it from continuing to write configuration files during copying.
+4. Close desktop Emailclaw.
 
-Now run `echo "$HOME"`, the terminal will show your desktop user directory, e.g., `/home/alice`. Note this path; it will be used in the next step.
+These configurations are saved to `~/emailclaw`, which is the **same directory** the background service uses, so you do not need to copy anything.
 
-```sh
-echo "$HOME"
-```
+### 9.5 Enable the Background Service
 
-### 9.5 Hand Over Desktop Configuration to the Background Service
-
-First stop the service (even if it hasn't started yet, running this command is safe), then copy the desktop configuration. The following example assumes the output from the previous step is `/home/alice`; **please replace `alice` with your own username**.
+All commands below require **no sudo**. Enable and start the service:
 
 ```sh
-sudo systemctl stop emailclaw
-sudo cp -a /home/alice/emailclaw/. /home/emailclaw/emailclaw/
-sudo chown -R emailclaw:emailclaw /home/emailclaw/emailclaw
+loginctl enable-linger "$USER"
+systemctl --user daemon-reload
+systemctl --user enable --now emailclaw
 ```
 
-The first line stops the background service; the second line copies the models, Agents, email channels, Skills, and other local settings; the third line changes the ownership of these files to the service account, otherwise the service might not be able to read the API Key or write to task files.
+The first command keeps the service running even when you log out, and makes it start automatically at boot. The second reloads the user manager to pick up the new unit file. The third registers the service to start on boot and starts it immediately.
 
-Use the following command to confirm the files are in the configuration directory:
+If you used Method A (tar.gz), the daemon is now ready. If you used Method B (`.deb`), the installer already ran these commands for you.
+
+Confirm the configuration is in place:
 
 ```sh
-sudo ls -la /home/emailclaw/emailclaw/.config
+ls -la ~/emailclaw/.config
 ```
 
-Normally you will see `providers.json`, `agents.json`, `channels.json`, etc. If your server doesn't have a graphical desktop, it is recommended to first complete the configuration on another Linux desktop computer using the same version, and then securely copy the entire `emailclaw` directory to the server; or ask an administrator familiar with JSON configurations to help, to avoid breaking the JSON format when manually entering the API Key.
+Normally you will see `providers.json`, `agents.json`, `channels.json`, etc., because the desktop configuration you made in section 9.4 is already stored here.
+
+If your machine has multiple users, each of them can enable their own independent instance with the same commands; every instance keeps its own `~/emailclaw` configuration and data.
 
 ### 9.6 Start, Verify, and Test the Service
 
-Now start the service and check the status:
+Check the status (if you ran the enable command in section 9.5, the service is already running):
 
 ```sh
-sudo systemctl start emailclaw
-sudo systemctl status --no-pager emailclaw
+systemctl --user status emailclaw
 ```
 
-Seeing `Active: active (running)` means the service has started. The installation script has set it to start on boot; you can confirm again:
+Seeing `Active: active (running)` means the service has started. Confirm it starts at boot:
 
 ```sh
-sudo systemctl is-enabled emailclaw
+systemctl --user is-enabled emailclaw
 ```
 
 An output of `enabled` means it will automatically start when the computer reboots. To view the real-time runtime log, execute:
 
 ```sh
-sudo journalctl -u emailclaw -f
+journalctl --user -u emailclaw -f
 ```
 
 Keep this terminal window open, and send an email with a **new subject** from an allowed sender email to the Agent's email. You will receive a reply for the first time with a TaskId creating the file; reply to this email without altering the TaskId at the end of the subject. Once you confirm you can receive the Agent's result email, just press <kbd>Ctrl</kbd> + <kbd>C</kbd> to stop the "view log" command, **it will not stop the Emailclaw service**.
@@ -269,48 +304,58 @@ The Emailclaw email channel actively connects to the IMAP/SMTP server, so you do
 
 ### 9.7 Daily Management Commands
 
+All commands are **sudo-free**:
+
 | What you want to do | Command |
 | --- | --- |
-| Check if running | `sudo systemctl status --no-pager emailclaw` |
-| Start | `sudo systemctl start emailclaw` |
-| Stop | `sudo systemctl stop emailclaw` |
-| Restart (recommended after modifying configuration) | `sudo systemctl restart emailclaw` |
-| View the last 100 lines of log | `sudo journalctl -u emailclaw -n 100 --no-pager` |
-| View log in real-time | `sudo journalctl -u emailclaw -f` |
-| Disable start on boot | `sudo systemctl disable emailclaw` |
-| Enable start on boot | `sudo systemctl enable emailclaw` |
+| Check if running | `systemctl --user status emailclaw` |
+| Start | `systemctl --user start emailclaw` |
+| Stop | `systemctl --user stop emailclaw` |
+| Restart (recommended after modifying configuration) | `systemctl --user restart emailclaw` |
+| View the last 100 lines of log | `journalctl --user -u emailclaw -n 100 --no-pager` |
+| View log in real-time | `journalctl --user -u emailclaw -f` |
+| Disable start on boot | `systemctl --user disable emailclaw` |
+| Enable start on boot | `systemctl --user enable emailclaw` |
 
-When you modify the configuration in the service directory by copying or editing manually, executing `sudo systemctl restart emailclaw` is the easiest way to ensure the settings are reloaded.
+After modifying the configuration in `~/emailclaw`, running `systemctl --user restart emailclaw` is the easiest way to ensure the settings are reloaded.
 
 ### 9.8 Common Troubleshooting: Check in this order
 
-1. `status` shows `failed`: First run `sudo journalctl -u emailclaw -n 100 --no-pager`, look from the bottom up for `ERROR`, `authentication`, `permission denied`, or network errors.
+1. `status` shows `failed`: First run `journalctl --user -u emailclaw -n 100 --no-pager`, look from the bottom up for `ERROR`, `authentication`, `permission denied`, or network errors.
 2. Log shows email authentication failed: Check if IMAP/SMTP is enabled, if the app-specific password is used, and if the email address matches the server/port/SSL settings.
-3. Service runs but does not process emails: Check if the channel is enabled in `channels.json`, if the sender email is in the allowed list, and confirm that the desktop configuration has been copied to `/home/emailclaw/emailclaw/` instead of just remaining in your own `~/emailclaw/`.
-4. Log shows model authentication or model does not exist: Check the API Key, Base URL, and model ID in `/home/emailclaw/emailclaw/.config/providers.json`, and if the default Agent selected the correct Provider/model.
-5. `Unit emailclaw.service could not be found`: Usually the installation did not complete, or the current system does not have systemd. Re-run the `.deb` installation and check section 9.2.
+3. Service runs but does not process emails: Check if the channel is enabled in `~/emailclaw/.config/channels.json`, if the sender email is in the allowed list, and confirm the configuration exists in your own `~/emailclaw/`.
+4. Log shows model authentication or model does not exist: Check the API Key, Base URL, and model ID in `~/emailclaw/.config/providers.json`, and if the default Agent selected the correct Provider/model.
+5. `Failed to connect to bus` or `Unit emailclaw.service could not be found`: The user manager may not be running or the service is not enabled for this user. Run `loginctl enable-linger "$USER"` and retry `systemctl --user enable --now emailclaw`. If the unit file itself is missing, check that the installation extracted files correctly: for `.tar.gz` the binary should be at `~/.local/emailclaw/bin/emailclaw`, for `.deb` it should be at `/opt/emailclaw/bin/emailclaw`.
 
 ### 9.9 Update, Backup, and Uninstall
 
-Back up service data before updating. Change `alice` in the following example to your daily username; the backup file will be placed in your home directory:
+Back up your data before updating. The backup file will be placed in your home directory:
 
 ```sh
-sudo systemctl stop emailclaw
-sudo tar -czf /home/alice/emailclaw-backup.tar.gz /home/emailclaw/emailclaw
-sudo systemctl start emailclaw
+systemctl --user stop emailclaw
+tar -czf ~/emailclaw-backup.tar.gz ~/emailclaw
+systemctl --user start emailclaw
 ```
 
-After installing the new `.deb`, execute `sudo systemctl status --no-pager emailclaw` to check the service, and send a test email. A regular uninstall stops and unregisters the service, but will not actively delete your service data:
+To update, extract the new `.tar.gz` over the existing `~/.local/emailclaw/` directory (for Method A), or reinstall the `.deb` (for Method B, which updates `/opt/emailclaw/`), then restart:
+
+```sh
+systemctl --user restart emailclaw
+```
+
+A regular uninstall stops and unregisters the service, but does not delete your data in `~/emailclaw`. If you installed via `.deb`:
 
 ```sh
 sudo apt remove emailclaw
 ```
 
-If you explicitly decide to permanently delete the service account and its data, then execute the following command. This operation deletes the service configuration, tasks, and logs in `/home/emailclaw`, which cannot be recovered from the system:
+To permanently delete all Emailclaw data after uninstalling:
 
 ```sh
-sudo apt purge emailclaw
+rm -rf ~/emailclaw
 ```
+
+Note: `sudo apt purge emailclaw` only removes package files and leftover files from older versions. Because your data lives in your own home directory, purge does **not** delete `~/emailclaw`; delete it manually as shown above if needed.
 
 ## 10. Frequently Asked Questions
 

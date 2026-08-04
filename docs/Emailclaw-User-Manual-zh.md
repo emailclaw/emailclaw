@@ -158,31 +158,28 @@ Subject: 为 8 月产品评审整理竞品摘要
 
 本节适用于 Ubuntu、Debian 及其他使用 **systemd** 的 Debian 系 Linux。后台服务适合希望电脑开机后自动收取任务邮件的用户：它没有桌面窗口，但会持续运行 Emailclaw Channel、定时任务和 Agent。你仍然通过邮件与它交互。
 
-> 本节只适用于发布包中的 `.deb` 文件。它不适用于 macOS、Windows，也不适用于没有启用 systemd 的精简容器或部分 WSL 环境。若你只想在自己的电脑上打开图形窗口使用，请跳过本节，按普通桌面方式安装即可。
+> 本节适用于发布包中的 `.tar.gz` 和 `.deb` 文件。它不适用于 macOS、Windows，也不适用于没有启用 systemd 的精简容器或部分 WSL 环境。若你只想在自己的电脑上打开图形窗口使用，请跳过本节，按普通桌面方式安装即可。
 
 ### 9.1 先理解安装后会发生什么
 
-运行 `.deb` 安装包时，安装脚本会自动完成以下事情：
-
-| 项目 | 安装脚本的实际行为 |
+| 项目 | 实际行为 |
 | --- | --- |
-| 程序 | 安装到 `/home/emailclaw/.local/emailclaw/`，并建立 `emailclaw` 命令快捷方式 |
-| 独立账户 | 创建不可登录的系统账户 `emailclaw`，而不是用你的日常账户运行 Agent |
-| 服务 | 创建 `/etc/systemd/system/emailclaw.service`，服务以 `emailclaw` 用户和 `--service` 参数运行 |
-| 数据目录 | 将服务的 `EMAILCLAW_HOME` 固定为 `/home/emailclaw/emailclaw` |
-| 开机启动 | 注册为开机自动启动；**安装完成后仍需要你手动执行一次启动命令** |
+| 程序 | 安装到 `/opt/emailclaw/`；在 `~/.local/bin/` 建立 `emailclaw` 符号链接 |
+| 账户 | **不**创建专用系统账户；服务以你自己的 Linux 用户身份运行 |
+| 服务 | 创建用户级单元 `~/.config/systemd/user/emailclaw.service` |
+| 数据目录 | 与桌面应用共用同一个 `~/emailclaw`；不存在独立的服务数据目录 |
+| 开机启动 | 为安装用户启用 `loginctl enable-linger` 并注册服务 |
 
-这意味着服务配置和你平时登录桌面时的 `~/emailclaw` **不是同一个目录**。如果先用桌面界面完成了模型和邮箱配置，需要把配置复制到服务账户目录；下面会一步一步说明。
+这意味着服务配置和你平时登录桌面时的 `~/emailclaw` **是同一个目录**。在桌面界面完成的配置自动对服务生效，无需复制或调整所有权。
 
 ### 9.2 安装前检查
 
 准备好以下内容：
 
 1. 一台 64 位 Ubuntu/Debian 电脑或服务器，且可以联网。
-2. 管理员权限。安装命令中的 `sudo` 会要求输入你当前 Linux 用户的密码；输入时屏幕不会显示星号或字符，这是正常现象，输完直接按 Enter。
-3. 从项目 Release 下载的 Linux `.deb` 文件，例如 `emailclaw-linux-latest.deb`。
-4. 一个已开通 IMAP 和 SMTP 的专用邮箱，以及该邮箱的**应用专用密码/授权码**。
-5. 一个可用的模型 Provider 的 API Key。
+2. 从项目 Release 下载的 Linux `.tar.gz` 或 `.deb` 文件，例如 `emailclaw-linux-latest.tar.gz` 或 `emailclaw-linux-latest.deb`。
+3. 一个已开通 IMAP 和 SMTP 的专用邮箱，以及该邮箱的**应用专用密码/授权码**。
+4. 一个可用的模型 Provider 的 API Key。
 
 打开终端的方法通常是按 <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>T</kbd>。下面的命令中，开头的 `$` 只是提示符，**不要输入 `$` 本身**。
 
@@ -194,9 +191,50 @@ ps -p 1 -o comm=
 
 如果输出为 `systemd`，可以继续。若不是，请使用普通桌面模式或请熟悉 Linux 服务管理的人员协助部署。
 
-### 9.3 安装 `.deb` 软件包
+### 9.3 安装软件包
 
-假设浏览器将文件下载到了“下载”目录。执行下面三步。
+**方式 A — `.tar.gz`（推荐，无需 sudo）**
+
+下载并解压到主目录：
+
+```sh
+cd ~/Downloads
+tar -xzf emailclaw-linux-latest.tar.gz -C ~/
+```
+
+解压后得到 `~/.local/emailclaw/` 目录，可执行文件位于 `~/.local/emailclaw/bin/emailclaw`。直接运行桌面应用：
+
+```sh
+~/.local/emailclaw/bin/emailclaw
+```
+
+要配置**无图形界面的后台服务**，需要手动创建 systemd 单元文件：
+
+```sh
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/emailclaw.service << EOF
+[Unit]
+Description=emailclaw 后台守护进程服务
+After=network.target
+
+[Service]
+Type=simple
+Environment="JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC"
+ExecStart=$HOME/.local/emailclaw/bin/emailclaw --service
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=default.target
+EOF
+```
+
+**方式 B — `.deb`（需要 sudo）**
+
+`.deb` 安装器会自动完成上述所有步骤（符号链接、systemd 单元、linger）；程序安装到 `/opt/emailclaw/`：
 
 ```sh
 cd ~/Downloads
@@ -206,112 +244,119 @@ sudo apt install ./emailclaw-linux-latest.deb
 
 请不要删除安装包，至少保留到服务测试通过为止。
 
-安装成功时，终端会显示服务二进制路径、数据目录和 `systemctl` 命令提示。
-
 ### 9.4 用桌面界面准备配置（推荐且最适合新手）
 
-如果安装的是有桌面环境的电脑，先从应用菜单启动 **Emailclaw**，按本手册前面的步骤完成：
+如果安装的是有桌面环境的电脑，先从应用菜单启动 **Emailclaw**，或运行 `~/.local/emailclaw/bin/emailclaw`（方式 A）或 `/opt/emailclaw/bin/emailclaw`（方式 B），按本手册前面的步骤完成：
 
 1. 在 **Providers** 添加模型服务、API Key 和模型 ID。
 2. 在 **Agents** 选择或创建默认 Agent，并选择模型。
 3. 在 **Channels → Emailclaw** 填写专用邮箱、应用密码、IMAP/SMTP 参数和允许发件人；保存并启用渠道。
-4. 关闭桌面 Emailclaw，避免复制过程中它继续写配置文件。
+4. 关闭桌面 Emailclaw。
 
-现在运行 `echo "$HOME"`，终端会显示你的桌面用户目录，例如 `/home/alice`。记下这个路径；下一个步骤中会用到它。
+这些配置会保存到 `~/emailclaw`，它与后台服务使用的是**同一个目录**，因此无需复制任何内容。
 
-```sh
-echo "$HOME"
-```
+### 9.5 启用后台服务
 
-### 9.5 把桌面配置交给后台服务
-
-先停止服务（即使它尚未启动，执行这条命令也是安全的），再复制桌面配置。以下示例假设上一步输出的是 `/home/alice`；**请把 `alice` 换成你自己的用户名**。
+以下所有命令**无需 sudo**。启用并启动服务：
 
 ```sh
-sudo systemctl stop emailclaw
-sudo cp -a /home/alice/emailclaw/. /home/emailclaw/emailclaw/
-sudo chown -R emailclaw:emailclaw /home/emailclaw/emailclaw
+loginctl enable-linger "$USER"
+systemctl --user daemon-reload
+systemctl --user enable --now emailclaw
 ```
 
-第一条停止后台服务；第二条复制模型、Agent、邮箱渠道、Skills 和其他本地设置；第三条把这些文件的所有者改为服务账户，否则服务可能无法读取 API Key 或写入任务文件。
+第一条命令让服务在你退出登录后继续运行，并在开机时自动启动；第二条重新加载用户管理器以识别新的单元文件；第三条注册服务为开机启动并立即启动。
 
-用以下命令确认配置目录中已有文件：
+使用方式 A（tar.gz）的用户，守护进程已就绪；使用方式 B（`.deb`）的用户，安装器已自动执行过上述命令。
+
+确认配置目录中已有文件：
 
 ```sh
-sudo ls -la /home/emailclaw/emailclaw/.config
+ls -la ~/emailclaw/.config
 ```
 
-正常情况下能看到 `providers.json`、`agents.json`、`channels.json` 等文件。如果你的服务器没有图形桌面，建议先在另一台 Linux 桌面电脑上用相同版本完成配置，再把整个 `emailclaw` 目录安全复制到服务器；或者请熟悉 JSON 配置的管理员协助，避免手工录入 API Key 时弄坏 JSON 格式。
+正常情况下能看到 `providers.json`、`agents.json`、`channels.json` 等文件，因为你在 9.4 节通过桌面界面做的配置已经存放在这里。
+
+如果机器上有多个用户，每个用户都可以用同样的命令启用自己的独立实例；每个实例的数据与配置都各自保存在自己的 `~/emailclaw`。
 
 ### 9.6 启动、确认并测试服务
 
-现在启动服务并查看状态：
+查看状态（如果你已按 9.5 节执行过启用命令，服务已经在运行）：
 
 ```sh
-sudo systemctl start emailclaw
-sudo systemctl status --no-pager emailclaw
+systemctl --user status emailclaw
 ```
 
-看到 `Active: active (running)` 就表示服务已经启动。安装脚本已设置开机启动；可再次确认：
+看到 `Active: active (running)` 就表示服务已经启动。确认开机自启：
 
 ```sh
-sudo systemctl is-enabled emailclaw
+systemctl --user is-enabled emailclaw
 ```
 
 输出 `enabled` 表示电脑重启后它会自动启动。要实时查看运行日志，执行：
 
 ```sh
-sudo journalctl -u emailclaw -f
+journalctl --user -u emailclaw -f
 ```
 
-保持这个终端窗口打开，然后从白名单邮箱向 Agent 邮箱发送一封**新主题**邮件。首次会收到带 TaskId 的建档回信；回复该邮件且不要改动主题末尾的 TaskId。确认能收到 Agent 的结果邮件后，按 <kbd>Ctrl</kbd> + <kbd>C</kbd> 停止“查看日志”命令即可，**不会停止 Emailclaw 服务**。
+保持这个终端窗口打开，然后从白名单邮箱向 Agent 邮箱发送一封**新主题**邮件。首次会收到带 TaskId 的建档回信；回复该邮件且不要改动主题末尾的 TaskId。确认能收到 Agent 的结果邮件后，按 <kbd>Ctrl</kbd> + <kbd>C</kbd> 停止"查看日志"命令即可，**不会停止 Emailclaw 服务**。
 
 Emailclaw 邮件渠道主动连接 IMAP/SMTP 服务器，不需要为了收邮件在路由器或云防火墙中开放入站端口；但电脑必须能访问你的模型 Provider 和邮件服务商。
 
 ### 9.7 日常管理命令
 
+所有命令**无需 sudo**：
+
 | 想做什么 | 命令 |
 | --- | --- |
-| 查看是否运行 | `sudo systemctl status --no-pager emailclaw` |
-| 启动 | `sudo systemctl start emailclaw` |
-| 停止 | `sudo systemctl stop emailclaw` |
-| 重启（修改配置后推荐） | `sudo systemctl restart emailclaw` |
-| 查看最近 100 行日志 | `sudo journalctl -u emailclaw -n 100 --no-pager` |
-| 实时查看日志 | `sudo journalctl -u emailclaw -f` |
-| 取消开机启动 | `sudo systemctl disable emailclaw` |
-| 恢复开机启动 | `sudo systemctl enable emailclaw` |
+| 查看是否运行 | `systemctl --user status emailclaw` |
+| 启动 | `systemctl --user start emailclaw` |
+| 停止 | `systemctl --user stop emailclaw` |
+| 重启（修改配置后推荐） | `systemctl --user restart emailclaw` |
+| 查看最近 100 行日志 | `journalctl --user -u emailclaw -n 100 --no-pager` |
+| 实时查看日志 | `journalctl --user -u emailclaw -f` |
+| 取消开机启动 | `systemctl --user disable emailclaw` |
+| 恢复开机启动 | `systemctl --user enable emailclaw` |
 
-当你通过复制或手工修改了服务目录中的配置后，执行 `sudo systemctl restart emailclaw` 是最容易确认设置已重新加载的方式。
+当你手工修改了 `~/emailclaw` 中的配置后，执行 `systemctl --user restart emailclaw` 是最容易确认设置已重新加载的方式。
 
 ### 9.8 常见故障：按这个顺序排查
 
-1. `status` 显示 `failed`：先运行 `sudo journalctl -u emailclaw -n 100 --no-pager`，从最下面开始看 `ERROR`、`authentication`、`permission denied` 或网络错误。
+1. `status` 显示 `failed`：先运行 `journalctl --user -u emailclaw -n 100 --no-pager`，从最下面开始看 `ERROR`、`authentication`、`permission denied` 或网络错误。
 2. 日志显示邮箱认证失败：检查是否启用 IMAP/SMTP，是否使用了应用专用密码，邮箱地址和服务器/端口/SSL 是否匹配。
-3. 服务运行但不处理邮件：检查 `channels.json` 中渠道已启用，发信邮箱在允许列表中，并确认已把桌面配置复制到 `/home/emailclaw/emailclaw/` 而不是只保留在自己的 `~/emailclaw/`。
-4. 日志显示模型鉴权或模型不存在：检查 `/home/emailclaw/emailclaw/.config/providers.json` 中的 API Key、Base URL 和模型 ID，以及默认 Agent 是否选择了正确的 Provider/模型。
-5. `Unit emailclaw.service could not be found`：通常是安装没有完成，或当前系统没有 systemd。重新执行 `.deb` 安装并检查第 9.2 节。
+3. 服务运行但不处理邮件：检查 `~/emailclaw/.config/channels.json` 中渠道已启用，发信邮箱在允许列表中，并确认配置存在于你自己的 `~/emailclaw/`。
+4. 日志显示模型鉴权或模型不存在：检查 `~/emailclaw/.config/providers.json` 中的 API Key、Base URL 和模型 ID，以及默认 Agent 是否选择了正确的 Provider/模型。
+5. `Failed to connect to bus` 或 `Unit emailclaw.service could not be found`：可能是用户管理器未运行或该用户尚未启用服务。运行 `loginctl enable-linger "$USER"` 后重试 `systemctl --user enable --now emailclaw`。如果单元文件本身缺失，检查安装是否正确：`.tar.gz` 方式应有 `~/.local/emailclaw/bin/emailclaw`，`.deb` 方式应有 `/opt/emailclaw/bin/emailclaw`。
 
 ### 9.9 更新、备份与卸载
 
-更新前先备份服务数据。将下面示例中的 `alice` 改为你的日常用户名；备份文件会放在你的主目录：
+更新前先备份数据。备份文件会放在你的主目录：
 
 ```sh
-sudo systemctl stop emailclaw
-sudo tar -czf /home/alice/emailclaw-backup.tar.gz /home/emailclaw/emailclaw
-sudo systemctl start emailclaw
+systemctl --user stop emailclaw
+tar -czf ~/emailclaw-backup.tar.gz ~/emailclaw
+systemctl --user start emailclaw
 ```
 
-安装新 `.deb` 后，执行 `sudo systemctl status --no-pager emailclaw` 检查服务，并发送一封测试邮件。普通卸载会停止并注销服务，但不会主动清除你的服务数据：
+更新时，解压新的 `.tar.gz` 覆盖现有的 `~/.local/emailclaw/` 目录（方式 A），或重新安装 `.deb`（方式 B，更新 `/opt/emailclaw/`），然后重启：
+
+```sh
+systemctl --user restart emailclaw
+```
+
+普通卸载会停止并注销服务，但不会删除你在 `~/emailclaw` 中的数据。如果使用 `.deb` 安装：
 
 ```sh
 sudo apt remove emailclaw
 ```
 
-如果你明确决定永久删除服务账户和其数据，再执行下列命令。此操作会删除 `/home/emailclaw` 内的服务配置、任务和日志，无法从系统回收：
+要永久删除所有 Emailclaw 数据：
 
 ```sh
-sudo apt purge emailclaw
+rm -rf ~/emailclaw
 ```
+
+注意：`sudo apt purge emailclaw` 只会删除软件包文件和旧版本遗留文件。因为你的数据存放在自己的主目录，purge **不会**删除 `~/emailclaw`；如需删除请按上面命令手动执行。
 
 ## 10. 常见问题
 
