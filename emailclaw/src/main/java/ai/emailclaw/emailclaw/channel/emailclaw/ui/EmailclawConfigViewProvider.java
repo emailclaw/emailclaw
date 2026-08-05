@@ -298,8 +298,7 @@ Emailclaw Channel Service Agreement
                     .bind(sysAgreementCheckBox.selectedProperty().not());
 
             sysRegistrationEmailField.setPromptText("example@domain.com");
-            autoPresetHintSystem.setText(
-                    "By invitation only. Email to otp@emailclaw.email to get one-time password.");
+            autoPresetHintSystem.setText("Email to otp@emailclaw.email to get one-time password.");
             autoPresetHintSystem.getStyleClass().add("text-blue-12");
             autoPresetHintSystem.setWrapText(true);
             sysOneTimePasswordField.setPromptText("One-time Password");

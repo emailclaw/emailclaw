@@ -60,7 +60,7 @@ Gmail、Outlook、iCloud、163、126、QQ、Foxmail、Yahoo 等常见地址会�
 
 ### 4.2 使用使用系统提供的Emailclaw Channel Service
 
-前提是你是被邀请用户，你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement
+前提是你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
@@ -198,8 +198,9 @@ ps -p 1 -o comm=
 下载并解压到主目录：
 
 ```sh
-cd ~/Downloads
-tar -xzf emailclaw-linux-latest.tar.gz -C ~/
+mkdir -p ~/.local/ && cd ~/.local/
+wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz
+tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner
 ```
 
 解压后得到 `~/.local/emailclaw/` 目录，可执行文件位于 `~/.local/emailclaw/bin/emailclaw`。直接运行桌面应用：
@@ -246,7 +247,7 @@ sudo apt install ./emailclaw-linux-latest.deb
 
 ### 9.4 用桌面界面准备配置（推荐且最适合新手）
 
-如果安装的是有桌面环境的电脑，先从应用菜单启动 **Emailclaw**，或运行 `~/.local/emailclaw/bin/emailclaw`（方式 A）或 `/opt/emailclaw/bin/emailclaw`（方式 B），按本手册前面的步骤完成：
+如果安装的是有桌面环境的电脑，先从应用菜单启动 **Emailclaw**，或运行命令 `~/.local/emailclaw/bin/emailclaw`（方式 A）或 `/opt/emailclaw/bin/emailclaw`（方式 B），按本手册前面的步骤完成：
 
 1. 在 **Providers** 添加模型服务、API Key 和模型 ID。
 2. 在 **Agents** 选择或创建默认 Agent，并选择模型。
@@ -334,7 +335,7 @@ Emailclaw 邮件渠道主动连接 IMAP/SMTP 服务器，不需要为了收邮�
 
 ```sh
 systemctl --user stop emailclaw
-tar -czf ~/emailclaw-backup.tar.gz ~/emailclaw
+tar -czf ~/emailclaw-backup.tar.gz ~/emailclaw --no-same-owner
 systemctl --user start emailclaw
 ```
 

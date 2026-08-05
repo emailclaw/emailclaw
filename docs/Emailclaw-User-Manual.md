@@ -60,7 +60,7 @@ After saving the configuration, enable Emailclaw on the channels page. The syste
 
 ### 4.2 Using the System-Provided Emailclaw Channel Service
 
-The prerequisite is that you are an invited user, you have sent an email to otp@emailclaw.email to obtain a one-time password, and you fully agree to the Emailclaw Channel Service Agreement:
+The prerequisite is that you have sent an email to otp@emailclaw.email to obtain a one-time password, and you fully agree to the Emailclaw Channel Service Agreement:
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
@@ -197,8 +197,9 @@ If the output is `systemd`, you can continue. If not, please use the normal desk
 Download and extract the archive to your home directory:
 
 ```sh
-cd ~/Downloads
-tar -xzf emailclaw-linux-latest.tar.gz -C ~/
+mkdir -p ~/.local/ && cd ~/.local/
+wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz
+tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner
 ```
 
 The archive contains a `~/.local/emailclaw/` directory with the binary at `~/.local/emailclaw/bin/emailclaw`. You can run the desktop application directly:
@@ -333,7 +334,7 @@ Back up your data before updating. The backup file will be placed in your home d
 
 ```sh
 systemctl --user stop emailclaw
-tar -czf ~/emailclaw-backup.tar.gz ~/emailclaw
+tar -czf ~/emailclaw-backup.tar.gz ~/emailclaw --no-same-owner
 systemctl --user start emailclaw
 ```
 

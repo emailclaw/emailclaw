@@ -5,7 +5,7 @@
 
   <groupId>ai.emailclaw</groupId>
   <artifactId>emailclaw</artifactId>
-  <version>26.8.4</version>
+  <version>26.8.5</version>
 
   <name>emailclaw</name>
   <url>http://www.emailclaw.ai</url>
@@ -123,7 +123,7 @@
                     <argument>--win-shortcut</argument>
                     <argument>--win-menu</argument>
                     <argument>--resource-dir</argument>
-                    <argument>${project.basedir}/src/main/resources/jpackage/linux</argument>
+                    <argument>${project.basedir}/src/main/resources/jpackage/windows</argument>
                   </arguments>
                 </configuration>
               </execution>

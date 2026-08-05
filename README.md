@@ -65,7 +65,7 @@ The release process builds desktop installation packages for the following platf
 | Windows | `.exe` | Double-click to install after downloading, and follow the setup wizard |
 | macOS | `.dmg` | Open the disk image and drag the application to the "Applications" folder |
 | Debian/Ubuntu Linux | `.deb` | Use the system software center, or execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb` in the terminal |
-| Linux Portable Deployment | `.tar.gz` | Extract and run the program from the application directory; passes --service parameter to activate Service mode |
+| Linux Portable Deployment | `.tar.gz` | Execute  `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`. Run `~/.local/emailclaw/bin/emailclaw`; passes --service parameter to activate Service mode |
 
 ### 2. Configure Model and Agent
 
@@ -97,7 +97,7 @@ After saving the configuration, enable Emailclaw on the channels page. The syste
 
 ### 3.2 Using the System-Provided Emailclaw Channel Service
 
-The prerequisite is that you are an invited user, you have sent an email to otp@emailclaw.email to obtain a one-time password, and you fully agree to the Emailclaw Channel Service Agreement:
+The prerequisite is that you have sent an email to otp@emailclaw.email to obtain a one-time password, and you fully agree to the Emailclaw Channel Service Agreement:
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.

@@ -51,7 +51,7 @@ public final class ChromeBrowserSupport {
         LOGGER.info("Start checking official Chrome/Edge browser executable...");
 
         String override = resolveOverridePath();
-        if (override != null && !override.isBlank()) {
+        if (override != null && !override.isBlank() && !override.contains("snap")) {
             File candidate = new File(override);
             if (candidate.exists() && candidate.isFile()) {
                 LOGGER.info("Using explicitly configured Chrome path: " + override);
@@ -65,7 +65,7 @@ public final class ChromeBrowserSupport {
 
         List<String> candidates = buildCandidatePaths(CURRENT_OS_NAME);
         for (String candidatePath : candidates) {
-            if (isExecutableAvailable(candidatePath)) {
+            if (!candidatePath.contains("snap") && isExecutableAvailable(candidatePath)) {
                 LOGGER.info("Detected official Chrome/Edge: " + candidatePath);
                 return candidatePath;
             }
