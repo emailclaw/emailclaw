@@ -28,8 +28,7 @@ public class OneTimePasswordAuth {
             channel.setEnabled(true);
             EmailclawChannelConfig.setEmailAddress(channel, emailAndPassword.email());
             EmailclawChannelConfig.setEmailPassword(channel, emailAndPassword.password());
-            EmailclawChannelConfig.setEmailAllowlistSenders(
-                    channel, List.of(emailAndPassword.email()));
+            EmailclawChannelConfig.setEmailAllowlistSenders(channel, List.of(registrantEmail));
             EmailclawChannelConfig.setOneTimePassword(channel, ""); // clear
             EmailclawChannelConfig.setEmailPollIntervalSeconds(channel, 30);
 

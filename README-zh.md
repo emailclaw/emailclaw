@@ -63,8 +63,8 @@ Agent 在隔离工作区中推理、调用受控工具、生成结果
 | --- | --- | --- |
 | Windows | `.exe` | 下载后双击安装，按安装向导完成操作 |
 | macOS | `.dmg` | 打开磁盘映像，将应用拖入“应用程序”目录 |
-| Debian/Ubuntu Linux | `.deb` | 使用系统软件中心，或在终端执行 `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb` |
-| Linux 便携部署 | `.tar.gz` | 执行 `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`；运行 `~/.local/emailclaw/bin/emailclaw`；传入 --service 参数则激活服务模式 |
+| Linux 便携部署 | `.tar.gz` | 执行 `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`；启动 **Emailclaw** 运行 `~/.local/emailclaw/bin/emailclaw` |
+| Debian/Ubuntu Linux | `.deb` | 执行 `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`；从应用菜单启动 **Emailclaw**，或运行  `/opt/emailclaw/bin/emailclaw` |
 
 ### 2. 配置模型与 Agent
 

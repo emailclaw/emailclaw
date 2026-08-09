@@ -58,17 +58,42 @@ EOF
             chown -R "$INSTALL_USER":"$INSTALL_USER" "$USER_HOME/.config/systemd" 2>/dev/null || true
 
             loginctl enable-linger "$INSTALL_USER" 2>/dev/null || true
+            cat >> "$USER_HOME/.bashrc" << 'EOF'
+            if [ -z "$XDG_RUNTIME_DIR" ] && [ -d "/run/user/$(id -u)" ]; then
+                export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+                export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+            fi
+            EOF
+            
 
+            # loginctl enable-linger starts the user's systemd manager
+            # asynchronously, so the user bus socket may not exist yet when
+            # we call systemctl --user right after. Retry until the manager
+            # is reachable (or give up after a few seconds).
             uid="$(id -u "$INSTALL_USER" 2>/dev/null || true)"
             if [ -n "$uid" ]; then
                 if command -v runuser >/dev/null 2>&1; then
-                    runuser -u "$INSTALL_USER" -- sh -c \
-                        "XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload; \
-                         XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now emailclaw" || true
+                    USER_CMD="runuser -u '$INSTALL_USER' -- sh -c"
                 else
-                    su -s /bin/sh "$INSTALL_USER" -c \
-                        "XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload; \
-                         XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now emailclaw" || true
+                    USER_CMD="su -s /bin/sh '$INSTALL_USER' -c"
+                fi
+                CMD="XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload && XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now emailclaw"
+
+                i=0
+                DAEMON_OK=""
+                while [ "$i" -lt 10 ]; do
+                    if eval "$USER_CMD \"\$CMD\"" >/dev/null 2>&1; then
+                        DAEMON_OK=1
+                        break
+                    fi
+                    i=$((i+1))
+                    sleep 1
+                done
+
+                if [ -z "$DAEMON_OK" ]; then
+                    echo " [emailclaw] Warning: could not start the daemon now."
+                    echo "            Run this in your own terminal once:"
+                    echo "            systemctl --user daemon-reload && systemctl --user enable --now emailclaw"
                 fi
             fi
 

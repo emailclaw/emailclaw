@@ -64,8 +64,8 @@ The release process builds desktop installation packages for the following platf
 | --- | --- | --- |
 | Windows | `.exe` | Double-click to install after downloading, and follow the setup wizard |
 | macOS | `.dmg` | Open the disk image and drag the application to the "Applications" folder |
-| Debian/Ubuntu Linux | `.deb` | Use the system software center, or execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb` in the terminal |
-| Linux Portable Deployment | `.tar.gz` | Execute  `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`. Run `~/.local/emailclaw/bin/emailclaw`; passes --service parameter to activate Service mode |
+| Linux Portable Deployment | `.tar.gz` | Execute  `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`. Launch **Emailclaw** by running `~/.local/emailclaw/bin/emailclaw` |
+| Debian/Ubuntu Linux | `.deb` | Execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`. Launch **Emailclaw** from the application menu or by running `/opt/emailclaw/bin/emailclaw` |
 
 ### 2. Configure Model and Agent
 

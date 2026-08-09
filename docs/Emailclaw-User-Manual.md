@@ -16,8 +16,8 @@ The release process builds desktop installation packages for the following platf
 | --- | --- | --- |
 | Windows | `.exe` | Double-click to install after downloading, and follow the setup wizard |
 | macOS | `.dmg` | Open the disk image and drag the application to the "Applications" folder |
-| Debian/Ubuntu Linux | `.deb` | Use the system software center, or execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb` in the terminal |
-| Linux Portable Deployment | `.tar.gz` | Extract and run the program from the application directory; suitable for self-managed server environments |
+| Linux Portable Deployment | `.tar.gz` | Execute  `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`. Launch **Emailclaw** by running `~/.local/emailclaw/bin/emailclaw` |
+| Debian/Ubuntu Linux | `.deb` | Execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`. Launch **Emailclaw** from the application menu or by running `/opt/emailclaw/bin/emailclaw` |
 
 ### 2.2 Building from Source
 
@@ -208,7 +208,7 @@ The archive contains a `~/.local/emailclaw/` directory with the binary at `~/.lo
 ~/.local/emailclaw/bin/emailclaw
 ```
 
-To set up the **headless background service**, create the systemd unit manually:
+To set up the **headless background service**,  passes --service parameter to activate Service mode and create the systemd unit manually:
 
 ```sh
 mkdir -p ~/.config/systemd/user
@@ -242,7 +242,7 @@ wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-l
 sudo apt install ./emailclaw-linux-latest.deb
 ```
 
-Please do not delete the installation package, at least keep it until the service test passes.
+Please do not delete the installation package, at least keep it until the service test passes. Launch **Emailclaw** from the application menu or by running `/opt/emailclaw/bin/emailclaw`.
 
 ### 9.4 Prepare Configuration with the Desktop Interface (Recommended and Best for Beginners)
 

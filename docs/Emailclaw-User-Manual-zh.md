@@ -16,8 +16,8 @@ Emailclaw 让你通过电子邮件使用 AI Agent。建议使用专门的邮箱�
 | --- | --- | --- |
 | Windows | `.exe` | 下载后双击安装，按安装向导完成操作 |
 | macOS | `.dmg` | 打开磁盘映像，将应用拖入“应用程序”目录 |
-| Debian/Ubuntu Linux | `.deb` | 使用系统软件中心，或在终端执行 `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb` |
-| Linux 便携部署 | `.tar.gz` | 解压后从应用目录运行程序；适合自行管理的服务器环境 |
+| Linux 便携部署 | `.tar.gz` | 执行 `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`；启动 **Emailclaw** 运行 `~/.local/emailclaw/bin/emailclaw` |
+| Debian/Ubuntu Linux | `.deb` | 执行 `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`；从应用菜单启动 **Emailclaw**，或运行  `/opt/emailclaw/bin/emailclaw` |
 
 ### 2.2 从源码构建
 
@@ -60,7 +60,7 @@ Gmail、Outlook、iCloud、163、126、QQ、Foxmail、Yahoo 等常见地址会�
 
 ### 4.2 使用使用系统提供的Emailclaw Channel Service
 
-前提是你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement
+前提是你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement:
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
@@ -209,7 +209,7 @@ tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner
 ~/.local/emailclaw/bin/emailclaw
 ```
 
-要配置**无图形界面的后台服务**，需要手动创建 systemd 单元文件：
+要配置**无图形界面的后台服务**，需传入 --service 参数激活服务模式，需要手动创建 systemd 单元文件：
 
 ```sh
 mkdir -p ~/.config/systemd/user
@@ -242,8 +242,7 @@ cd ~/Downloads
 wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb
 sudo apt install ./emailclaw-linux-latest.deb
 ```
-
-请不要删除安装包，至少保留到服务测试通过为止。
+请不要删除安装包，至少保留到服务测试通过为止。从应用菜单启动 **Emailclaw**，或运行命令  `/opt/emailclaw/bin/emailclaw`。
 
 ### 9.4 用桌面界面准备配置（推荐且最适合新手）
 
