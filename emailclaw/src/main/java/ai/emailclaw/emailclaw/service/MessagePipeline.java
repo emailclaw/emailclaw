@@ -358,6 +358,13 @@ public class MessagePipeline {
                 } catch (Exception markErr) {
                     LOGGER.log(Level.WARNING, "markTaskFinished failed (ignored)", markErr);
                 }
+                if (reactAgent != null) {
+                    try {
+                        reactAgent.close();
+                    } catch (Exception closeErr) {
+                        LOGGER.log(Level.WARNING, "reactAgent.close() failed", closeErr);
+                    }
+                }
                 started = false;
             }
             // Get aggregated streaming parts from StreamingEventHandler

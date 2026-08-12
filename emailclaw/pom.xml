@@ -5,7 +5,7 @@
 
   <groupId>ai.emailclaw</groupId>
   <artifactId>emailclaw</artifactId>
-  <version>26.8.8</version>
+  <version>26.8.12</version>
 
   <name>emailclaw</name>
   <url>http://www.emailclaw.ai</url>
@@ -176,18 +176,18 @@
     <dependency>
       <groupId>io.agentscope</groupId>
       <artifactId>agentscope</artifactId>
-      <version>2.0.0</version>
+      <version>2.0.1</version>
     </dependency>
     <dependency>
       <groupId>io.agentscope</groupId>
       <artifactId>agentscope-harness</artifactId>
-      <version>2.0.0</version>
+      <version>2.0.1</version>
     </dependency>
     <!-- Source: https://mvnrepository.com/artifact/io.agentscope/agentscope-extensions-model-openai -->
 	<dependency>
 	    <groupId>io.agentscope</groupId>
 	    <artifactId>agentscope-extensions-model-openai</artifactId>
-	    <version>2.0.0</version>
+	    <version>2.0.1</version>
 	    <scope>compile</scope>
 	</dependency>
     

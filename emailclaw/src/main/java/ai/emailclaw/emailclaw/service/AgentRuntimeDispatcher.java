@@ -38,7 +38,6 @@ import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
 import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
-import io.agentscope.harness.agent.workspace.WorkspacePathNormalizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -247,17 +246,16 @@ public class AgentRuntimeDispatcher {
                 "Filesystem configuration started: mode=ROOTED, workspace={0}, project={1},"
                         + " projectWritable={2}",
                 new Object[] {agentWorkspace, projectRoot, projectWritable});
-        // Create Emailclaw custom filesystem tool (fix agentscope newline matching bug)
-        WorkspacePathNormalizer pathNormalizer =
-                WorkspacePathNormalizer.of(agentWorkspace.toAbsolutePath().toString());
+
         AbstractFilesystem sharedFilesystem =
                 filesystemSpec.toFilesystem(agentWorkspace, rc -> List.of());
-        EmailclawFilesystemTool emailclawFsTool =
-                new EmailclawFilesystemTool(sharedFilesystem, pathNormalizer, toolRuntimeContext);
-        toolkit.registerTool(emailclawFsTool);
-        LOGGER.log(Level.INFO, "EmailclawFilesystemTool registered to Toolkit");
+
         // Build PermissionContextState based on execution_level
         PermissionContextState permissionContext = buildPermissionContext(config, agent.getId());
+        ai.emailclaw.emailclaw.service.MergingAgentStateStore stateStore =
+                new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
+                        new JsonFileAgentStateStore(
+                                chatSessionRepository.sessionPath(agent.getId())));
         HarnessAgent.Builder builder =
                 HarnessAgent.builder()
                         .name(configuredName)
@@ -265,10 +263,7 @@ public class AgentRuntimeDispatcher {
                         .sysPrompt(sysPrompt)
                         .model(model)
                         .toolkit(toolkit)
-                        .stateStore(
-                                new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                                        new JsonFileAgentStateStore(
-                                                chatSessionRepository.sessionPath(agent.getId()))))
+                        .stateStore(stateStore)
                         .workspace(agentWorkspace)
                         .abstractFilesystem(sharedFilesystem)
                         .compaction(CompactionConfig.builder().build())
@@ -278,7 +273,6 @@ public class AgentRuntimeDispatcher {
                         .enableSkillManageTool(true)
                         .enableAgentTracingLog(true)
                         .enablePendingToolRecovery(true)
-                        .disableFilesystemTools()
                         .maxIters(Math.max(1, config.getMaxIterations()))
                         .permissionContext(permissionContext)
                         .middleware(rateLimitMiddleware)
@@ -303,7 +297,9 @@ public class AgentRuntimeDispatcher {
                                 .build());
             }
         }
-        return builder.build();
+        HarnessAgent finalAgent = builder.build();
+        stateStore.agentRef().set(finalAgent);
+        return finalAgent;
     }
 
     private GenerateOptions buildGenerateOptions(ProviderInfo provider, ModelInfo model) {

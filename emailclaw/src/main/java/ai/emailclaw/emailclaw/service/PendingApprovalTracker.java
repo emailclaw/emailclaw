@@ -145,4 +145,44 @@ final class PendingApprovalTracker {
     boolean hasPendingApprovals() {
         return pendingTools != null && !pendingTools.isEmpty();
     }
+
+    /**
+     * Process UserConfirmResultEvent.
+     */
+    void onUserConfirmResult(
+            io.agentscope.core.event.UserConfirmResultEvent event, String sessionId) {
+        if (event == null || event.getConfirmResults() == null) {
+            return;
+        }
+        for (io.agentscope.core.event.ConfirmResult result : event.getConfirmResults()) {
+            if (result.getToolCall() != null && result.getToolCall().getName() != null) {
+                String toolName = result.getToolCall().getName();
+                governanceService.getPendingApprovals().stream()
+                        .filter(a -> a.getSessionId() != null && a.getSessionId().equals(sessionId))
+                        .filter(a -> a.getToolName() != null && a.getToolName().equals(toolName))
+                        .findFirst()
+                        .ifPresent(
+                                pa -> {
+                                    ai.emailclaw.emailclaw.model.security.ApprovalDecision
+                                            decision =
+                                                    result.isConfirmed()
+                                                            ? ai.emailclaw.emailclaw.model.security
+                                                                    .ApprovalDecision.APPROVE
+                                                            : ai.emailclaw.emailclaw.model.security
+                                                                    .ApprovalDecision.DENY;
+                                    governanceService.setApprovalDecision(
+                                            pa.getId(),
+                                            decision,
+                                            "system",
+                                            "Processed by AgentScope 2.0.1 Harness");
+                                    LOGGER.log(
+                                            Level.INFO,
+                                            "Destroyed pending approval via UserConfirmResultEvent:"
+                                                    + " approvalId={0}",
+                                            pa.getId());
+                                });
+            }
+        }
+        clear();
+    }
 }
