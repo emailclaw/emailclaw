@@ -298,13 +298,32 @@ public class ProviderService {
             optionsBuilder.additionalBodyParams(bodyParams);
         }
         GenerateOptions options = optionsBuilder.build();
-        return OpenAIChatModel.builder()
-                .apiKey(ProviderRequestOptions.apiKeyFor(provider))
-                .baseUrl(provider.getBaseUrl())
-                .modelName(model == null ? "" : model.getId())
-                .stream(false)
-                .generateOptions(options)
-                .build();
+        OpenAIChatModel.Builder builder =
+                OpenAIChatModel.builder()
+                        .apiKey(ProviderRequestOptions.apiKeyFor(provider))
+                        .baseUrl(provider.getBaseUrl())
+                        .modelName(model == null ? "" : model.getId())
+                        .stream(false)
+                        .generateOptions(options);
+
+        String pid = provider.getId() == null ? "" : provider.getId().toLowerCase();
+        if (pid.contains("deepseek")) {
+            builder.formatter(
+                            new io.agentscope.extensions.model.openai.compat.deepseek
+                                    .DeepSeekFormatter())
+                    .nativeStructuredOutput(false)
+                    .nativeStructuredOutputWithTools(false);
+        } else if (pid.contains("glm") || pid.contains("zhipu")) {
+            builder.formatter(new io.agentscope.extensions.model.openai.compat.glm.GLMFormatter())
+                    .nativeStructuredOutput(false)
+                    .nativeStructuredOutputWithTools(false);
+        } else if (pid.contains("kimi") || pid.contains("moonshot")) {
+            builder.formatter(new io.agentscope.extensions.model.openai.compat.kimi.KimiFormatter())
+                    .nativeStructuredOutput(false)
+                    .nativeStructuredOutputWithTools(false);
+        }
+
+        return builder.build();
     }
 
     public void markOAuthConnected(String providerId, String accessToken) {

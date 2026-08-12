@@ -63,6 +63,11 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
     }
 
     @Override
+    public int order() {
+        return 80;
+    }
+
+    @Override
     public Flux<AgentEvent> onActing(
             Agent agent,
             RuntimeContext ctx,

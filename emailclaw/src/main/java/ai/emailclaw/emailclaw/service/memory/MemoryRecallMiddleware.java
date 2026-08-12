@@ -49,6 +49,11 @@ public class MemoryRecallMiddleware implements MiddlewareBase {
     }
 
     @Override
+    public int order() {
+        return 90;
+    }
+
+    @Override
     public Flux<AgentEvent> onReasoning(
             Agent agent,
             RuntimeContext ctx,

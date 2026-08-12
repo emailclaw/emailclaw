@@ -59,6 +59,11 @@ public class PlanToHintMiddleware implements MiddlewareBase {
     }
 
     @Override
+    public int order() {
+        return 100;
+    }
+
+    @Override
     public Flux<AgentEvent> onReasoning(
             Agent agent,
             RuntimeContext ctx,

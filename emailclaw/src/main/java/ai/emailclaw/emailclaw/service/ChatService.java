@@ -330,22 +330,24 @@ public class ChatService {
                 return null;
             }
             AgentConfiguration config = repository.loadAgentConfig(agent.getId());
-            HarnessAgent reactAgent =
+            Msg result;
+            try (HarnessAgent reactAgent =
                     agentRuntimeDispatcher.buildAgent(
-                            agent, provider, modelId, config, channel, sessionId);
-            Msg resumeMsg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmResults))
-                            .build();
-            Msg result =
-                    reactAgent
-                            .call(List.of(resumeMsg))
-                            .block(Duration.ofSeconds(CHAT_STREAM_TIMEOUT_SECONDS));
-            // Persist resume result to history
-            if (result != null) {
-                appendHistoryMsg(agent.getId(), sessionId, resumeMsg);
-                appendHistoryMsg(agent.getId(), sessionId, result);
+                            agent, provider, modelId, config, channel, sessionId)) {
+                Msg resumeMsg =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmResults))
+                                .build();
+                result =
+                        reactAgent
+                                .call(List.of(resumeMsg))
+                                .block(Duration.ofSeconds(CHAT_STREAM_TIMEOUT_SECONDS));
+                // Persist resume result to history
+                if (result != null) {
+                    appendHistoryMsg(agent.getId(), sessionId, resumeMsg);
+                    appendHistoryMsg(agent.getId(), sessionId, result);
+                }
             }
             return result;
         } catch (Exception e) {

@@ -137,7 +137,22 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: Emailclaw ${{ steps.vars.outputs.tag }}
+          body: |
+            ## Emailclaw ${{ steps.vars.outputs.tag }}
+
+            ### Download
+            - **Linux (.tar.gz)**: [`emailclaw-linux-latest.tar.gz`](https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz)
+            - **Linux (.deb)**: [`emailclaw-linux-latest.deb`](https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb)
+            - **Windows**: [`emailclaw-win-latest.exe`](https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-win-latest.exe)
+            - **macOS**: [`emailclaw-mac-latest.dmg`](https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-mac-latest.dmg)
+            - **Source**: [`emailclaw-source-latest.zip`](https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-source-latest.zip)
+
+            ### Installation & Usage
+            See the [README](https://github.com/emailclaw/emailclaw#readme) and [User Manual](https://github.com/emailclaw/emailclaw/blob/main/docs/Emailclaw-User-Manual.md).
+
+            ### Changes
+          generate_release_notes: true # 关键字段：开启 GitHub 自动日志生成（body 会前置拼接在自动生成的日志之前）
           prerelease: ${{ steps.vars.outputs.prerelease == 'true' }}
           files: |
             *.deb

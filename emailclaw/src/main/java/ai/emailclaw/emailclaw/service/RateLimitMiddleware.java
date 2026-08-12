@@ -40,6 +40,11 @@ public class RateLimitMiddleware implements MiddlewareBase {
     }
 
     @Override
+    public int order() {
+        return 1000;
+    }
+
+    @Override
     public Flux<AgentEvent> onModelCall(
             Agent agent,
             RuntimeContext ctx,

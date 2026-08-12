@@ -12,13 +12,11 @@ package ai.emailclaw.emailclaw.service;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,12 +36,25 @@ import java.util.logging.Logger;
  * - Uses record instead of traditional POJO.
  * - Uses java.util.logging.Logger for logging.
  */
-public record MergingAgentStateStore(AgentStateStore delegate) implements AgentStateStore {
+public record MergingAgentStateStore(
+        AgentStateStore delegate,
+        java.util.concurrent.atomic.AtomicReference<io.agentscope.harness.agent.HarnessAgent>
+                agentRef)
+        implements AgentStateStore {
+
+    public MergingAgentStateStore(AgentStateStore delegate) {
+        this(delegate, new java.util.concurrent.atomic.AtomicReference<>());
+    }
 
     private static final Logger LOGGER = Logger.getLogger(MergingAgentStateStore.class.getName());
+    private static final ThreadLocal<Boolean> CLEARING = ThreadLocal.withInitial(() -> false);
 
     @Override
     public void save(String userId, String sessionId, String key, State value) {
+        if (CLEARING.get()) {
+            delegate.save(userId, sessionId, key, value);
+            return;
+        }
         if (value instanceof AgentState newState) {
             String lockStr = (sessionId != null ? sessionId : "defaultSession").intern();
             synchronized (lockStr) {
@@ -59,11 +70,13 @@ public record MergingAgentStateStore(AgentStateStore delegate) implements AgentS
                         && !existingOpt.get().getContext().isEmpty()) {
                     AgentState existingState = existingOpt.get();
                     List<Msg> existingMsgs = existingState.getContext();
-                    // Cannot be null by definition, otherwise throw exception
-                    List<Msg> newMsgs = newState.getContext();
+                    List<Msg> newMsgs =
+                            newState.getContext() != null
+                                    ? newState.getContext()
+                                    : new ArrayList<>();
                     // Map is required to remove duplicates by id, and LinkedHashMap is used to
                     // maintain order
-                    Map<String, Msg> mergedMap = new LinkedHashMap<>();
+                    Map<String, Msg> mergedMap = new HashMap<>();
                     Function<Msg, String> keyGen =
                             m -> {
                                 if (m.getId() != null && !m.getId().trim().isEmpty()) {
@@ -105,7 +118,8 @@ public record MergingAgentStateStore(AgentStateStore delegate) implements AgentS
                     // messages in the timeline.
                     Map<String, String> toolCallTimestamps = new HashMap<>();
                     for (Msg m : mergedList) {
-                        for (ToolUseBlock tc : m.getContentBlocks(ToolUseBlock.class)) {
+                        for (io.agentscope.core.message.ToolUseBlock tc :
+                                m.getContentBlocks(io.agentscope.core.message.ToolUseBlock.class)) {
                             String id = tc.getId();
                             if (id != null && !id.isBlank()) {
                                 toolCallTimestamps.putIfAbsent(
@@ -122,7 +136,20 @@ public record MergingAgentStateStore(AgentStateStore delegate) implements AgentS
                                 if (t2 == null) return 1;
                                 return t1.compareTo(t2);
                             });
-                    newState.contextMutable().clear();
+
+                    io.agentscope.harness.agent.HarnessAgent agent = agentRef.get();
+                    if (agent != null) {
+                        try {
+                            CLEARING.set(true);
+                            agent.clearContext(userId, sessionId);
+                        } catch (Exception e) {
+                            LOGGER.log(Level.WARNING, "Failed to call clearContext", e);
+                        } finally {
+                            CLEARING.set(false);
+                        }
+                    } else {
+                        newState.contextMutable().clear();
+                    }
                     newState.contextMutable().addAll(mergedList);
                     LOGGER.log(
                             Level.INFO,

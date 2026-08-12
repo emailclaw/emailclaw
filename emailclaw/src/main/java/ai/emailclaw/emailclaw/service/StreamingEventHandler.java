@@ -161,6 +161,8 @@ final class StreamingEventHandler {
             handleRequireUserConfirm(confirm);
         } else if (event instanceof AllToolsDeniedEvent denied) {
             handleAllToolsDenied(denied);
+        } else if (event instanceof io.agentscope.core.event.UserConfirmResultEvent confirmResult) {
+            handleUserConfirmResult(confirmResult);
         } else if (event instanceof RequestStopEvent stop) {
             handleRequestStop(stop);
         }
@@ -337,6 +339,17 @@ final class StreamingEventHandler {
                 null, // channel is unknown at this layer, passed in by outer layer
                 null, // userId is unknown at this layer
                 Map.of());
+    }
+
+    /**
+     * Handles UserConfirmResultEvent.
+     */
+    private void handleUserConfirmResult(io.agentscope.core.event.UserConfirmResultEvent event) {
+        LOGGER.log(
+                Level.INFO,
+                "UserConfirmResultEvent received: destroying pending approvals, session={0}",
+                sessionId);
+        approvalTracker.onUserConfirmResult(event, sessionId);
     }
 
     /**
