@@ -679,6 +679,9 @@ public class ChatView implements ViewPane {
                                     : "New Chat");
                     chatService.touchSession(currentSession);
                     title.setText(currentSession.getName());
+                    if (selectedProvider == null || selectedModel == null) {
+                        resolveDefaultModel();
+                    }
                     attachments.clear();
                     attachmentStatus.setText("No attachments");
                     messages.clear();
@@ -1045,11 +1048,33 @@ public class ChatView implements ViewPane {
         // 3. Display the name of the finally selected model on the button in the upper right corner
         // of the interface
         if (selectedModel != null) {
-            selectedProvider = providerService.getById(selectedModel.getProviderId()).orElse(null);
+            // Only derive the provider from the model when there is no resolved provider, or when
+            // the model's explicit providerId disagrees with the resolved provider (fallback path).
+            // Catalog models (ProviderCatalog) never set their providerId, so blindly overwriting
+            // selectedProvider here would null a valid provider resolved from the agent's persisted
+            // configuration.
+            String modelProviderId = selectedModel.getProviderId();
+            if (selectedProvider == null
+                    || (modelProviderId != null
+                            && !modelProviderId.isBlank()
+                            && !modelProviderId.equals(selectedProvider.getId()))) {
+                selectedProvider = providerService.getById(modelProviderId).orElse(null);
+            }
             selectModelBtn.setText("Model: " + selectedModel.getName());
         } else {
             selectModelBtn.setText("Select model");
         }
+        LOGGER.log(
+                Level.INFO,
+                "resolveDefaultModel result: selectedProvider={0}, selectedModel={1}",
+                new Object[] {
+                    selectedProvider == null
+                            ? "null"
+                            : selectedProvider.getId() + "/" + selectedProvider.getName(),
+                    selectedModel == null
+                            ? "null"
+                            : selectedModel.getId() + "/" + selectedModel.getName()
+                });
         updateAttachmentTooltip();
     }
 
@@ -1122,7 +1147,28 @@ public class ChatView implements ViewPane {
      * </ul>
      */
     private void handleSendOrStop() {
-        LOGGER.fine("handleSendOrStop called, current isSending=" + isSending);
+        LOGGER.log(
+                Level.INFO,
+                "handleSendOrStop called, isSending={0}, selectedProvider={1}, selectedModel={2},"
+                    + " agent.providerId={3}, agent.modelId={4}, text.length={5}, attachments={6},"
+                    + " sessionId={7}, activeSendThread={8}",
+                new Object[] {
+                    isSending,
+                    selectedProvider == null
+                            ? "null"
+                            : selectedProvider.getId() + "/" + selectedProvider.getName(),
+                    selectedModel == null
+                            ? "null"
+                            : selectedModel.getId() + "/" + selectedModel.getName(),
+                    currentAgent == null ? "null" : currentAgent.getProviderId(),
+                    currentAgent == null ? "null" : currentAgent.getModelId(),
+                    input.getText() == null ? 0 : input.getText().trim().length(),
+                    attachments.size(),
+                    currentSession == null ? "null" : currentSession.getId(),
+                    activeSendThread == null
+                            ? "null"
+                            : activeSendThread.getName() + " alive=" + activeSendThread.isAlive()
+                });
         if (isSending) {
             stopCurrent();
         } else {
@@ -1209,13 +1255,28 @@ public class ChatView implements ViewPane {
     private void sendCurrent() {
         String text = input.getText().trim();
         if (isSending) {
-            LOGGER.fine("Send ignored: current dialogue is in progress");
+            LOGGER.log(
+                    Level.WARNING,
+                    "Send ignored: current dialogue is in progress (isSending=true,"
+                            + " activeSendThread="
+                            + (activeSendThread == null
+                                    ? "null"
+                                    : activeSendThread.getName()
+                                            + " alive="
+                                            + activeSendThread.isAlive())
+                            + ")");
             return;
         }
         if ((text.isBlank() && attachments.isEmpty())
                 || selectedProvider == null
                 || selectedModel == null) {
-            LOGGER.fine("Send ignored: input is empty or model is not selected");
+            LOGGER.log(
+                    Level.WARNING,
+                    "Send ignored: text.blank={0}, attachments.empty={1}, selectedProvider={2},"
+                            + " selectedModel={3}",
+                    new Object[] {
+                        text.isBlank(), attachments.isEmpty(), selectedProvider, selectedModel
+                    });
             return;
         }
         LOGGER.log(

@@ -38,10 +38,10 @@ public class AgentInfo {
     private String modelId = "big-pickle";
 
     /** Fallback provider identifier. */
-    private String fallbackProviderId = "opencode";
+    private String fallbackProviderId = "kilo";
 
     /** Fallback model identifier. */
-    private String fallbackModelId = "mimo-v2.5-free";
+    private String fallbackModelId = "stepfun/step-3.7-flash:free";
 
     /** Maximum retries. */
     private int maxRetries = 3;

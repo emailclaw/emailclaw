@@ -40,7 +40,27 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
 
     private static final long TOOL_MEDIA_MAX_BYTES = 10L * 1024L * 1024L;
 
+    private static final long NAVIGATE_TIMEOUT_MS = 10_000L;
+
     public BrowserAutomationTool() {}
+
+    /**
+     * Detect a browser connection-level failure (browser process died or IPC pipe broken). Such
+     * failures render the whole Playwright connection unusable, so the browser must be reset.
+     */
+    private static boolean isConnectionFailure(Throwable e) {
+        String msg = e.getMessage();
+        if (msg == null) {
+            return false;
+        }
+        String m = msg.toLowerCase();
+        return m.contains("failed to read message")
+                || m.contains("connection closed")
+                || m.contains("target page, context or browser has been closed")
+                || m.contains("target closed")
+                || m.contains("browser has been closed")
+                || m.contains("crash");
+    }
 
     @Tool(
             name = BuiltInToolNames.BROWSER_USE,
@@ -137,6 +157,9 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                 if (!text.isBlank()) return text;
             } catch (Exception ex) {
                 LOGGER.log(Level.WARNING, "Playwright text extraction failed", ex);
+                if (isConnectionFailure(ex)) {
+                    PlaywrightManager.reset(agentId);
+                }
             }
             return "Page read timeout and failed to extract text.";
         } catch (Exception e) {

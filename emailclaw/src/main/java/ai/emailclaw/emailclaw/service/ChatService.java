@@ -185,18 +185,6 @@ public class ChatService {
                     ".toml",
                     ".ini");
 
-    /**
-     * Title generation instruction embedded at the end of the first user message. Moving it to sysPrompt causes LLM to stop outputting [TITLE: xxx].
-     * Correct approach: Keep the original call behavior unchanged (instruction still appended to user prompt end, ensuring LLM can see and respond to it), strip it automatically when reading history in partsOf().
-     */
-    private static final String EMBEDDED_TITLE_INSTRUCTION =
-            "\n\n"
-                + "---\n"
-                + "At the very end of your response, provide a concise session title (at most 12"
-                + " words, no quotes, no trailing punctuation, same language as the conversation)"
-                + " on its own line in this exact format:\n"
-                + "[TITLE: xxx]";
-
     /** Tool result length exceeding this threshold (chars) triggers automatic offloading to prevent UI lag. */
     private static final int TOOL_RESULT_OFFLOAD_THRESHOLD = 10000;
 
@@ -702,10 +690,7 @@ public class ChatService {
                 // the end,
                 // to prevent the "[TITLE: xxx]" instruction text from appearing in re-opened
                 // sessions.
-                String text = tb.getText();
-                if (text.endsWith(EMBEDDED_TITLE_INSTRUCTION)) {
-                    text = text.substring(0, text.length() - EMBEDDED_TITLE_INSTRUCTION.length());
-                }
+                String text = MessagePipeline.cutEmbeddedTitleInstruction(tb.getText());
                 appendLoadedPart(parts, ChatMessagePart.text(text));
             } else if (block instanceof io.agentscope.core.message.ThinkingBlock tb) {
                 ChatMessagePart part =

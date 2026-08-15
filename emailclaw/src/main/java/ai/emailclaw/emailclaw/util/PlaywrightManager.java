@@ -28,6 +28,8 @@ public class PlaywrightManager {
 
     private static final Logger LOGGER = Logger.getLogger(PlaywrightManager.class.getName());
 
+    private static final double DEFAULT_TIMEOUT_MS = 15_000d;
+
     private static Playwright playwright = null;
 
     private static final ConcurrentMap<String, BrowserContext> browserContextMap =
@@ -102,6 +104,8 @@ public class PlaywrightManager {
                     userDataDir.toAbsolutePath());
             BrowserContext context =
                     playwright.chromium().launchPersistentContext(userDataDir, options);
+            context.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
+            context.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
             browserContextMap.put(agentId, context);
         }
     }
@@ -126,5 +130,40 @@ public class PlaywrightManager {
 
     public static synchronized Page getActivePageIfExists(String agentId) {
         return activePageMap.get(agentId);
+    }
+
+    /**
+     * Reset the browser state after a connection-level failure (e.g. the browser process died or
+     * its IPC pipe broke). Closes the broken global connection and clears all cached pages and
+     * contexts so the next call re-initializes a fresh browser.
+     *
+     * @param agentId the agent triggering the reset (logged for diagnosis)
+     */
+    public static synchronized void reset(String agentId) {
+        LOGGER.log(
+                Level.INFO,
+                "Resetting Playwright browser state after connection failure: agent={0}",
+                agentId);
+        for (Page p : activePageMap.values()) {
+            try {
+                if (p != null) p.close();
+            } catch (Exception ignored) {
+            }
+        }
+        activePageMap.clear();
+        for (BrowserContext c : browserContextMap.values()) {
+            try {
+                if (c != null) c.close();
+            } catch (Exception ignored) {
+            }
+        }
+        browserContextMap.clear();
+        try {
+            if (playwright != null) {
+                playwright.close();
+            }
+        } catch (Exception ignored) {
+        }
+        playwright = null;
     }
 }

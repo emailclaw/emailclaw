@@ -86,7 +86,7 @@ Gmail、Outlook、iCloud、163、126、QQ、Foxmail、Yahoo 等常见地址会�
 
 ### 4.4 手工修改配置文件 channels.json
 
-若你使用自己的邮箱，请参考上面章节填写相关字段；若你想使用系统提供的Emailclaw Channel Service，前提是你是被邀请用户，你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement，则只需填写三个字段：sysEmailMode" : true, "registrantEmail" : "<YOUR EMAIL>", "oneTimePassword : "<YOUR OTP>"。
+若你使用自己的邮箱，请参考上面章节填写相关字段；若你想使用系统提供的Emailclaw Channel Service，前提是你是被邀请用户，你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement，则只需填写三个字段：`sysEmailMode" : true, "registrantEmail" : "<YOUR EMAIL>", "oneTimePassword : "<YOUR OTP>"`。
 
 ## 5. 最重要的使用方法：新主题即新项目
 

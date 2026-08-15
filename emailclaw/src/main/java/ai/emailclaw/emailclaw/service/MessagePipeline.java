@@ -55,10 +55,14 @@ public class MessagePipeline {
 
     private static final Logger LOGGER = Logger.getLogger(MessagePipeline.class.getName());
 
-    private static final String EMBEDDED_TITLE_INSTRUCTION =
+    /**
+     * Title generation instruction embedded at the end of the first user message. Moving it to sysPrompt causes LLM to stop outputting [TITLE: xxx].
+     * Correct approach: Keep the original call behavior unchanged (instruction still appended to user prompt end, ensuring LLM can see and respond to it), strip it automatically when reading history in partsOf().
+     */
+    public static final String EMBEDDED_TITLE_INSTRUCTION =
             "\n\n"
                 + "---\n"
-                + "At the very end of your response, provide a concise session title (at most 6"
+                + "At the very end of your response, provide a concise session title (at most 12"
                 + " words, no quotes, no trailing punctuation, same language as the conversation)"
                 + " on its own line in this exact format:\n"
                 + "[TITLE: xxx]";
@@ -206,7 +210,6 @@ public class MessagePipeline {
                             attachmentPaths,
                             agentRuntimeDispatcher.selectedModelSupportsImage(provider, modelId),
                             agentRuntimeDispatcher.selectedModelSupportsVideo(provider, modelId));
-            List<ChatMessagePart> finalParts = new ArrayList<>();
             boolean hasError = false;
             // ── Initialize tracker components ──────────────────────────────────
             Path diffWorkspace =
@@ -262,7 +265,7 @@ public class MessagePipeline {
 
                         if (usingFallback) {
                             emitPart(
-                                    finalParts,
+                                    eventHandler.getFinalParts(),
                                     callback,
                                     ChatMessagePart.HINT,
                                     "HINT",
@@ -340,7 +343,7 @@ public class MessagePipeline {
                             String err =
                                     "\n[Error] " + e.getClass().getName() + ": " + e.getMessage();
                             emitPart(
-                                    finalParts,
+                                    eventHandler.getFinalParts(),
                                     callback,
                                     ChatMessagePart.ERROR,
                                     "ERROR",
@@ -368,7 +371,7 @@ public class MessagePipeline {
                 started = false;
             }
             // Get aggregated streaming parts from StreamingEventHandler
-            finalParts = eventHandler.getFinalParts();
+            List<ChatMessagePart> finalParts = eventHandler.getFinalParts();
             Msg completedMsg =
                     Msg.builder()
                             .name(ChatMessageRoles.ASSISTANT)
@@ -799,5 +802,13 @@ public class MessagePipeline {
         if (replyTo != null && !replyTo.isBlank() && agentId != null && !agentId.isBlank()) {
             pendingAgentChatReplies.put(agentId, new AgentChatPending(replyTo, correlationId));
         }
+    }
+
+    public static String cutEmbeddedTitleInstruction(String text) {
+        if (text != null && text.endsWith(EMBEDDED_TITLE_INSTRUCTION)) {
+            return text.substring(0, text.length() - EMBEDDED_TITLE_INSTRUCTION.length());
+        }
+
+        return text;
     }
 }
