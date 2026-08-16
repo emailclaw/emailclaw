@@ -1,5 +1,5 @@
 <p style="text-align: center;">
-  <img src="./logo.jpg" alt="Emailclaw" width="280"/>
+  <img src="./docs/logo.jpg" alt="Emailclaw" width="280"/>
 </p>
 
 <h1 style="text-align: center;">Emailclaw</h1>
@@ -10,7 +10,7 @@
 </p>
 
 <p style="text-align: center;">
-  <a href="docs/Emailclaw-User-Manual-zh.md">安装与使用</a> ·
+  <a href="./docs/Emailclaw-User-Manual-zh.md">安装与使用</a> ·
 </p>
 
 ## 为什么是 Emailclaw？
@@ -151,7 +151,7 @@ systemctl --user status emailclaw
 journalctl --user -u emailclaw -f
 ```
 
-每个 Linux 用户可启用独立实例；各实例的数据与配置分别保存在各自的 `~/emailclaw`。完整教程见 [用户手册](docs/Emailclaw-User-Manual-zh.md)。
+每个 Linux 用户可启用独立实例；各实例的数据与配置分别保存在各自的 `~/emailclaw`。完整教程见 [用户手册](./docs/Emailclaw-User-Manual-zh.md)。
 
 ## 从源码构建
 
@@ -194,11 +194,11 @@ docs/                      产品功能、架构和用户手册
 
 ## 扩展与插件
 
-插件可以提供工具、模型 Provider、启动/关闭钩子、MCP、界面或渠道能力。请从 [插件开发指南](plugin-samples/PLUGIN-DEVELOPER-GUIDE-zh.md) 与 [`plugin-samples/dingtalk`](plugin-samples/dingtalk) 开始。渠道插件需要负责外部会话映射、消息转发和（如需要）审批请求的安全投递。
+插件可以提供工具、模型 Provider、启动/关闭钩子、MCP、界面或渠道能力。请从 [插件开发指南](./plugin-samples/PLUGIN-DEVELOPER-GUIDE-zh.md) 与 [`plugin-samples/dingtalk`](./plugin-samples/dingtalk) 开始。渠道插件需要负责外部会话映射、消息转发和（如需要）审批请求的安全投递。
 
 ## 文档
 
-- [用户安装使用说明](docs/Emailclaw-User-Manual-zh.md)
+- [用户安装使用说明](./docs/Emailclaw-User-Manual-zh.md)
 - [AgentScope Java 2.0 文档](https://java.agentscope.io/v2/en/docs/index.html)
 
 ## 贡献

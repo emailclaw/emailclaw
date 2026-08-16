@@ -1,5 +1,5 @@
 <p style="text-align: center;">
-  <img src="./logo.jpg" alt="Emailclaw" width="280"/>
+  <img src="./docs/logo.jpg" alt="Emailclaw" width="280"/>
 </p>
 
 <h1 style="text-align: center;">Emailclaw</h1>
@@ -11,7 +11,7 @@
 
 <p style="text-align: center;">
   <a href="./README-zh.md">中文版</a> ·
-  <a href="docs/Emailclaw-User-Manual.md">Installation & Usage</a>
+  <a href="./docs/Emailclaw-User-Manual.md">Installation & Usage</a>
 </p>
 
 ## Why Emailclaw?
@@ -152,7 +152,7 @@ systemctl --user status emailclaw
 journalctl --user -u emailclaw -f
 ```
 
-Each Linux user can enable their own independent instance; every instance keeps its own `~/emailclaw` data and configuration. For a complete step-by-step tutorial, see the [User Manual](docs/Emailclaw-User-Manual.md).
+Each Linux user can enable their own independent instance; every instance keeps its own `~/emailclaw` data and configuration. For a complete step-by-step tutorial, see the [User Manual](./docs/Emailclaw-User-Manual.md).
 
 ## Build from Source
 
@@ -195,11 +195,11 @@ The default runtime data root directory is `~/emailclaw`, which can be modified 
 
 ## Extensions and Plugins
 
-Plugins can provide tools, model Providers, startup/shutdown hooks, MCP, UI, or channel capabilities. Please start with the [Plugin Developer Guide](plugin-samples/PLUGIN-DEVELOPER-GUIDE.md) and [`plugin-samples/dingtalk`](plugin-samples/dingtalk). Channel plugins are responsible for external session mapping, message forwarding, and (if needed) the secure delivery of approval requests.
+Plugins can provide tools, model Providers, startup/shutdown hooks, MCP, UI, or channel capabilities. Please start with the [Plugin Developer Guide](./plugin-samples/PLUGIN-DEVELOPER-GUIDE.md) and [`plugin-samples/dingtalk`](./plugin-samples/dingtalk). Channel plugins are responsible for external session mapping, message forwarding, and (if needed) the secure delivery of approval requests.
 
 ## Documentation
 
-- [Installation & User Manual](docs/Emailclaw-User-Manual.md)
+- [Installation & User Manual](./docs/Emailclaw-User-Manual.md)
 - [AgentScope Java 2.0 Docs](https://java.agentscope.io/v2/en/docs/index.html)
 
 ## Contributing

@@ -528,17 +528,15 @@ Emailclaw Channel Service Agreement
                                     alert.setTitle("Validation Successful");
                                     alert.setHeaderText("Registration Completed");
 
-                                    javafx.scene.layout.VBox contentBox =
-                                            new javafx.scene.layout.VBox(8);
+                                    VBox contentBox = new VBox(8);
                                     contentBox
                                             .getChildren()
                                             .add(
-                                                    new javafx.scene.control.Label(
-                                                            "The system has successfully allocated"
-                                                                + " the following email address:"));
-                                    javafx.scene.control.TextField emailField =
-                                            new javafx.scene.control.TextField(
-                                                    sysEmail.toUpperCase());
+                                                    new Label(
+                                                            "Send a new subject email to the"
+                                                                    + " Agent's email address as"
+                                                                    + " below:"));
+                                    TextField emailField = new TextField(sysEmail.toUpperCase());
                                     emailField.setEditable(false);
                                     contentBox.getChildren().add(emailField);
                                     alert.getDialogPane().setContent(contentBox);
