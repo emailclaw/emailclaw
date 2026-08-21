@@ -1,6 +1,6 @@
 ---
 name: news
-description: "Look up the latest news for the user from specified news sites. Provides authoritative URLs for politics, finance, society, world, tech, sports, and entertainment. Use browser_use to open each URL and snapshot to get content, then summarize for the user."
+description: "Look up the latest news for the user from specified news sites. Provides authoritative URLs for politics, finance, society, world, tech, sports, and entertainment. Use web_fetch to open each URL and snapshot to get content, then summarize for the user."
 metadata:
   builtin_skill_version: "1.2"
   emailclaw:
@@ -10,7 +10,7 @@ metadata:
 
 # News Reference
 
-When the user asks for "latest news", "what's in the news today", or "news in category X", use the **browser_use** tool with the categories and URLs below: open the page, take a snapshot, then extract headlines and key points from the page content and reply to the user.
+When the user asks for "latest news", "what's in the news today", or "news in category X", use the **web_fetch** tool with the categories and URLs below: open the page, take a snapshot, then extract headlines and key points from the page content and reply to the user.
 
 **Note**: If the primary website returns an error or fails to load, please attempt to visit the corresponding backup website.
 
@@ -21,21 +21,21 @@ When the user asks for "latest news", "what's in the news today", or "news in ca
 | **Politics** | AP News Politics | https://apnews.com/hub/politics | People's Daily · CPC News | https://cpc.people.com.cn/ |
 | **Finance** | CNBC | https://www.cnbc.com/ | China Economic Net | http://www.ce.cn/ |
 | **Society** | AP News US | https://apnews.com/hub/us-news | China News · Society | https://www.chinanews.com/society/ |
-| **World** | Reuters World | https://www.reuters.com/world/ | CGTN | https://www.cgtn.com/ |
+| **World** | AP News World | https://apnews.com/world-news | CGTN | https://www.cgtn.com/ |
 | **Tech** | TechCrunch | https://techcrunch.com/ | Science and Technology Daily | https://www.stdaily.com/ |
 | **Sports** | ESPN | https://www.espn.com/ | CCTV Sports | https://sports.cctv.com/ |
 | **Entertainment** | Variety | https://variety.com/ | Sina Entertainment | https://ent.sina.com.cn/ |
 
-## How to Use (browser_use)
+## How to Use (web_fetch)
 
 1. **Clarify the user's need**: Determine which category or categories (politics / finance / society / world / tech / sports / entertainment), or pick 1–2 to fetch.
 2. **Pick the URL**: Use the Primary URL from the table for that category. **If the primary website fails to load or returns an error, fallback to the Backup URL.** For multiple categories, repeat the steps below for each URL.
-3. **Open the page**: Call **browser_use** with:
+3. **Open the page**: Call **web_fetch** with:
    ```json
    {"action": "open", "url": "https://apnews.com/hub/us-news"}
    ```
    Replace `url` with the corresponding URL from the table.
-4. **Take a snapshot**: In the same session, call **browser_use** again:
+4. **Take a snapshot**: In the same session, call **web_fetch** again:
    ```json
    {"action": "snapshot"}
    ```

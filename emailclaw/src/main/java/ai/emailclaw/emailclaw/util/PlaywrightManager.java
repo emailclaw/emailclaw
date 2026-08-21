@@ -133,6 +133,23 @@ public class PlaywrightManager {
     }
 
     /**
+     * Create a fresh short-lived page inside the agent's persistent browser context. The caller
+     * owns the returned page and must close it when done. Unlike {@link #getOrCreateActivePage},
+     * the page is NOT registered as the agent's active page, so concurrent ephemeral pages never
+     * interfere with each other or with the interactive page used by browser_use.
+     *
+     * <p>{@link #initPlaywrightIfNeeded} must have completed for the given agentId before calling
+     * this method.
+     */
+    public static Page createEphemeralPage(String agentId) {
+        BrowserContext ctx = browserContextMap.get(agentId);
+        if (ctx == null) {
+            throw new IllegalStateException("Browser context not initialized: agent=" + agentId);
+        }
+        return ctx.newPage();
+    }
+
+    /**
      * Reset the browser state after a connection-level failure (e.g. the browser process died or
      * its IPC pipe broke). Closes the broken global connection and clears all cached pages and
      * contexts so the next call re-initializes a fresh browser.

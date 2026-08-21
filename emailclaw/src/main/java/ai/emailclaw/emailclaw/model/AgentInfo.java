@@ -32,16 +32,16 @@ public class AgentInfo {
     private String workspacePath = "";
 
     /** Bound provider identifier. */
-    private String providerId = "opencode";
+    private String providerId = "kilo";
 
     /** Bound model identifier. */
-    private String modelId = "big-pickle";
+    private String modelId = "stepfun/step-3.7-flash:free";
 
     /** Fallback provider identifier. */
-    private String fallbackProviderId = "kilo";
+    private String fallbackProviderId = "opencode";
 
     /** Fallback model identifier. */
-    private String fallbackModelId = "stepfun/step-3.7-flash:free";
+    private String fallbackModelId = "big-pickle";
 
     /** Maximum retries. */
     private int maxRetries = 3;

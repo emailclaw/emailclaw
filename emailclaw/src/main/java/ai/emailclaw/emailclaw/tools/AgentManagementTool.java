@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.model.AcpAgentInfo;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.AgentRuntimeStatus;
 import ai.emailclaw.emailclaw.service.MessageBusService;
+import ai.emailclaw.emailclaw.service.ToolService;
 import ai.emailclaw.emailclaw.util.UuidUtils;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -89,7 +90,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
                             required = false)
                     Integer timeoutSeconds) {
         if (off(BuiltInToolNames.DELEGATE_EXTERNAL_AGENT)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         if (task == null || task.isBlank()) {
             return "Error: task cannot be empty.";
@@ -132,7 +133,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
             description = "List available agents (internal + ACP)")
     public String listAgents() {
         if (off(BuiltInToolNames.LIST_AGENTS)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         StringBuilder sb = new StringBuilder();
         sb.append("=== Internal Agents ===\n");
@@ -177,7 +178,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
                             required = false)
                     Integer timeout) {
         if (off(BuiltInToolNames.CHAT_WITH_AGENT)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         if (toAgent == null || toAgent.isBlank()) {
             return "Error: to_agent cannot be empty.";
@@ -236,7 +237,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
                             required = false)
                     String sessionId) {
         if (off(BuiltInToolNames.SUBMIT_TO_AGENT)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         if (toAgent == null || toAgent.isBlank()) {
             return "Error: to_agent cannot be empty.";
@@ -277,7 +278,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
     public String checkAgentTask(
             @ToolParam(name = "task_id", description = "Task ID to check") String taskId) {
         if (off(BuiltInToolNames.CHECK_AGENT_TASK)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         if (taskId == null || taskId.isBlank()) {
             return "Error: task_id cannot be empty.";
@@ -316,7 +317,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
             @ToolParam(name = "agent_id", description = "Target agent id", required = false)
                     String agentId) {
         if (off(BuiltInToolNames.GET_AGENT_STATUS)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         String target =
                 (agentId == null || agentId.isBlank())

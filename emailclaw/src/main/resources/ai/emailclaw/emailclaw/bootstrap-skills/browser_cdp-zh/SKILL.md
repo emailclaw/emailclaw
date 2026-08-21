@@ -1,6 +1,6 @@
 ---
 name: browser_cdp
-description: "当用户明确希望连接到已运行的 Chrome 浏览器、扫描本地 CDP 端口、显式指定 `cdp_port`，或让多个 agent / 工具共享同一个浏览器时，使用本 skill。当前 browser_use 默认已使用 managed CDP 启动浏览器；如果用户不希望暴露浏览器历史、Cookies 等敏感信息，推荐改用 `private_mode=true` 的隐私模式。"
+description: "当用户明确希望连接到已运行的 Chrome 浏览器、扫描本地 CDP 端口、显式指定 `cdp_port`，或让多个 agent / 工具共享同一个浏览器时，使用本 skill。当前 web_fetch 默认已使用 managed CDP 启动浏览器；如果用户不希望暴露浏览器历史、Cookies 等敏感信息，推荐改用 `private_mode=true` 的隐私模式。"
 metadata:
   builtin_skill_version: "1.2"
   emailclaw:
@@ -10,7 +10,7 @@ metadata:
 
 # 浏览器 CDP 使用参考
 
-当前 **browser_use** 默认就是以 **managed CDP** 方式启动并接管本地 Chrome/Chromium，但这不等于每次都应该把 CDP 端口暴露给用户或其他工具。
+当前 **web_fetch** 默认就是以 **managed CDP** 方式启动并接管本地 Chrome/Chromium，但这不等于每次都应该把 CDP 端口暴露给用户或其他工具。
 
 本 skill 关注的是更“显式”的 CDP 用法：
 

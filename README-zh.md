@@ -1,15 +1,15 @@
-<p style="text-align: center;">
-  <img src="./docs/logo.jpg" alt="Emailclaw" width="280"/>
+<p align="center">
+  <img src="./docs/imgs/logo.jpg" alt="Emailclaw" width="280"/>
 </p>
 
-<h1 style="text-align: center;">Emailclaw</h1>
+<h1 align="center">Emailclaw</h1>
 
-<p style="text-align: center;">
-  <strong>Email in. Work out.</strong><br />
+<p align="center">
+  <strong>Email in. Work out. The Ultimate AI Agent for Email Lovers!</strong><br />
   以电子邮件为默认交互入口、以主题为项目边界的本地优先 AI Agent。
 </p>
 
-<p style="text-align: center;">
+<p align="center">
   <a href="./docs/Emailclaw-User-Manual-zh.md">安装与使用</a> ·
 </p>
 

@@ -18,13 +18,9 @@ package ai.emailclaw.emailclaw.tools;
  */
 public final class BuiltInToolNames {
 
-    /** Fixed prompt text returned to the model when the tool is disabled. */
-    public static final String TOOL_DISABLED_MESSAGE = "Tool disabled.";
-
     public static final String EXECUTE_SHELL_COMMAND = "execute_shell_command";
-    public static final String FETCH_URL = "fetch_url";
+    public static final String WEB_FETCH = "web_fetch";
     public static final String BROWSER_USE = "browser_use";
-    public static final String BROWSER_USE_ENHANCED = "browser_use_enhanced";
     public static final String DESKTOP_SCREENSHOT = "desktop_screenshot";
     public static final String VIEW_IMAGE = "view_image";
     public static final String VIEW_VIDEO = "view_video";

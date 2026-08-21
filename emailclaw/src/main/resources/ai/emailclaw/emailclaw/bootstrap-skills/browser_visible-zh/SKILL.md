@@ -1,6 +1,6 @@
 ---
 name: browser_visible
-description: "当用户需要控制 browser_use 的浏览器启动方式时，使用本 skill。当前 browser_use 默认使用 managed CDP 启动本地 Chrome/Chromium；`headed` 控制是否显示窗口，`private_mode` 控制是否禁用 CDP、改走 Playwright，`browser_args` 传入额外的 Chromium 启动参数，`executable_path` 指定自定义浏览器可执行文件路径。"
+description: "当用户需要控制 web_fetch 的浏览器启动方式时，使用本 skill。当前 web_fetch 默认使用 managed CDP 启动本地 Chrome/Chromium；`headed` 控制是否显示窗口，`private_mode` 控制是否禁用 CDP、改走 Playwright，`browser_args` 传入额外的 Chromium 启动参数，`executable_path` 指定自定义浏览器可执行文件路径。"
 metadata:
   builtin_skill_version: "1.3"
   emailclaw:
@@ -10,7 +10,7 @@ metadata:
 
 # 浏览器启动模式
 
-`browser_use.start` 只有两种启动方式：
+`web_fetch.start` 只有两种启动方式：
 
 - 默认：managed CDP
 - `private_mode=true`：Playwright 直接管理

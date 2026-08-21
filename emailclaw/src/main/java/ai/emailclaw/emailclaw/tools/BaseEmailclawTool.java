@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.tools;
 
 import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
+import ai.emailclaw.emailclaw.service.ToolService;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
@@ -37,7 +38,7 @@ public abstract class BaseEmailclawTool implements EmailclawTool {
     protected String checkGuard(String toolName, Map<String, Object> input) {
         LOGGER.log(Level.INFO, "Tool call start: tool={0}", toolName);
         if (off(toolName)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         return null;
     }

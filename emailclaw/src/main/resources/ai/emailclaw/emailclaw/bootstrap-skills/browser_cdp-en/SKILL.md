@@ -1,6 +1,6 @@
 ---
 name: browser_cdp
-description: "Use this skill when the user explicitly wants to connect to a running Chrome browser, scan local CDP ports, specify a `cdp_port`, or share a single browser across multiple agents/tools. By default, browser_use already launches the browser using managed CDP; if the user does not want to expose browser history, cookies, or other sensitive data, recommend using `private_mode=true` instead."
+description: "Use this skill when the user explicitly wants to connect to a running Chrome browser, scan local CDP ports, specify a `cdp_port`, or share a single browser across multiple agents/tools. By default, web_fetch already launches the browser using managed CDP; if the user does not want to expose browser history, cookies, or other sensitive data, recommend using `private_mode=true` instead."
 metadata:
   builtin_skill_version: "1.2"
   emailclaw:
@@ -10,7 +10,7 @@ metadata:
 
 # Browser CDP Reference
 
-By default, **browser_use** launches and manages the local Chrome/Chromium via **managed CDP**, but this does not mean the CDP port should be exposed to the user or other tools every time.
+By default, **web_fetch** launches and manages the local Chrome/Chromium via **managed CDP**, but this does not mean the CDP port should be exposed to the user or other tools every time.
 
 This skill focuses on more "explicit" CDP usage:
 

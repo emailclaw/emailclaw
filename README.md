@@ -1,15 +1,15 @@
-<p style="text-align: center;">
-  <img src="./docs/logo.jpg" alt="Emailclaw" width="280"/>
+<p align="center">
+  <img src="./docs/imgs/logo.jpg" alt="Emailclaw" width="280"/>
 </p>
 
-<h1 style="text-align: center;">Emailclaw</h1>
+<h1 align="center">Emailclaw</h1>
 
-<p style="text-align: center;">
-  <strong>Email in. Work out.</strong><br />
+<p align="center">
+  <strong>Email in. Work out. The Ultimate AI Agent for Email Lovers!</strong><br />
   A local-first AI Agent that uses email as its default interactive entry point and subjects as project boundaries.
 </p>
 
-<p style="text-align: center;">
+<p align="center">
   <a href="./README-zh.md">中文版</a> ·
   <a href="./docs/Emailclaw-User-Manual.md">Installation & Usage</a>
 </p>

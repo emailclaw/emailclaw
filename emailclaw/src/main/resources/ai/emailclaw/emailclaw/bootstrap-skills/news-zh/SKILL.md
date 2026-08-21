@@ -1,6 +1,6 @@
 ---
 name: news
-description: "为用户从指定新闻网站查找最新新闻。提供政治、财经、社会、国际、科技、体育和娱乐类别的权威 URL。使用 browser_use 打开每个 URL 并通过 snapshot 获取内容，然后为用户总结。"
+description: "为用户从指定新闻网站查找最新新闻。提供政治、财经、社会、国际、科技、体育和娱乐类别的权威 URL。使用 web_fetch 打开每个 URL 并通过 snapshot 获取内容，然后为用户总结。"
 metadata:
   builtin_skill_version: "1.2"
   emailclaw:
@@ -10,7 +10,7 @@ metadata:
 
 # 新闻参考
 
-当用户询问"最新新闻"、"今天有什么新闻"或"某某类别的新闻"时，使用 **browser_use** 工具配合以下类别和 URL：打开页面，截取快照，然后从页面内容中提取标题和要点并回复用户。
+当用户询问"最新新闻"、"今天有什么新闻"或"某某类别的新闻"时，使用 **web_fetch** 工具配合以下类别和 URL：打开页面，截取快照，然后从页面内容中提取标题和要点并回复用户。
 
 ## 类别和来源
 
@@ -24,16 +24,16 @@ metadata:
 | **体育**  | 央视体育                 | https://sports.cctv.com/ |
 | **娱乐**  | 新浪娱乐                 | https://ent.sina.com.cn/ |
 
-## 使用方法（browser_use）
+## 使用方法（web_fetch）
 
 1. **明确用户需求**：确定用户需要哪个或哪些类别（政治 / 财经 / 社会 / 国际 / 科技 / 体育 / 娱乐），或选择 1-2 个进行获取。
 2. **选择 URL**：使用表格中对应类别的 URL；如需多个类别，对每个 URL 重复以下步骤。
-3. **打开页面**：调用 **browser_use**：
+3. **打开页面**：调用 **web_fetch**：
    ```json
    {"action": "open", "url": "https://www.chinanews.com/society/"}
    ```
    将 `url` 替换为表格中对应的 URL。
-4. **截取快照**：在同一会话中，再次调用 **browser_use**：
+4. **截取快照**：在同一会话中，再次调用 **web_fetch**：
    ```json
    {"action": "snapshot"}
    ```

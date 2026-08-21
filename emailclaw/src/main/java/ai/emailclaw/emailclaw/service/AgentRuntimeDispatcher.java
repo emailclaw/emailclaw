@@ -445,7 +445,7 @@ public class AgentRuntimeDispatcher {
                 "http_request",
                 "url_fetch",
                 "curl",
-                "browser_use",
+                "web_fetch",
                 "env_set",
                 "set_env");
     }

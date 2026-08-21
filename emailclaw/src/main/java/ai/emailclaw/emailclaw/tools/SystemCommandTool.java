@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.tools;
 
 import ai.emailclaw.emailclaw.model.TokenUsageRecord;
+import ai.emailclaw.emailclaw.service.ToolService;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -59,7 +60,7 @@ public class SystemCommandTool extends BaseEmailclawTool {
             @ToolParam(name = "output_path", description = "Output png path", required = false)
                     String outputPath) {
         if (off(BuiltInToolNames.DESKTOP_SCREENSHOT)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         try {
             Path out =
@@ -229,7 +230,7 @@ public class SystemCommandTool extends BaseEmailclawTool {
                             required = false)
                     String timezone) {
         if (off(BuiltInToolNames.GET_CURRENT_TIME)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         try {
             ZoneId zone =
@@ -248,7 +249,7 @@ public class SystemCommandTool extends BaseEmailclawTool {
     public String setUserTimezone(
             @ToolParam(name = "timezone", description = "Timezone ID") String timezone) {
         if (off(BuiltInToolNames.SET_USER_TIMEZONE)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         try {
             context.userZone = ZoneId.of(timezone);
@@ -265,7 +266,7 @@ public class SystemCommandTool extends BaseEmailclawTool {
             @ToolParam(name = "to_date", description = "To date yyyy-MM-dd", required = false)
                     String toDate) {
         if (off(BuiltInToolNames.GET_TOKEN_USAGE)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
+            return ToolService.TOOL_DISABLED_MESSAGE;
         }
         List<TokenUsageRecord> records = context.repository.loadTokenUsage();
         long prompt = records.stream().mapToLong(r -> r.promptTokens()).sum();

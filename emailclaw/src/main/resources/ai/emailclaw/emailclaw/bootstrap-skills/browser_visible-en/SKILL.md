@@ -1,6 +1,6 @@
 ---
 name: browser_visible
-description: "Use this skill when the user needs to control the browser launch mode for browser_use. By default, browser_use launches the local Chrome/Chromium using managed CDP; `headed` controls whether the window is visible, and `private_mode` controls whether CDP is disabled in favor of Playwright."
+description: "Use this skill when the user needs to control the browser launch mode for web_fetch. By default, web_fetch launches the local Chrome/Chromium using managed CDP; `headed` controls whether the window is visible, and `private_mode` controls whether CDP is disabled in favor of Playwright."
 metadata:
   builtin_skill_version: "1.2"
   emailclaw:
@@ -10,7 +10,7 @@ metadata:
 
 # Browser Launch Modes
 
-`browser_use.start` has only two launch modes:
+`web_fetch.start` has only two launch modes:
 
 - Default: managed CDP
 - `private_mode=true`: Playwright-managed

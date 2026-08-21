@@ -37,6 +37,9 @@ public class ToolService {
     /** Default vision model name, used for multi-modal tools. */
     private String defaultVisionModel = "gpt-4o";
 
+    /** Fixed prompt text returned to the model when the tool is disabled. */
+    public static final String TOOL_DISABLED_MESSAGE = "Tool disabled.";
+
     public ToolService(AppContext repository) {
         this.configManager = repository.configManager();
         LOGGER.info("ToolService initialized");

@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.tools;
 
+import ai.emailclaw.emailclaw.service.ToolService;
 import ai.emailclaw.emailclaw.util.PlaywrightManager;
 import ai.emailclaw.emailclaw.util.WebExtractUtils;
 import com.microsoft.playwright.Page;
@@ -44,138 +45,15 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
 
     public BrowserAutomationTool() {}
 
-    /**
-     * Detect a browser connection-level failure (browser process died or IPC pipe broken). Such
-     * failures render the whole Playwright connection unusable, so the browser must be reset.
-     */
-    private static boolean isConnectionFailure(Throwable e) {
-        String msg = e.getMessage();
-        if (msg == null) {
-            return false;
-        }
-        String m = msg.toLowerCase();
-        return m.contains("failed to read message")
-                || m.contains("connection closed")
-                || m.contains("target page, context or browser has been closed")
-                || m.contains("target closed")
-                || m.contains("browser has been closed")
-                || m.contains("crash");
-    }
-
     @Tool(
             name = BuiltInToolNames.BROWSER_USE,
-            description = "Browser automation: open a URL and return the page text content")
-    public String browserUse(
-            @ToolParam(name = "url", description = "URL to browse and extract text from")
-                    String url,
-            @ToolParam(
-                            name = "action",
-                            description = "Optional action: extract_text or click",
-                            required = false)
-                    String action,
-            @ToolParam(
-                            name = "x",
-                            description = "Page coordinate X for click action",
-                            required = false)
-                    Integer x,
-            @ToolParam(
-                            name = "y",
-                            description = "Page coordinate Y for click action",
-                            required = false)
-                    Integer y,
-            @ToolParam(
-                            name = "selector",
-                            description = "Optional CSS selector for click action",
-                            required = false)
-                    String selector) {
-        if (off(BuiltInToolNames.BROWSER_USE)) {
-            return BuiltInToolNames.TOOL_DISABLED_MESSAGE;
-        }
-        if (url == null || url.isBlank()) {
-            return "Error: url is required.";
-        }
-        Map<String, Object> params = new HashMap<>();
-        params.put("url", url);
-        if (action != null) params.put("action", action);
-        if (x != null) params.put("x", x);
-        if (y != null) params.put("y", y);
-        if (selector != null) params.put("selector", selector);
-
-        String guardCheck = checkGuard(BuiltInToolNames.BROWSER_USE, params);
-        if (guardCheck != null) return guardCheck;
-
-        WebExtractUtils.HttpExtractResult fast = WebExtractUtils.tryFastHttpExtract(url);
-        if (fast.ok()
-                && !fast.dynamicLikely()
-                && fast.text() != null
-                && fast.text().length() >= 200) {
-            LOGGER.log(
-                    Level.INFO,
-                    "browser_use fast HTTP path succeeded: url={0}, textLen={1}",
-                    new Object[] {url, fast.text().length()});
-            return fast.text();
-        }
-
-        String agentId =
-                this.context.currentAgent != null ? this.context.currentAgent.getId() : "default";
-        synchronized (BrowserAutomationTool.class) {
-            PlaywrightManager.initPlaywrightIfNeeded(agentId);
-        }
-        Page page = PlaywrightManager.getOrCreateActivePage(agentId);
-        try {
-            LOGGER.log(Level.INFO, "Playwright preparing to open URL: {0}", url);
-            page.navigate(
-                    url,
-                    new Page.NavigateOptions()
-                            .setWaitUntil(WaitUntilState.NETWORKIDLE)
-                            .setTimeout(15000));
-            if (isClickAction(action, x, y, selector)) {
-                LOGGER.log(
-                        Level.INFO,
-                        "Preparing to execute click action: selector={0}, x={1}, y={2}",
-                        new Object[] {selector, x, y});
-                if (selector != null && !selector.isBlank()) {
-                    page.locator(selector).first().click();
-                } else if (x != null && y != null) {
-                    page.mouse().click(x, y);
-                }
-                page.waitForLoadState(
-                        LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(5000));
-            }
-            Object textObj =
-                    page.evaluate(
-                            "() => document.body ? (document.body.innerText ||"
-                                    + " document.body.textContent) : ''");
-            return textObj == null ? "" : textObj.toString();
-        } catch (TimeoutError e) {
-            try {
-                Object textObj =
-                        page.evaluate(
-                                "() => document.body ? (document.body.innerText ||"
-                                        + " document.body.textContent) : ''");
-                String text = textObj == null ? "" : textObj.toString();
-                if (!text.isBlank()) return text;
-            } catch (Exception ex) {
-                LOGGER.log(Level.WARNING, "Playwright text extraction failed", ex);
-                if (isConnectionFailure(ex)) {
-                    PlaywrightManager.reset(agentId);
-                }
-            }
-            return "Page read timeout and failed to extract text.";
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Playwright page read failed", e);
-            return "Page read failed: " + e.getMessage();
-        }
-    }
-
-    @Tool(
-            name = BuiltInToolNames.BROWSER_USE_ENHANCED,
             description =
-                    "Enhanced browser automation with multimodal output. Actions: navigate, click,"
-                        + " type, scroll, screenshot, hover, select_option, go_back, go_forward,"
-                        + " wait, evaluate, extract_text, get_html. Returns text and/or screenshot"
-                        + " image.")
-    public ToolResultBlock browserUseEnhanced(
+                    "Browser automation with multimodal output. Actions: navigate, click, type,"
+                        + " scroll, screenshot, hover, select_option, go_back, go_forward, wait,"
+                        + " evaluate, extract_text, get_html. Returns text and/or screenshot"
+                        + " image.",
+            concurrencySafe = false)
+    public ToolResultBlock browserUse(
             @ToolParam(name = "url", description = "URL to open or navigate to", required = false)
                     String url,
             @ToolParam(
@@ -236,8 +114,8 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                             description = "JavaScript expression for evaluate action",
                             required = false)
                     String jsExpression) {
-        if (off(BuiltInToolNames.BROWSER_USE_ENHANCED)) {
-            return ToolResultBlock.text(BuiltInToolNames.TOOL_DISABLED_MESSAGE);
+        if (off(BuiltInToolNames.BROWSER_USE)) {
+            return ToolResultBlock.text(ToolService.TOOL_DISABLED_MESSAGE);
         }
         Map<String, Object> params = new HashMap<>();
         if (url != null) params.put("url", url);
@@ -253,7 +131,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
         if (waitMs != null) params.put("wait_ms", waitMs);
         if (jsExpression != null) params.put("js_expression", jsExpression);
 
-        String guardCheck = checkGuard(BuiltInToolNames.BROWSER_USE_ENHANCED, params);
+        String guardCheck = checkGuard(BuiltInToolNames.BROWSER_USE, params);
         if (guardCheck != null) {
             return ToolResultBlock.text(guardCheck);
         }
@@ -278,7 +156,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                     && fast.text().length() >= 200) {
                 LOGGER.log(
                         Level.INFO,
-                        "browser_use_enhanced fast HTTP path succeeded: url={0}, action={1},"
+                        "browser_use fast HTTP path succeeded: url={0}, action={1},"
                                 + " textLen={2}",
                         new Object[] {url, normalizedAction, fast.text().length()});
                 return ToolResultBlock.text(fast.text());
@@ -291,7 +169,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
             PlaywrightManager.initPlaywrightIfNeeded(agentId);
         }
         try {
-            return executeBrowserUseEnhancedAction(
+            return executeBrowserUseAction(
                     agentId,
                     normalizedAction,
                     url,
@@ -306,17 +184,11 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                     waitMs,
                     jsExpression);
         } catch (TimeoutError e) {
-            return recoverBrowserUseEnhancedAfterTimeout(normalizedAction, agentId);
+            return recoverBrowserUseAfterTimeout(normalizedAction, agentId);
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "browser_use_enhanced execution failed", e);
+            LOGGER.log(Level.SEVERE, "browser_use execution failed", e);
             return ToolResultBlock.error("Browser action failed: " + e.getMessage());
         }
-    }
-
-    private static boolean isClickAction(String action, Integer x, Integer y, String selector) {
-        if ("click".equalsIgnoreCase(action)) return true;
-        return action == null
-                && ((x != null && y != null) || (selector != null && !selector.isBlank()));
     }
 
     private static BrowserAction normalizeBrowserAction(String action) {
@@ -383,7 +255,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
         }
     }
 
-    private static String extractVisibleTextFromPage(Page page) {
+    public static String extractVisibleTextFromPage(Page page) {
         Object textObj =
                 page.evaluate(
                         "() => document.body ? (document.body.innerText ||"
@@ -399,7 +271,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
         return page.evaluate(expr);
     }
 
-    private ToolResultBlock executeBrowserUseEnhancedAction(
+    private ToolResultBlock executeBrowserUseAction(
             String agentId,
             BrowserAction action,
             String url,
@@ -529,8 +401,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
         }
     }
 
-    private ToolResultBlock recoverBrowserUseEnhancedAfterTimeout(
-            BrowserAction action, String agentId) {
+    private ToolResultBlock recoverBrowserUseAfterTimeout(BrowserAction action, String agentId) {
         if (action != BrowserAction.EXTRACT_TEXT && action != BrowserAction.NAVIGATE) {
             return ToolResultBlock.error("Browser action timed out.");
         }

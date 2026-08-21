@@ -17,7 +17,6 @@ import java.util.List;
 
 /**
  * Built-in tool catalog.
- *
  * <p>Centrally define the default tool list, acting as a fallback when the config file is missing.
  */
 public final class ToolCatalog {
@@ -25,7 +24,8 @@ public final class ToolCatalog {
 
     public static List<ToolInfo> defaults() {
         List<ToolInfo> tools = new ArrayList<>();
-        tools.add(tool(BuiltInToolNames.BROWSER_USE, "Browser automation and web interaction"));
+        tools.add(tool(BuiltInToolNames.WEB_FETCH, "Fetch a web page and return its text content"));
+        tools.add(tool(BuiltInToolNames.BROWSER_USE, "Browser automation with multimodal output"));
         tools.add(tool(BuiltInToolNames.DESKTOP_SCREENSHOT, "Capture desktop screenshots"));
         tools.add(
                 tool(
@@ -43,6 +43,7 @@ public final class ToolCatalog {
                 tool(
                         BuiltInToolNames.DELEGATE_EXTERNAL_AGENT,
                         "Delegate work to an external ACP agent runner"));
+        tools.add(tool(BuiltInToolNames.GET_AGENT_STATUS, "Get runtime status of an agent"));
         tools.add(tool(BuiltInToolNames.LIST_AGENTS, "List available agents"));
         tools.add(tool(BuiltInToolNames.CHAT_WITH_AGENT, "Chat with another agent"));
         tools.add(
