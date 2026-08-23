@@ -464,7 +464,7 @@ public class CronJobListView implements ViewPane {
                                 && existing.schedule().timezone() != null
                                 && !existing.schedule().timezone().isBlank()
                         ? existing.schedule().timezone()
-                        : "America/New_York");
+                        : CronJobModel.getDefaultTimezone());
         tzBox.setEditable(true);
         TextArea textArea =
                 new TextArea(
@@ -545,11 +545,6 @@ public class CronJobListView implements ViewPane {
                         existing != null && existing.runtime() != null
                                 ? String.valueOf(existing.runtime().timeoutSeconds())
                                 : "120");
-        TextField misfireField =
-                new TextField(
-                        existing != null && existing.runtime() != null
-                                ? String.valueOf(existing.runtime().misfireGraceSeconds())
-                                : "60");
         CheckBox shareSessionCb = new CheckBox("Share session context");
         shareSessionCb.setSelected(
                 existing == null
@@ -637,7 +632,6 @@ public class CronJobListView implements ViewPane {
         int r4 = 0;
         rtGrid.addRow(r4++, new Label("Max Concurrency"), concurrencyField);
         rtGrid.addRow(r4++, new Label("Timeout (seconds)"), timeoutField);
-        rtGrid.addRow(r4++, new Label("Misfire Grace (seconds)"), misfireField);
         rtGrid.addRow(r4++, new Label("Session Strategy"), shareSessionCb);
         Tab rtTab = new Tab("Runtime", new ScrollPane(rtGrid));
         rtTab.setClosable(false);
@@ -693,7 +687,11 @@ public class CronJobListView implements ViewPane {
                             new JobRuntimeSpec(
                                     parseInt(concurrencyField.getText(), 1),
                                     parseInt(timeoutField.getText(), 120),
-                                    parseInt(misfireField.getText(), 60),
+                                    // misfireGraceSeconds not yet implemented by the engine;
+                                    // preserve any pre-existing value instead of editing it
+                                    existing != null && existing.runtime() != null
+                                            ? existing.runtime().misfireGraceSeconds()
+                                            : 60,
                                     shareSessionCb.isSelected());
                     Boolean saveInbox = inboxCb.isSelected();
                     Integer countdownVal = -1;
@@ -1009,7 +1007,7 @@ public class CronJobListView implements ViewPane {
                             ZonedDateTime.now()
                                     .plusDays(1)
                                     .format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                            "America/New_York",
+                            CronJobModel.getDefaultTimezone(),
                             null,
                             null,
                             null,
@@ -1017,7 +1015,14 @@ public class CronJobListView implements ViewPane {
         } else {
             schedule =
                     new ScheduleSpec(
-                            "cron", t.cron(), null, "America/New_York", null, null, null, null);
+                            "cron",
+                            t.cron(),
+                            null,
+                            CronJobModel.getDefaultTimezone(),
+                            null,
+                            null,
+                            null,
+                            null);
         }
         return new CronJobSpec(
                 "",

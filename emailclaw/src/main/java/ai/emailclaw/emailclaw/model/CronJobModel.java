@@ -11,10 +11,12 @@
 package ai.emailclaw.emailclaw.model;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -33,6 +35,47 @@ public final class CronJobModel {
      * Default channel name.
      */
     public static final String DEFAULT_CHANNEL = "console";
+
+    /**
+     * Default timezone ID for schedules without an explicit timezone.
+     *
+     * <p>Single source of truth is {@code GlobalConfig.timeZone}: it is seeded at application
+     * startup (see ApplicationBootstrap) and refreshed on every global-config change. Falls
+     * back to the JVM system default until then.
+     */
+    private static volatile String defaultTimezone = ZoneId.systemDefault().getId();
+
+    /**
+     * Get the default timezone ID used when a schedule omits its own.
+     *
+     * @return a valid IANA timezone ID, e.g. "Asia/Shanghai"
+     */
+    public static String getDefaultTimezone() {
+        return defaultTimezone;
+    }
+
+    /**
+     * Set the default timezone ID used when a schedule omits its own.
+     *
+     * <p>Blank IDs fall back to the JVM system default; invalid IDs are rejected with a
+     * warning and the previous value is kept.
+     *
+     * @param zoneId IANA timezone ID sourced from {@code GlobalConfig.timeZone}
+     */
+    public static void setDefaultTimezone(String zoneId) {
+        String candidate =
+                zoneId == null || zoneId.isBlank() ? ZoneId.systemDefault().getId() : zoneId.trim();
+        try {
+            ZoneId.of(candidate);
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Ignoring invalid default timezone: {0}, keeping {1}",
+                    new Object[] {zoneId, defaultTimezone});
+            return;
+        }
+        defaultTimezone = candidate;
+    }
 
     // ======================== Schedule Specification ========================
     /**
@@ -62,7 +105,7 @@ public final class CronJobModel {
          */
         public static ScheduleSpec defaultCron() {
             return new ScheduleSpec(
-                    "cron", "0 9 * * *", null, "America/New_York", null, null, null, null);
+                    "cron", "0 9 * * *", null, getDefaultTimezone(), null, null, null, null);
         }
 
         /**
@@ -75,7 +118,7 @@ public final class CronJobModel {
                     LocalDateTime.now()
                             .plusHours(1)
                             .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                    "America/New_York",
+                    getDefaultTimezone(),
                     null,
                     null,
                     null,
@@ -84,7 +127,7 @@ public final class CronJobModel {
 
         public ScheduleSpec {
             if (type == null) type = "cron";
-            if (timezone == null || timezone.isBlank()) timezone = "America/New_York";
+            if (timezone == null || timezone.isBlank()) timezone = getDefaultTimezone();
             // Normalized validation logic matching Emailclaw ScheduleSpec._validate_schedule_type
             if ("cron".equals(type)) {
                 if (cron == null || cron.isBlank()) {

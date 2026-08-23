@@ -84,13 +84,19 @@ metadata:
       "runtime": {
         "maxConcurrency": 1,
         "timeoutSeconds": 120,
-        "misfireGraceSeconds": 60,
         "shareSession": true
       }
     }
   ]
 }
 ```
+
+
+### schedule 字段说明
+
+- `timezone`：**非必填**。省略时系统按当前系统时区解析（即 `global-config.json` 的
+  `timeZone` 字段）；如需指定，必须使用 IANA 时区 ID，
+  如 `Asia/Shanghai`、`America/New_York`、`UTC`。
 
 ### 修改步骤（支持热加载）
 
@@ -101,6 +107,11 @@ metadata:
 ---
 
 ## Cron 表达式示例
+
+仅支持 5 段 crontab 格式（`分 时 日 月 周`），不支持 Quartz 格式（无秒段，
+不支持 `?`、`L`、`W`、`#` 等符号）。
+下列时间均在任务 `timezone` 的本地时间下执行。
+
 
 ```
 0 9 * * *      每天 9:00

@@ -82,13 +82,20 @@ Cron jobs are stored in `cron-jobs.json` with the following format:
       "runtime": {
         "maxConcurrency": 1,
         "timeoutSeconds": 120,
-        "misfireGraceSeconds": 60,
         "shareSession": true
       }
     }
   ]
 }
 ```
+
+
+### Schedule Field Notes
+
+- `timezone`: **optional**. If omitted, the system evaluates the schedule in the
+  current system timezone (the `timeZone` field in `global-config.json`).
+  If specified, it must be an IANA time zone ID, e.g. `Asia/Shanghai`,
+  `America/New_York`, `UTC`.
 
 ### Editing Steps (Hot Reload Supported)
 
@@ -99,6 +106,11 @@ Cron jobs are stored in `cron-jobs.json` with the following format:
 ---
 
 ## Cron Expression Examples
+
+Only the 5-field crontab format is supported (`minute hour day month weekday`).
+Quartz format is **not** supported: no seconds field, no `?`, `L`, `W`, `#` symbols.
+All times below are evaluated in the local time of the job's `timezone`.
+
 
 ```
 0 9 * * *      Every day at 9:00

@@ -15,6 +15,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -76,9 +77,13 @@ public class PlaywrightManager {
                                     ai.emailclaw.emailclaw.storage.AppHomeConstants
                                             .BROWSER_DATA_DIR)
                             .resolve(agentId);
+
+            boolean headless =
+                    System.getenv("EMAILCLAW_BROWSER_HEADLESS") != null
+                            || GraphicsEnvironment.isHeadless();
             BrowserType.LaunchPersistentContextOptions options =
                     new BrowserType.LaunchPersistentContextOptions()
-                            .setHeadless(false)
+                            .setHeadless(headless)
                             .setArgs(
                                     List.of(
                                             "--disable-blink-features=AutomationControlled",

@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.AgentRuntimeStatus;
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.CronJobModel;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.plugin.DefaultPluginContext;
 import ai.emailclaw.emailclaw.plugin.PluginContext;
@@ -57,6 +58,7 @@ import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppPaths;
+import ai.emailclaw.emailclaw.storage.ConfigManager;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
@@ -165,6 +167,19 @@ public final class ApplicationBootstrap {
         // Ensure directories exist before creating services, preventing WatchService registration
         // failure
         repository.ensureStructure();
+        // Seed the schedule default timezone from global configuration and keep it in sync
+        // (covers UI saves and external hot reloads of global-config.json)
+        CronJobModel.setDefaultTimezone(repository.configManager().getGlobalConfig().getTimeZone());
+        repository
+                .configManager()
+                .addChangeListener(
+                        ConfigManager.EVENT_GLOBAL_CONFIG,
+                        () ->
+                                CronJobModel.setDefaultTimezone(
+                                        repository
+                                                .configManager()
+                                                .getGlobalConfig()
+                                                .getTimeZone()));
         // Ensure skills pool files are extracted/ready, so later services (like AgentService ->
         // ConfigManager) can read the full list of skill names
         new BootstrapService(repository, null).preInitializeSkillsPool();

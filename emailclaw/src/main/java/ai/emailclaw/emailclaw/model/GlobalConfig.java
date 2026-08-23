@@ -10,8 +10,10 @@
  */
 package ai.emailclaw.emailclaw.model;
 
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Global configuration object (global-config.json).
@@ -30,8 +32,10 @@ public class GlobalConfig {
     /** Currently selected Project ID. If empty, it means not explicitly selected yet. */
     private String currentProjectId = "";
 
-    /** Country/region code, default CN. */
-    private String country = "CN";
+    /** Country/region code, i.e. CA. */
+    private String country = Locale.getDefault().getCountry();
+
+    private String timeZone = ZoneId.systemDefault().getId();
 
     /** Language code, default en. */
     private String language = "en";
@@ -135,5 +139,13 @@ public class GlobalConfig {
      */
     public void setSkillPoolPaths(List<String> skillPoolPaths) {
         this.skillPoolPaths = skillPoolPaths;
+    }
+
+    public String getTimeZone() {
+        return timeZone;
+    }
+
+    public void setTimeZone(String _timeZone) {
+        timeZone = _timeZone;
     }
 }
