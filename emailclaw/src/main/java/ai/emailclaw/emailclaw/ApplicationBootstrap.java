@@ -291,7 +291,8 @@ public final class ApplicationBootstrap {
                         chatService,
                         agentService,
                         providerService,
-                        repository.configManager());
+                        repository.configManager(),
+                        projectService);
         PluginManager pluginManager =
                 new PluginManager(pluginContext, paths.pluginsDir, pluginRegistry);
         pluginManager.discoverAndLoadAll();

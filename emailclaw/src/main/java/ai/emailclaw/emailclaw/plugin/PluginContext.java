@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 
@@ -53,4 +54,9 @@ public interface PluginContext {
      * Gets the global configuration manager.
      */
     ConfigManager configManager();
+
+    /**
+     * Gets the ProjectService instance.
+     */
+    ProjectService projectService();
 }

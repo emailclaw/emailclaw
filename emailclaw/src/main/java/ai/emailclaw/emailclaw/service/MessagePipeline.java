@@ -67,8 +67,6 @@ public class MessagePipeline {
                 + " on its own line in this exact format:\n"
                 + "[TITLE: xxx]";
 
-    private static final int CHAT_STREAM_TIMEOUT_SECONDS = 300;
-
     private final AppContext repository;
 
     private final AgentService agentService;
@@ -258,7 +256,9 @@ public class MessagePipeline {
                                             // Event Sourcing reordering has been handled internally
                                             // by the AgentScope framework.
                                         })
-                                .blockLast(Duration.ofSeconds(CHAT_STREAM_TIMEOUT_SECONDS));
+                                .blockLast(
+                                        Duration.ofSeconds(
+                                                config.effectiveTaskExecutionTimeoutSeconds()));
 
                         success = true;
                         hasError = false;

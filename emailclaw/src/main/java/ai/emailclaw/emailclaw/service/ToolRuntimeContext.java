@@ -35,6 +35,13 @@ public class ToolRuntimeContext {
     public ZoneId userZone = ZoneId.systemDefault();
     public AgentInfo currentAgent;
 
+    /**
+     * Task-scoped active project resolved by {@code AgentRuntimeDispatcher} before each
+     * execution. When non-null it takes precedence over the global default project, so tools
+     * operate inside the directory of the task currently being executed.
+     */
+    public volatile ProjectInfo activeProject;
+
     /** Message bus service, providing inter-agent communication and asynchronous tool execution tracking capability. */
     private MessageBusService messageBusService;
 
@@ -89,6 +96,9 @@ public class ToolRuntimeContext {
     }
 
     public ProjectInfo currentProject() {
+        if (activeProject != null) {
+            return activeProject;
+        }
         return projectService.currentDefault();
     }
 

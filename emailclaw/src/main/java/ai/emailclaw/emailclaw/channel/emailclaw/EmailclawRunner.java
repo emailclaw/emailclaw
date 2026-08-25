@@ -23,6 +23,7 @@ import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.service.MessageMarkupTags;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
@@ -255,6 +256,8 @@ public class EmailclawRunner {
 
     private final ai.emailclaw.emailclaw.storage.ConfigManager configManager;
 
+    private final ProjectService projectService;
+
     private final AtomicBoolean running = new AtomicBoolean(true);
 
     private final Semaphore mailProcessingPermits = new Semaphore(MAIL_PROCESSING_MAX_CONCURRENCY);
@@ -271,12 +274,14 @@ public class EmailclawRunner {
             ChatService chatService,
             AgentService agentService,
             ProviderService providerService,
-            ai.emailclaw.emailclaw.storage.ConfigManager configManager) {
+            ai.emailclaw.emailclaw.storage.ConfigManager configManager,
+            ProjectService projectService) {
         this.channelService = channelService;
         this.chatService = chatService;
         this.agentService = agentService;
         this.providerService = providerService;
         this.configManager = configManager;
+        this.projectService = projectService;
         Thread.startVirtualThread(
                 () -> {
                     while (running.get()) {
@@ -698,7 +703,7 @@ public class EmailclawRunner {
                                     String replyText =
                                             ai.emailclaw.emailclaw.model.ChatMessageRecord
                                                     .textOfParts(chatService.partsOf(message));
-                                    sendReply(channelSnapshot, mail, replyText, agent);
+                                    sendReply(channelSnapshot, mail, replyText, agent, session);
                                 }
                             } catch (Exception e) {
                                 LOGGER.log(
@@ -824,14 +829,30 @@ public class EmailclawRunner {
                     AppPaths.resolveHome().resolve(AppHomeConstants.PROJECTS_DIR).toAbsolutePath()
                             + "/"
                             + safeName
-                            + " "
+                            + "-"
                             + project.getId());
             project.setCreatedAt(java.time.LocalDateTime.now().toString());
 
-            java.util.List<ai.emailclaw.emailclaw.model.ProjectInfo> projects =
-                    new java.util.ArrayList<>(this.configManager.getProjects());
-            projects.add(project);
-            this.configManager.saveProjects(projects);
+            try {
+                Files.createDirectories(Path.of(project.getBaseDirectory()));
+            } catch (Exception e) {
+                LOGGER.log(
+                        Level.WARNING,
+                        "Failed to create project directory: " + project.getBaseDirectory(),
+                        e);
+            }
+            session.setProjectId(project.getId());
+
+            if (this.projectService != null) {
+                // Persist through ProjectService so registered listeners (e.g. UI refresh)
+                // are notified of the new project.
+                this.projectService.save(project);
+            } else {
+                java.util.List<ai.emailclaw.emailclaw.model.ProjectInfo> projects =
+                        new java.util.ArrayList<>(this.configManager.getProjects());
+                projects.add(project);
+                this.configManager.saveProjects(projects);
+            }
         }
 
         chatService.updateSession(session);
@@ -1130,8 +1151,19 @@ public class EmailclawRunner {
         if (mail == null || mail.attachments() == null || mail.attachments().isEmpty()) {
             return List.of();
         }
-        Path sessionDir = chatService.sessionPath(agent.getId()).resolve(session.getId());
-        Path targetDir = sessionDir.resolve(ATTACHMENTS_DIR_NAME);
+        Path targetDir;
+        ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
+        if (project != null
+                && project.getBaseDirectory() != null
+                && !project.getBaseDirectory().isBlank()) {
+            targetDir = Path.of(project.getBaseDirectory()).resolve(ATTACHMENTS_DIR_NAME);
+        } else {
+            targetDir =
+                    chatService
+                            .sessionPath(agent.getId())
+                            .resolve(session.getId())
+                            .resolve(ATTACHMENTS_DIR_NAME);
+        }
         List<Path> paths = new ArrayList<>();
         try {
             Files.createDirectories(targetDir);
@@ -1194,11 +1226,30 @@ public class EmailclawRunner {
         }
     }
 
+    /**
+     * Find the task project bound to the given session (project id equals session id for email
+     * tasks). Returns null when no matching project record exists.
+     */
+    private ai.emailclaw.emailclaw.model.ProjectInfo findSessionProject(ChatSessionInfo session) {
+        if (session == null || this.configManager == null || session.getId() == null) {
+            return null;
+        }
+        return this.configManager.getProjects().stream()
+                .filter(p -> session.getId().equals(p.getId()))
+                .findFirst()
+                .orElse(null);
+    }
+
     // ======================== Send Reply Email ========================
     /**
      * Send model result as a reply email to the user.
      */
-    private void sendReply(ChannelInfo channel, EmailEnvelope mail, String content, AgentInfo agent)
+    private void sendReply(
+            ChannelInfo channel,
+            EmailEnvelope mail,
+            String content,
+            AgentInfo agent,
+            ChatSessionInfo session)
             throws IOException {
         String subject =
                 (mail.subject() == null || mail.subject().isBlank())
@@ -1222,16 +1273,29 @@ public class EmailclawRunner {
                         Path file = Path.of(pathStr);
                         LOGGER.info("Sending attachment: " + file);
                         if (!file.isAbsolute()) {
-                            Path workspace =
-                                    (agent.getWorkspacePath() == null
-                                                    || agent.getWorkspacePath().isBlank())
-                                            ? AppPaths.resolveHome()
-                                                    .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
-                                                    .resolve(agent.getId())
-                                            : Path.of(agent.getWorkspacePath())
-                                                    .toAbsolutePath()
-                                                    .normalize();
-                            file = workspace.resolve(file).normalize();
+                            // Resolve relative paths against the task project directory first;
+                            // fall back to the legacy agent workspace when no project exists.
+                            Path baseDir;
+                            ai.emailclaw.emailclaw.model.ProjectInfo project =
+                                    findSessionProject(session);
+                            if (project != null
+                                    && project.getBaseDirectory() != null
+                                    && !project.getBaseDirectory().isBlank()) {
+                                baseDir = Path.of(project.getBaseDirectory());
+                            } else {
+                                baseDir =
+                                        (agent.getWorkspacePath() == null
+                                                        || agent.getWorkspacePath().isBlank())
+                                                ? AppPaths.resolveHome()
+                                                        .resolve(
+                                                                AppHomeConstants
+                                                                        .AGENT_WORKSPACE_DIR)
+                                                        .resolve(agent.getId())
+                                                : Path.of(agent.getWorkspacePath())
+                                                        .toAbsolutePath()
+                                                        .normalize();
+                            }
+                            file = baseDir.resolve(file).normalize();
                         }
                         if (Files.exists(file) && Files.isRegularFile(file)) {
                             sendAttachments.add(file);

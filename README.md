@@ -14,6 +14,19 @@
   <a href="./docs/Emailclaw-User-Manual.md">Installation & Usage</a>
 </p>
 
+## See It in Action: From Inbox to Automation                                                                                                                                                        
+                                                                                                                                                                                                     
+<p align="center">
+  <img src="./docs/imgs/demo-scheduled-task.gif" alt="Emailclaw Demo" width="100%"/>
+</p>
+
+Create tasks and scheduled automation in 5 simple steps:
+1. **Get OTP:** Send an email to `otp@emailclaw.email` to get a one-time password.
+2. **Configure:** Enter your registration email and OTP in Emailclaw settings. You'll receive your Agent Email (e.g., `YOUR-AGENT@emailclaw.email`).
+3. **Send Task:** Send your task to the Agent Email (e.g., "Please tell me the latest global AI technology news").
+4. **Confirm:** Reply to the confirmation email with the TaskId to start the work. You will receive the task results.
+5. **Schedule:** Reply to the thread to convert it (e.g., "Please convert this task into a scheduled task, with the runtime hours set to 7, 12, 17 and 23"). Emailclaw will automatically run it for
+
 ## Why Emailclaw?
 
 Emailclaw puts AI Agents into an inbox everyone is familiar with. It doesn't treat email as just another chat channel, but rather treats the email subject as a clear boundary for a specific task:

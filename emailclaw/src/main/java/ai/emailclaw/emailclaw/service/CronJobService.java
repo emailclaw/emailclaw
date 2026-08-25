@@ -675,6 +675,10 @@ public class CronJobService implements AutoCloseable {
                     "Scheduled task session set up: channel={0}, userId={1}",
                     new Object[] {session.getChannel(), session.getUserId()});
             String prompt = spec.inputPrompt() != null ? spec.inputPrompt() : "";
+            int timeoutSeconds =
+                    appContext
+                            .loadAgentConfig(agent.getId())
+                            .effectiveTaskExecutionTimeoutSeconds();
             CountDownLatch latch = new CountDownLatch(1);
             final Msg[] capturedMsg = new Msg[1];
             chatService.sendMessage(
@@ -694,10 +698,31 @@ public class CronJobService implements AutoCloseable {
                             latch.countDown();
                         }
                     });
-            latch.await(5, TimeUnit.MINUTES);
-            CronJobStatus status = CronJobStatus.SUCCESS;
-            updateState(jobId, null, runAtStr, status, null);
-            recordExecution(jobId, status, null, trigger);
+            long maxWaitSeconds = (long) timeoutSeconds * (agent.getMaxRetries() + 1);
+            boolean finished = latch.await(maxWaitSeconds, TimeUnit.SECONDS);
+            String replyText = capturedMsg[0] == null ? null : capturedMsg[0].getTextContent();
+            CronJobStatus status;
+            String error = null;
+            if (!finished) {
+                status = CronJobStatus.ERROR;
+                error = "Task execution timed out after waiting " + maxWaitSeconds + " seconds";
+                LOGGER.log(
+                        Level.WARNING,
+                        "Scheduled task wait timed out: id={0}, waitedSeconds={1}",
+                        new Object[] {jobId, maxWaitSeconds});
+            } else if (replyText != null && replyText.contains("[Error]")) {
+                status = CronJobStatus.ERROR;
+                error = replyText.trim();
+                LOGGER.log(Level.WARNING, "Scheduled task ended with error result: id={0}", jobId);
+            } else if (replyText == null || replyText.isBlank()) {
+                status = CronJobStatus.ERROR;
+                error = "Agent returned an empty result";
+                LOGGER.log(Level.WARNING, "Scheduled task returned empty result: id={0}", jobId);
+            } else {
+                status = CronJobStatus.SUCCESS;
+            }
+            updateState(jobId, null, runAtStr, status, error);
+            recordExecution(jobId, status, error, trigger);
             LOGGER.log(
                     Level.INFO,
                     "Scheduled task execution complete: id={0}, status={1}",

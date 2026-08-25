@@ -13,6 +13,19 @@
   <a href="./docs/Emailclaw-User-Manual-zh.md">安装与使用</a> ·
 </p>
 
+## 看它如何工作：从收件箱到自动化
+
+<p align="center">
+  <img src="./docs/imgs/demo-scheduled-task.gif" alt="Emailclaw Demo" width="100%"/>
+</p>
+
+只需 5 步，轻松创建任务和自动化调度：
+1. **获取验证码：** 发送邮件到 `otp@emailclaw.email` 以获取一次性密码（OTP）。
+2. **配置系统：** 在 Emailclaw 设置中输入注册邮箱和 OTP。验证成功后，你将获得一个 Agent 专属邮箱（如 `YOUR-AGENT@emailclaw.email`）。
+3. **发送任务：** 向专属邮箱发送你的任务（例如："Please tell me the latest global AI technology news"）。
+4. **确认执行：** 收到带有 TaskId 的回信后，直接回复该邮件以启动任务，你将收到执行结果。
+5. **设置定时：** 再次回复该邮件要求转为定时任务（例如："Please convert this task into a scheduled task, with the runtime hours set to 7, 12, 17 and 23"）。Emailclaw 将自动为你按时运行！
+
 ## 为什么是 Emailclaw？
 
 Emailclaw 把 AI Agent 放进每个人都熟悉的邮箱。它不是把电子邮件当成又一个聊天渠道，而是把邮件主题视为一项工作的明确边界：

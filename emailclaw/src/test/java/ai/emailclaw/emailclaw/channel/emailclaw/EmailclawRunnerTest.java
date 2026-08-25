@@ -18,6 +18,7 @@ import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import java.lang.reflect.Method;
@@ -36,6 +37,7 @@ public class EmailclawRunnerTest {
     @Mock private AgentService agentService;
     @Mock private ProviderService providerService;
     @Mock private ConfigManager configManager;
+    @Mock private ProjectService projectService;
 
     private EmailclawRunner runner;
 
@@ -43,7 +45,12 @@ public class EmailclawRunnerTest {
     void setUp() {
         runner =
                 new EmailclawRunner(
-                        channelService, chatService, agentService, providerService, configManager);
+                        channelService,
+                        chatService,
+                        agentService,
+                        providerService,
+                        configManager,
+                        projectService);
     }
 
     private Object invokePrivateMethod(String methodName, Class<?>[] argTypes, Object[] args)

@@ -32,6 +32,9 @@ public class AgentConfiguration {
     /** Shell command timeout in seconds. */
     private int shellCommandTimeout = 60;
 
+    /** Total wall-clock timeout in seconds for one full task execution (multi-turn + tools). */
+    private int taskExecutionTimeoutSeconds = 1800;
+
     /** Auto-continue only on plain text. */
     private boolean autoContinueOnTextOnly = false;
 
@@ -147,6 +150,21 @@ public class AgentConfiguration {
     /** Set shell command timeout in seconds. */
     public void setShellCommandTimeout(int shellCommandTimeout) {
         this.shellCommandTimeout = shellCommandTimeout;
+    }
+
+    /** Get total wall-clock timeout in seconds for one full task execution. */
+    public int getTaskExecutionTimeoutSeconds() {
+        return taskExecutionTimeoutSeconds;
+    }
+
+    /** Set total wall-clock timeout in seconds for one full task execution. */
+    public void setTaskExecutionTimeoutSeconds(int taskExecutionTimeoutSeconds) {
+        this.taskExecutionTimeoutSeconds = taskExecutionTimeoutSeconds;
+    }
+
+    /** Returns the effective task execution timeout with a 60-second lower bound applied. */
+    public int effectiveTaskExecutionTimeoutSeconds() {
+        return Math.max(60, taskExecutionTimeoutSeconds);
     }
 
     /** Check auto-continue only on plain text. */

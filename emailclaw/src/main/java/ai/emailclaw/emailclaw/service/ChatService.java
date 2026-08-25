@@ -136,8 +136,6 @@ public class ChatService {
 
     private static final Logger LOGGER = Logger.getLogger(ChatService.class.getName());
 
-    private static final long CHAT_STREAM_TIMEOUT_SECONDS = 600L;
-
     private static final long CHAT_ATTACHMENT_MAX_BYTES = 10L * 1024L * 1024L;
 
     private static final long TEXT_ATTACHMENT_INLINE_MAX_BYTES = 64L * 1024L;
@@ -330,7 +328,10 @@ public class ChatService {
                 result =
                         reactAgent
                                 .call(List.of(resumeMsg))
-                                .block(Duration.ofSeconds(CHAT_STREAM_TIMEOUT_SECONDS));
+                                .block(
+                                        Duration.ofSeconds(
+                                                config.effectiveTaskExecutionTimeoutSeconds()));
+
                 // Persist resume result to history
                 if (result != null) {
                     appendHistoryMsg(agent.getId(), sessionId, resumeMsg);

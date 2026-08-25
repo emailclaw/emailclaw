@@ -124,7 +124,8 @@ public class EmailclawPlugin extends AbstractChannelPlugin {
                             context.chatService(),
                             context.agentService(),
                             context.providerService(),
-                            context.configManager());
+                            context.configManager(),
+                            context.projectService());
             currentStatus = PluginStatus.running("Polling emails");
             LOGGER.info("EmailclawPlugin has started");
         } catch (Exception e) {

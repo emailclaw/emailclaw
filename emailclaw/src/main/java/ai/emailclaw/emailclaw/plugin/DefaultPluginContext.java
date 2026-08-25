@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 
@@ -24,18 +25,21 @@ public class DefaultPluginContext implements PluginContext {
     private final AgentService agentService;
     private final ProviderService providerService;
     private final ConfigManager configManager;
+    private final ProjectService projectService;
 
     public DefaultPluginContext(
             ChannelService channelService,
             ChatService chatService,
             AgentService agentService,
             ProviderService providerService,
-            ConfigManager configManager) {
+            ConfigManager configManager,
+            ProjectService projectService) {
         this.channelService = channelService;
         this.chatService = chatService;
         this.agentService = agentService;
         this.providerService = providerService;
         this.configManager = configManager;
+        this.projectService = projectService;
     }
 
     @Override
@@ -69,5 +73,10 @@ public class DefaultPluginContext implements PluginContext {
     @Override
     public ConfigManager configManager() {
         return configManager;
+    }
+
+    @Override
+    public ProjectService projectService() {
+        return projectService;
     }
 }

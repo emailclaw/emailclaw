@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.channel.ChannelIds;
 import ai.emailclaw.emailclaw.model.AcpAgentInfo;
 import ai.emailclaw.emailclaw.model.AgentConfiguration;
 import ai.emailclaw.emailclaw.model.AgentInfo;
+import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.ModelInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.SecuritySettings;
@@ -22,6 +23,7 @@ import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -59,21 +61,34 @@ public class AgentRuntimeDispatcher {
                 + " actions, use the tools IMMEDIATELY without waiting for user confirmation.";
 
     /**
-     * Instruction prompt for sending attachments via email channel (Emailclaw).
+     * Instruction prompt for sending attachments via non-console channels (Emailclaw).
      */
     private static final String NON_CONSOLE_CHANNEL_ATTACHMENT_INSTRUCTION =
-            " If the user requests a file, report, or any document to be sent as an attachment, or"
-                + " if you decide to send files to the user, you can include the file path inside "
-                    + MessageMarkupTags.ATTACHMENT_PATTERN
-                    + " tags in exactly ONE single line, MUST NOT contain any newline characters"
-                    + " (\\n"
-                    + ", \\r"
-                    + ", or \\r"
-                    + "\\n"
-                    + "), in your response. The system will automatically attach the corresponding"
-                    + " files to the email sent to the user—you DO NOT NEED TO worry about how it's"
-                    + " actually delivered. You can specify absolute paths or paths relative to"
-                    + " your workspace.";
+            "\n\n# File Delivery Rules (MANDATORY on this channel)\n"
+                    + "This conversation runs on a messaging channel (email). When the user asks"
+                    + " you to send, attach, or deliver any file, report, or document, the ONLY"
+                    + " supported delivery method is to write the file path inside "
+                    + MessageMarkupTags.ATTACHMENT_VALUE
+                    + " tags on ONE single line (no newline characters inside the tag pair,"
+                    + " not wrapped in code fences) in your final response. The system"
+                    + " automatically attaches those files to the message sent to the user."
+                    + " Paths may be absolute or relative to your workspace.\n"
+                    + "STRICTLY FORBIDDEN: do NOT attempt to deliver files or send messages"
+                    + " yourself. Never use email CLI tools (such as himalaya, mutt, sendmail),"
+                    + " never write shell/Python scripts that call SMTP or mail APIs, and never"
+                    + " ask the user for mailbox credentials. Such attempts cannot reach the user"
+                    + " and only waste the task budget.";
+
+    /**
+     * Short reminder appended after the skills section so it stays near the end of the system
+     * prompt with higher attention weight.
+     */
+    private static final String NON_CONSOLE_CHANNEL_ATTACHMENT_REMINDER =
+            "\n\nREMINDER: You are on a messaging channel. Deliver files to the user ONLY by"
+                    + " writing "
+                    + MessageMarkupTags.ATTACHMENT_VALUE
+                    + " on a single line in your reply. NEVER send emails or messages yourself"
+                    + " (no himalaya, no SMTP/mail scripts).";
 
     private final AppContext repository;
 
@@ -171,10 +186,12 @@ public class AgentRuntimeDispatcher {
         String sysPrompt = DEFAULT_SYSTEM_PROMPT;
         // notConsole whether it is a non-console channel session
         boolean notConsole = channel != null && !ChannelIds.CONSOLE.equals(channel);
+        LOGGER.info("notConsole===" + notConsole);
+        Toolkit toolkit = toolService.buildToolkit(toolRuntimeContext);
         if (notConsole) {
             sysPrompt += NON_CONSOLE_CHANNEL_ATTACHMENT_INSTRUCTION;
+            toolkit.removeTool(BuiltInToolNames.SEND_FILE_TO_USER);
         }
-        Toolkit toolkit = toolService.buildToolkit(toolRuntimeContext);
         // Must use absolute path, for HarnessAgent's WorkspacePathNormalizer to correctly strip the
         // workspace prefix.
         Path agentWorkspace = repository.workspaceFor(agent.getId()).toAbsolutePath().normalize();
@@ -201,7 +218,12 @@ public class AgentRuntimeDispatcher {
             }
             sysPrompt = sysPrompt + skillsPrompt.toString();
         }
-        ai.emailclaw.emailclaw.model.ProjectInfo project = toolRuntimeContext.currentProject();
+        if (notConsole) {
+            sysPrompt += NON_CONSOLE_CHANNEL_ATTACHMENT_REMINDER;
+        }
+        ai.emailclaw.emailclaw.model.ProjectInfo project =
+                resolveSessionProject(sessionId, toolRuntimeContext);
+        toolRuntimeContext.activeProject = project;
         Path projectRoot = agentWorkspace;
         boolean projectWritable = true;
 
@@ -323,6 +345,29 @@ public class AgentRuntimeDispatcher {
                 .filter(item -> modelId.equals(item.getId()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Resolve the project bound to the given task session via session.projectId; fall back to
+     * the global current project when the session has no binding or the project no longer
+     * exists.
+     */
+    private ai.emailclaw.emailclaw.model.ProjectInfo resolveSessionProject(
+            String sessionId, ToolRuntimeContext context) {
+        ai.emailclaw.emailclaw.model.ProjectInfo fallback = context.currentProject();
+        if (sessionId == null || sessionId.isBlank()) {
+            return fallback;
+        }
+        String boundProjectId =
+                repository.loadSessions().stream()
+                        .filter(s -> sessionId.equals(s.getId()))
+                        .findFirst()
+                        .map(ChatSessionInfo::getProjectId)
+                        .orElse(null);
+        if (boundProjectId == null || boundProjectId.isBlank()) {
+            return fallback;
+        }
+        return context.projectService.findById(boundProjectId).orElse(fallback);
     }
 
     private boolean skillAppliesToChannel(SkillInfo skill, String channel) {

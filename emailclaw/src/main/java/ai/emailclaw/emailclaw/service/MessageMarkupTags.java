@@ -23,6 +23,9 @@ public final class MessageMarkupTags {
     /** Tag pair for attachment return channel (regex capture group is used to extract the path). */
     public static final String ATTACHMENT_PATTERN = ATTACHMENT_OPEN + "(.*?)" + ATTACHMENT_CLOSE;
 
+    public static final String ATTACHMENT_VALUE =
+            ATTACHMENT_OPEN + "/path/to/your/file" + ATTACHMENT_CLOSE;
+
     public static final String TOOL_CALL_OPEN = "<tool_call>";
     public static final String TOOL_CALL_CLOSE = "</tool_call>";
     public static final String TOOL_RESULT_OPEN = "<tool_result>";

@@ -216,16 +216,22 @@ public final class CronJobModel {
      * @param shareSession        Whether to share session context with target user
      */
     public record JobRuntimeSpec(
-            int maxConcurrency, int timeoutSeconds, int misfireGraceSeconds, boolean shareSession) {
+            Integer maxConcurrency,
+            Integer timeoutSeconds,
+            Integer misfireGraceSeconds,
+            boolean shareSession) {
 
         public static JobRuntimeSpec defaults() {
             return new JobRuntimeSpec(1, 120, 60, true);
         }
 
+        // Wrapper types (not primitives): JSON written by agents or older versions may omit
+        // these keys, and Jackson 3 rejects absent values for primitives by default
+        // (FAIL_ON_NULL_FOR_PRIMITIVES), which broke hot reload of cron-jobs.json.
         public JobRuntimeSpec {
-            if (maxConcurrency < 1) maxConcurrency = 1;
-            if (timeoutSeconds < 1) timeoutSeconds = 120;
-            if (misfireGraceSeconds < 0) misfireGraceSeconds = 60;
+            if (maxConcurrency == null || maxConcurrency < 1) maxConcurrency = 1;
+            if (timeoutSeconds == null || timeoutSeconds < 1) timeoutSeconds = 120;
+            if (misfireGraceSeconds == null || misfireGraceSeconds < 0) misfireGraceSeconds = 60;
         }
     }
 
