@@ -55,6 +55,7 @@ LimitNOFILE=65535
 [Install]
 WantedBy=default.target
 EOF
+
             chown -R "$INSTALL_USER":"$INSTALL_USER" "$USER_HOME/.config/systemd" 2>/dev/null || true
 
             loginctl enable-linger "$INSTALL_USER" 2>/dev/null || true
@@ -63,8 +64,7 @@ EOF
                 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
                 export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
             fi
-            EOF
-            
+EOF
 
             # loginctl enable-linger starts the user's systemd manager
             # asynchronously, so the user bus socket may not exist yet when
