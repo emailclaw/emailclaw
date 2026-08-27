@@ -20,6 +20,7 @@ public final class AppHomeConstants {
     public static final String SYS_PROP_HOME = "emailclaw.home";
     public static final String ENV_HOME = "EMAILCLAW_HOME";
     public static final String DEFAULT_HOME_DIR_NAME = "emailclaw";
+    public static final Path HOME_RESOLVED = resolveHome();
 
     public static final String BACKUPS_DIR = ".backups";
     public static final String CHAT_HISTORY_DIR = ".chat-history";
@@ -31,8 +32,20 @@ public final class AppHomeConstants {
     public static final String SKILL_POOL_DIR = "skill-pool";
     public static final String AGENT_WORKSPACE_DIR = "agent-workspace";
     public static final String PROJECTS_DIR = "projects";
-    public static final String BROWSER_DATA_DIR = ".browser-data";
-    public static final Path BROWSER_DATA_PATH = AppPaths.resolveHome().resolve(BROWSER_DATA_DIR);
+    public static final Path BROWSER_DATA_PATH =
+            AppHomeConstants.HOME_RESOLVED.resolve(".browser-data");
 
     private AppHomeConstants() {}
+
+    private static Path resolveHome() {
+        String sysProp = System.getProperty(SYS_PROP_HOME);
+        if (sysProp != null && !sysProp.isBlank()) {
+            return Path.of(sysProp);
+        }
+        String envVar = System.getenv(ENV_HOME);
+        if (envVar != null && !envVar.isBlank()) {
+            return Path.of(envVar);
+        }
+        return Path.of(USER_HOME_VALUE, DEFAULT_HOME_DIR_NAME);
+    }
 }

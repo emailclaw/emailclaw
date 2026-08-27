@@ -26,6 +26,18 @@
 4. **确认执行：** 收到带有 TaskId 的回信后，直接回复该邮件以启动任务，你将收到执行结果。
 5. **设置定时：** 再次回复该邮件要求转为定时任务（例如："Please convert this task into a scheduled task, with the runtime hours set to 7, 12, 17 and 23"）。Emailclaw 将自动为你按时运行！
 
+## 严格的隔离机制：Email In, Work Out
+
+<p align="center">
+  <img src="./docs/imgs/demo-competitive-summary.gif" alt="Project Isolation Demo" width="100%"/>
+</p>
+
+当邮件通道调用时，显式传入刚刚创建的 `projectId`，强制让 Agent 沙盒与各类文件读写 Tool 将工作目录绑定到这个专属的 `projects/<projectId>` 目录上
+1. **提交任务：** 用户发新标题的邮件时加了三个 md 文件作为邮件附件，要求 Agent 分析后生成 md 文件作为附件回复。
+2. **项目初始化：** Emailclaw 按照 "New subject, new project" 原则创建新项目，用户回复确认。
+3. **Agent 执行：** Agent 分析用户的资料后生成用户要求的 md 文件，并作为邮件附件回复给用户。
+4. **物理隔离：** 查看文件系统，在物理上看，用户的三个文件和 Agent 生成的一个文件都保存在 project 专属的目录里，和其他项目在物理上完全隔离。
+
 ## 为什么是 Emailclaw？
 
 Emailclaw 把 AI Agent 放进每个人都熟悉的邮箱。它不是把电子邮件当成又一个聊天渠道，而是把邮件主题视为一项工作的明确边界：

@@ -57,6 +57,7 @@ import ai.emailclaw.emailclaw.service.plan.PlanStore;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import io.agentscope.core.message.Msg;
@@ -159,7 +160,7 @@ public final class ApplicationBootstrap {
      */
     public static BootstrapResult initialize() {
         // 1. Parse application main directory
-        Path appHome = AppPaths.resolveHome();
+        Path appHome = AppHomeConstants.HOME_RESOLVED;
         LOGGER.log(Level.INFO, "Detected application working directory: {0}", appHome);
         // 2. Initialize persistence layer
         AppPaths paths = new AppPaths(appHome);

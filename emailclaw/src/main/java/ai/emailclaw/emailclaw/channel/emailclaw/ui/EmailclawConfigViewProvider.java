@@ -55,8 +55,7 @@ public class EmailclawConfigViewProvider implements CustomConfigViewProvider {
     private static final Logger LOG = Logger.getLogger(EmailclawConfigViewProvider.class.getName());
     private static final String EMAILCLAW_CHANNEL_AGREEMENT =
 """
-Emailclaw Channel Service Agreement
-
+By using the Service, you acknowledge and agree to be bound by the following Emailclaw Channel Service Agreement:
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
@@ -312,9 +311,18 @@ Emailclaw Channel Service Agreement
             sysAllocatedAccountSection =
                     section("Mailbox Account", sysAllocatedEmailBox, sysAllocatedPasswordBox);
 
+            Label agreementLabel = new Label(EMAILCLAW_CHANNEL_AGREEMENT);
+            agreementLabel.setWrapText(true);
+            agreementLabel.setMaxWidth(Double.MAX_VALUE);
+            agreementLabel.setStyle(
+                    "-fx-border-color: #e5e7eb; -fx-border-radius: 8; -fx-padding: 10 12 10 12;");
+            agreementLabel.visibleProperty().bind(sysAgreementCheckBox.selectedProperty().not());
+            agreementLabel.managedProperty().bind(sysAgreementCheckBox.selectedProperty().not());
+
             root.getChildren()
                     .addAll(
                             agreementBox,
+                            agreementLabel,
                             section(
                                     "Sign-up for system provided mailbox",
                                     field("Registration Email", sysRegistrationEmailField),

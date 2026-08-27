@@ -897,7 +897,7 @@ public class ConfigManager {
                     defaultProject.setId(ProjectService.PROJECT_ID_DEFAULT);
                     defaultProject.setName("Default");
                     defaultProject.setBaseDirectory(
-                            AppPaths.resolveHome()
+                            AppHomeConstants.HOME_RESOLVED
                                             .resolve(AppHomeConstants.PROJECTS_DIR)
                                             .toAbsolutePath()
                                     + "/"

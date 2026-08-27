@@ -14,7 +14,6 @@ import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
-import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import ai.emailclaw.emailclaw.util.UuidUtils;
@@ -215,7 +214,9 @@ public class ProjectsView implements ViewPane {
             initialBaseDir = existingProject.getBaseDirectory();
         } else {
             initialBaseDir =
-                    AppPaths.resolveHome().resolve(AppHomeConstants.PROJECTS_DIR).toAbsolutePath()
+                    AppHomeConstants.HOME_RESOLVED
+                                    .resolve(AppHomeConstants.PROJECTS_DIR)
+                                    .toAbsolutePath()
                             + "/"
                             + FileNameUtils.sanitizePathName(nameInput.getText(), "Project")
                             + " "
@@ -260,7 +261,7 @@ public class ProjectsView implements ViewPane {
                                 return;
                             }
                             String expected =
-                                    AppPaths.resolveHome()
+                                    AppHomeConstants.HOME_RESOLVED
                                                     .resolve(AppHomeConstants.PROJECTS_DIR)
                                                     .toAbsolutePath()
                                             + "/"
@@ -278,7 +279,7 @@ public class ProjectsView implements ViewPane {
                         (obs, oldV, newV) -> {
                             if (!isCustomBaseDir[0]) {
                                 baseDirInput.setText(
-                                        AppPaths.resolveHome()
+                                        AppHomeConstants.HOME_RESOLVED
                                                         .resolve(AppHomeConstants.PROJECTS_DIR)
                                                         .toAbsolutePath()
                                                 + "/"

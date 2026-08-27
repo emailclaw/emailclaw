@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.util;
 
-import ai.emailclaw.emailclaw.storage.AppPaths;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
@@ -71,12 +71,7 @@ public class PlaywrightManager {
         }
         if (!browserContextMap.containsKey(agentId)) {
             String executablePath = ChromeBrowserSupport.LOCAL_CHROME_EDGE_EXECUTABLE;
-            Path userDataDir =
-                    AppPaths.resolveHome()
-                            .resolve(
-                                    ai.emailclaw.emailclaw.storage.AppHomeConstants
-                                            .BROWSER_DATA_DIR)
-                            .resolve(agentId);
+            Path userDataDir = AppHomeConstants.BROWSER_DATA_PATH.resolve(agentId);
 
             boolean headless =
                     System.getenv("EMAILCLAW_BROWSER_HEADLESS") != null

@@ -18,18 +18,6 @@ import java.nio.file.Path;
  * <p>Centrally manages all configuration, data, and workspace paths derived from the root directory to avoid scattered hardcoding.
  */
 public final class AppPaths {
-    public static Path resolveHome() {
-        String sysProp = System.getProperty(AppHomeConstants.SYS_PROP_HOME);
-        if (sysProp != null && !sysProp.isBlank()) {
-            return Path.of(sysProp);
-        }
-        String envVar = System.getenv(AppHomeConstants.ENV_HOME);
-        if (envVar != null && !envVar.isBlank()) {
-            return Path.of(envVar);
-        }
-        return Path.of(AppHomeConstants.USER_HOME_VALUE, AppHomeConstants.DEFAULT_HOME_DIR_NAME);
-    }
-
     public final Path root;
     public final Path configDir;
     public final Path secretDir;

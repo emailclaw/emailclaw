@@ -13,7 +13,7 @@ package ai.emailclaw.emailclaw.ui;
 import ai.emailclaw.emailclaw.model.AgentConfiguration;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ChatService;
-import ai.emailclaw.emailclaw.storage.AppPaths;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import java.io.File;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -242,7 +242,7 @@ class CodingModePane {
         newFileBtn.setOnAction(e -> createFile());
         filesHeader.getChildren().addAll(filesLabel, fSpacer, refreshBtn, newFileBtn);
         TreeItem<Path> rootItem =
-                new PathTreeItem(dirRoot != null ? dirRoot : AppPaths.resolveHome());
+                new PathTreeItem(dirRoot != null ? dirRoot : AppHomeConstants.HOME_RESOLVED);
         rootItem.setExpanded(true);
         if (dirRoot != null) {
             populateTree(rootItem, dirRoot);
@@ -517,7 +517,7 @@ class CodingModePane {
         if (initial != null && Files.exists(initial)) {
             chooser.setInitialDirectory(initial.toFile());
         } else {
-            chooser.setInitialDirectory(AppPaths.resolveHome().toFile());
+            chooser.setInitialDirectory(AppHomeConstants.HOME_RESOLVED.toFile());
         }
         Window window = pane.getScene() != null ? pane.getScene().getWindow() : null;
         File selected = chooser.showDialog(window);
@@ -597,7 +597,7 @@ class CodingModePane {
             return;
         }
         TreeItem<Path> rootItem =
-                new PathTreeItem(dirRoot != null ? dirRoot : AppPaths.resolveHome());
+                new PathTreeItem(dirRoot != null ? dirRoot : AppHomeConstants.HOME_RESOLVED);
         rootItem.setExpanded(true);
         if (dirRoot != null) {
             populateTree(rootItem, dirRoot);

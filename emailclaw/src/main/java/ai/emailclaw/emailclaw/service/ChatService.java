@@ -20,6 +20,7 @@ import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.event.AgentResultEvent;
@@ -187,8 +188,7 @@ public class ChatService {
     private static final int TOOL_RESULT_OFFLOAD_THRESHOLD = 10000;
 
     /** Directory for temporarily caching offloaded files. */
-    private static final Path OFFLOAD_DIR =
-            Paths.get(System.getProperty("user.home"), ".emailclaw", "offloads");
+    private static final Path OFFLOAD_DIR = AppHomeConstants.HOME_RESOLVED.resolve(".offloads");
 
     private final AppContext repository;
 

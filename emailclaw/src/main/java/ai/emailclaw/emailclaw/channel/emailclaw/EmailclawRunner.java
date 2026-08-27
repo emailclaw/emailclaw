@@ -28,7 +28,6 @@ import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
-import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.event.ConfirmResult;
@@ -826,7 +825,9 @@ public class EmailclawRunner {
             project.setName(session.getName());
             String safeName = FileNameUtils.sanitizePathName(project.getName(), "Task");
             project.setBaseDirectory(
-                    AppPaths.resolveHome().resolve(AppHomeConstants.PROJECTS_DIR).toAbsolutePath()
+                    AppHomeConstants.HOME_RESOLVED
+                                    .resolve(AppHomeConstants.PROJECTS_DIR)
+                                    .toAbsolutePath()
                             + "/"
                             + safeName
                             + "-"
@@ -1286,7 +1287,7 @@ public class EmailclawRunner {
                                 baseDir =
                                         (agent.getWorkspacePath() == null
                                                         || agent.getWorkspacePath().isBlank())
-                                                ? AppPaths.resolveHome()
+                                                ? AppHomeConstants.HOME_RESOLVED
                                                         .resolve(
                                                                 AppHomeConstants
                                                                         .AGENT_WORKSPACE_DIR)

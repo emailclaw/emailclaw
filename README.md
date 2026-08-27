@@ -27,6 +27,24 @@ Create tasks and scheduled automation in 5 simple steps:
 4. **Confirm:** Reply to the confirmation email with the TaskId to start the work. You will receive the task results.
 5. **Schedule:** Reply to the thread to convert it (e.g., "Please convert this task into a scheduled task, with the runtime hours set to 7, 12, 17 and 23"). Emailclaw will automatically run it for
 
+
+## Strict Isolation: Email In, Work Out                                                                                                        
+                                                                                                                                               
+<p align="center">                                                                                                                             
+  <img src="./docs/imgs/demo-competitive-summary.gif" alt="Project Isolation Demo" width="100%"/>                                              
+</p>                                                                                                                                           
+                                                                                                                                               
+When an email is received, a `projectId` is explicitly passed to the Agent, forcing its sandbox and file tools to bind to a dedicated
+     `projects/<projectId>` directory.
+                                                                                                                                               
+1. **Task Submission:** User sends an email with a new subject and 3 markdown attachments, requesting an analysis.                             
+2. **Initialization:** Emailclaw creates a new project based on the "New subject, new project" rule. User confirms.                            
+3. **Agent Execution:** The Agent analyzes the materials, generates the result, and replies with the new markdown file attached.               
+4. **Physical Isolation:** On the file system, all 3 user files and the 1 generated file are securely stored in the project's exclusive directory,
+     completely isolated from other projects.
+
+
+
 ## Why Emailclaw?
 
 Emailclaw puts AI Agents into an inbox everyone is familiar with. It doesn't treat email as just another chat channel, but rather treats the email subject as a clear boundary for a specific task:
