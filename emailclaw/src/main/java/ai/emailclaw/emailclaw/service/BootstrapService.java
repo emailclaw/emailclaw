@@ -110,7 +110,6 @@ public class BootstrapService {
                 Files.createDirectories(workspace);
                 Files.createDirectories(workspace.resolve(WorkspacePaths.MEMORY_DIR));
                 Files.createDirectories(workspace.resolve(WorkspacePaths.SKILLS_DIR));
-                Files.createDirectories(workspace.resolve(WorkspacePaths.DOWNLOADS_DIR));
             } catch (IOException e) {
                 throw new RuntimeException("Failed to init workspace for " + agent.getId(), e);
             }

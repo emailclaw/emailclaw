@@ -299,7 +299,7 @@ public class MainWindow extends BorderPane {
         top.setSpacing(18);
         Label brand = new Label("Emailclaw");
         brand.getStyleClass().add("brand");
-        Label version = new Label("v26.8.27");
+        Label version = new Label("v26.8.28");
         version.getStyleClass().add("muted");
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -372,7 +372,7 @@ public class MainWindow extends BorderPane {
 
     private void buildCurrentProjectBox() {
         currentProjectBox = new VBox(8);
-        Label title = new Label("Project: ");
+        Label title = new Label("Current Project: ");
         title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #333333;");
         Button addProjectBtn = new Button("+");
         addProjectBtn.getStyleClass().add("link-btn");
@@ -1000,7 +1000,8 @@ public class MainWindow extends BorderPane {
                 Label nameLabel = new Label(item.getName());
                 HBox spacer = new HBox();
                 HBox.setHgrow(spacer, Priority.ALWAYS);
-                if (!ProjectService.PROJECT_ID_DEFAULT.equals(item.getId()) && !item.isDefault()) {
+                if (!ProjectService.PROJECT_ID_DEFAULT.equals(item.getId())
+                        && !item.getId().equals(currentProject.getId())) {
                     Button deleteBtn = new Button("🗑");
                     deleteBtn.setStyle(
                             "-fx-text-fill: #ef4444; -fx-background-color: transparent;"

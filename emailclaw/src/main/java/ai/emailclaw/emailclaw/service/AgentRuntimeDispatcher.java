@@ -36,8 +36,6 @@ import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
-import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
-import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import java.nio.file.Files;
@@ -102,13 +100,11 @@ public class AgentRuntimeDispatcher {
 
     private final RateLimitMiddleware rateLimitMiddleware;
 
-    private final AsyncToolMiddleware asyncToolMiddleware;
-
-    private final InboxMiddleware inboxMiddleware;
-
     private final PlanToHintMiddleware planToHintMiddleware;
 
     private final MemoryRecallMiddleware memoryRecallMiddleware;
+
+    private final MessageBusService messageBusService;
 
     private final ChatSessionRepository chatSessionRepository;
 
@@ -119,8 +115,7 @@ public class AgentRuntimeDispatcher {
             ToolRuntimeContext toolRuntimeContext,
             GovernanceService governanceService,
             RateLimitMiddleware rateLimitMiddleware,
-            AsyncToolMiddleware asyncToolMiddleware,
-            InboxMiddleware inboxMiddleware,
+            MessageBusService messageBusService,
             PlanToHintMiddleware planToHintMiddleware,
             MemoryRecallMiddleware memoryRecallMiddleware,
             ChatSessionRepository chatSessionRepository) {
@@ -130,8 +125,7 @@ public class AgentRuntimeDispatcher {
         this.toolRuntimeContext = toolRuntimeContext;
         this.governanceService = governanceService;
         this.rateLimitMiddleware = rateLimitMiddleware;
-        this.asyncToolMiddleware = asyncToolMiddleware;
-        this.inboxMiddleware = inboxMiddleware;
+        this.messageBusService = messageBusService;
         this.planToHintMiddleware = planToHintMiddleware;
         this.memoryRecallMiddleware = memoryRecallMiddleware;
         this.chatSessionRepository = chatSessionRepository;
@@ -184,6 +178,30 @@ public class AgentRuntimeDispatcher {
                             : agent.getName();
         }
         String sysPrompt = DEFAULT_SYSTEM_PROMPT;
+
+        ai.emailclaw.emailclaw.model.ChatSessionInfo currentSession = null;
+        if (this.repository != null && sessionId != null) {
+            currentSession =
+                    this.repository.loadSessions().stream()
+                            .filter(s -> sessionId.equals(s.getId()))
+                            .findFirst()
+                            .orElse(null);
+        }
+        String userId =
+                (currentSession != null && currentSession.getUserId() != null)
+                        ? currentSession.getUserId()
+                        : "";
+        sysPrompt +=
+                String.format(
+                        "\n\n"
+                                + "# Context Information\n"
+                                + "- Current Channel: %s\n"
+                                + "- Current User ID: %s\n"
+                                + "- Current Session ID: %s\n",
+                        channel == null ? "unknown" : channel,
+                        userId,
+                        sessionId == null ? "unknown" : sessionId);
+
         // notConsole whether it is a non-console channel session
         boolean notConsole = channel != null && !ChannelIds.CONSOLE.equals(channel);
         LOGGER.info("notConsole===" + notConsole);
@@ -277,7 +295,25 @@ public class AgentRuntimeDispatcher {
         ai.emailclaw.emailclaw.service.MergingAgentStateStore stateStore =
                 new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
                         new JsonFileAgentStateStore(
-                                chatSessionRepository.sessionPath(agent.getId())));
+                                chatSessionRepository.sessionPath(
+                                        project != null ? project.getId() : "default",
+                                        agent.getId())));
+        io.agentscope.harness.agent.middleware.AsyncToolMiddleware asyncToolMiddleware =
+                new io.agentscope.harness.agent.middleware.AsyncToolMiddleware(
+                        messageBusService.getMessageBus(
+                                project != null ? project.getId() : "default"),
+                        java.time.Duration.ofSeconds(30),
+                        messageBusService.getAsyncToolRegistry(
+                                project != null ? project.getId() : "default"));
+        io.agentscope.harness.agent.middleware.InboxMiddleware inboxMiddleware =
+                new io.agentscope.harness.agent.middleware.InboxMiddleware(
+                        messageBusService.getMessageBus(
+                                project != null ? project.getId() : "default"),
+                        100,
+                        messageBusService.getAsyncToolRegistry(
+                                project != null ? project.getId() : "default"),
+                        java.time.Duration.ofMinutes(10));
+
         HarnessAgent.Builder builder =
                 HarnessAgent.builder()
                         .name(configuredName)
@@ -367,7 +403,15 @@ public class AgentRuntimeDispatcher {
         if (boundProjectId == null || boundProjectId.isBlank()) {
             return fallback;
         }
-        return context.projectService.findById(boundProjectId).orElse(fallback);
+        ai.emailclaw.emailclaw.model.ProjectInfo found =
+                context.projectService.findById(boundProjectId);
+        if (found == ai.emailclaw.emailclaw.service.ProjectService.PROJECT_DEFAULT
+                && fallback != null
+                && !ai.emailclaw.emailclaw.service.ProjectService.PROJECT_ID_DEFAULT.equals(
+                        boundProjectId)) {
+            return fallback;
+        }
+        return found;
     }
 
     private boolean skillAppliesToChannel(SkillInfo skill, String channel) {

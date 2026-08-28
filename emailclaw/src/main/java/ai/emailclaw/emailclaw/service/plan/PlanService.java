@@ -63,8 +63,8 @@ public class PlanService {
      * @param goal      User goal
      * @return The created plan
      */
-    public Plan createPlan(String agentId, String sessionId, String goal) {
-        Plan plan = new Plan(agentId, sessionId, goal);
+    public Plan createPlan(String projectId, String agentId, String sessionId, String goal) {
+        Plan plan = new Plan(projectId, agentId, sessionId, goal);
         plan.setStatus(PlanStatus.PENDING);
         plan.setUpdatedAt(LocalDateTime.now().toString());
         planStore.save(plan);

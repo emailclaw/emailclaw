@@ -13,10 +13,13 @@ package ai.emailclaw.emailclaw.service;
 import ai.emailclaw.emailclaw.model.GlobalConfig;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -28,6 +31,7 @@ import java.util.logging.Logger;
 public class ProjectService {
     private static final Logger LOGGER = Logger.getLogger(ProjectService.class.getName());
     public static final String PROJECT_ID_DEFAULT = "default";
+    public static final ProjectInfo PROJECT_DEFAULT = initDefaultProject();
 
     private final AppContext repository;
     private final ConfigManager configManager;
@@ -67,11 +71,14 @@ public class ProjectService {
      * @param id Project ID
      * @return Matched project Optional
      */
-    public Optional<ProjectInfo> findById(String id) {
+    public ProjectInfo findById(String id) {
         if (id == null || id.isBlank()) {
-            return Optional.empty();
+            return PROJECT_DEFAULT;
         }
-        return list().stream().filter(p -> id.equals(p.getId())).findFirst();
+        return list().stream()
+                .filter(p -> id.equals(p.getId()))
+                .findFirst()
+                .orElse(PROJECT_DEFAULT);
     }
 
     /**
@@ -85,32 +92,23 @@ public class ProjectService {
         GlobalConfig globalConfig = configManager.getGlobalConfig();
         String currentId = globalConfig.getCurrentProjectId();
         if (currentId != null && !currentId.isBlank()) {
-            Optional<ProjectInfo> found = findById(currentId);
-            if (found.isPresent()) {
-                return found.get();
+            ProjectInfo found = findById(currentId);
+            if (found != PROJECT_DEFAULT || PROJECT_ID_DEFAULT.equals(currentId)) {
+                return found;
             }
         }
         List<ProjectInfo> projects = list();
         ProjectInfo selected =
                 projects.stream()
-                        .filter(ProjectInfo::isDefault)
+                        .filter(p -> PROJECT_ID_DEFAULT.equals(p.getId()))
                         .findFirst()
                         .orElseGet(
-                                () ->
-                                        projects.stream()
-                                                .filter(p -> PROJECT_ID_DEFAULT.equals(p.getId()))
-                                                .findFirst()
-                                                .orElseGet(
-                                                        () -> {
-                                                            if (!projects.isEmpty()) {
-                                                                return projects.get(0);
-                                                            }
-                                                            ProjectInfo def = new ProjectInfo();
-                                                            def.setId(PROJECT_ID_DEFAULT);
-                                                            def.setName("Default");
-                                                            def.setDefault(true);
-                                                            return def;
-                                                        }));
+                                () -> {
+                                    if (!projects.isEmpty()) {
+                                        return projects.get(0);
+                                    }
+                                    return PROJECT_DEFAULT;
+                                });
         if (!selected.getId().equals(currentId)) {
             setCurrentProject(selected.getId());
         }
@@ -162,7 +160,7 @@ public class ProjectService {
      * @param project Project object to delete
      */
     public void remove(ProjectInfo project) {
-        if (project == null || project.isDefault() || PROJECT_ID_DEFAULT.equals(project.getId())) {
+        if (project == null || PROJECT_ID_DEFAULT.equals(project.getId())) {
             LOGGER.warning("Default project is not allowed to be deleted");
             return;
         }
@@ -176,5 +174,33 @@ public class ProjectService {
             setCurrentProject(PROJECT_ID_DEFAULT);
         }
         notifyListeners();
+    }
+
+    private static ProjectInfo initDefaultProject() {
+
+        ProjectInfo defaultProject = new ProjectInfo();
+        defaultProject.setId(ProjectService.PROJECT_ID_DEFAULT);
+        defaultProject.setName("Default");
+        defaultProject.setBaseDirectory(
+                AppHomeConstants.HOME_RESOLVED
+                                .resolve(AppHomeConstants.PROJECTS_DIR)
+                                .toAbsolutePath()
+                        + "/"
+                        + defaultProject.getId());
+        try {
+            Files.createDirectories(Path.of(defaultProject.getBaseDirectory()));
+            LOGGER.log(
+                    Level.INFO,
+                    "Automatically created default project base directory: {0}",
+                    defaultProject.getBaseDirectory());
+        } catch (IOException e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to create default project base directory: "
+                            + defaultProject.getBaseDirectory(),
+                    e);
+        }
+
+        return defaultProject;
     }
 }

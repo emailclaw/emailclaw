@@ -188,7 +188,8 @@ public class ChatService {
     private static final int TOOL_RESULT_OFFLOAD_THRESHOLD = 10000;
 
     /** Directory for temporarily caching offloaded files. */
-    private static final Path OFFLOAD_DIR = AppHomeConstants.HOME_RESOLVED.resolve(".offloads");
+    private static final Path OFFLOAD_DIR =
+            AppHomeConstants.HOME_RESOLVED.resolve(AppHomeConstants.OFFLOADS_DIR);
 
     private final AppContext repository;
 
@@ -366,9 +367,11 @@ public class ChatService {
      * @return List of history messages
      */
     public List<Msg> loadHistory(String agentId, String sessionId) {
+        ChatSessionInfo sessionInfo = findSession(sessionId);
+        String projectId = sessionInfo != null ? sessionInfo.projectId() : "default";
         AgentStateStore session =
                 new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                        new JsonFileAgentStateStore(sessionPath(agentId)));
+                        new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
         io.agentscope.core.state.AgentState state = loadAgentState(session, sessionId);
         List<Msg> msgs = state != null ? state.getContext() : null;
         return msgs != null ? new ArrayList<>(msgs) : new ArrayList<>();
@@ -423,9 +426,11 @@ public class ChatService {
             return;
         }
         try {
+            ChatSessionInfo sessionInfo = findSession(sessionId);
+            String projectId = sessionInfo != null ? sessionInfo.projectId() : "default";
             AgentStateStore session =
                     new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                            new JsonFileAgentStateStore(sessionPath(agentId)));
+                            new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
             io.agentscope.core.state.AgentState state =
                     Optional.ofNullable(loadAgentState(session, sessionId))
                             .orElseGet(
@@ -645,11 +650,14 @@ public class ChatService {
      * @param agentId Agent ID
      * @return Built PermissionContextState
      */
-    public Path sessionPath(String agentId) {
-        return repository
-                .paths()
-                .workspaceRoot
-                .resolve(agentId)
+    public Path sessionPath(String projectId, String agentId) {
+        String pId = (projectId == null || projectId.isBlank()) ? "default" : projectId;
+        String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
+        ai.emailclaw.emailclaw.model.ProjectInfo project =
+                toolRuntimeContext.projectService.findById(pId);
+        return Path.of(project.getBaseDirectory())
+                .resolve(ai.emailclaw.emailclaw.storage.AppHomeConstants.AGENT_WORKSPACE_DIR)
+                .resolve(aId)
                 .resolve(WorkspacePaths.SESSIONS_DIR);
     }
 
@@ -989,14 +997,15 @@ public class ChatService {
         if (attachmentPaths == null || attachmentPaths.isEmpty()) {
             return List.of();
         }
-        Path workspace = repository.workspaceFor(agent.getId()).toAbsolutePath().normalize();
         Path targetDir =
-                workspace
-                        .resolve(".attachments")
+                sessionPath(
+                                sessionInfo != null ? sessionInfo.projectId() : "default",
+                                agent.getId())
                         .resolve(
                                 sessionInfo == null || sessionInfo.getId() == null
                                         ? WorkspacePaths.FALLBACK_SESSION_ID
                                         : sessionInfo.getId())
+                        .resolve(WorkspacePaths.ATTACHMENTS_DIR)
                         .resolve(String.valueOf(System.currentTimeMillis()));
         List<StagedAttachment> staged = new ArrayList<>();
         Set<String> dedupe = new LinkedHashSet<>();
@@ -1032,6 +1041,15 @@ public class ChatService {
                 String safeName = FileNameUtils.sanitizeEnglishPathName(originalName, "file");
                 Path dest = uniqueFile(targetDir, safeName);
                 Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
+                String pId = sessionInfo != null ? sessionInfo.projectId() : "default";
+                ai.emailclaw.emailclaw.model.ProjectInfo project =
+                        toolRuntimeContext.projectService.findById(pId);
+                Path workspace =
+                        Path.of(project.getBaseDirectory())
+                                .resolve(
+                                        ai.emailclaw.emailclaw.storage.AppHomeConstants
+                                                .AGENT_WORKSPACE_DIR)
+                                .resolve(agent.getId());
                 String relative = workspace.relativize(dest).toString().replace('\\', '/');
                 staged.add(new StagedAttachment(dest, relative, originalName));
             } catch (Exception e) {
@@ -1502,8 +1520,8 @@ public class ChatService {
         }
     }
 
-    public void drainAndReplyAgentChat(String agentId, String responseText) {
-        messagePipeline.drainAndReplyAgentChat(agentId, responseText);
+    public void drainAndReplyAgentChat(String projectId, String agentId, String responseText) {
+        messagePipeline.drainAndReplyAgentChat(projectId, agentId, responseText);
     }
 
     public synchronized void registerPendingAgentChatReply(

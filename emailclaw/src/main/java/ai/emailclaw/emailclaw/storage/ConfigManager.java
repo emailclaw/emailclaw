@@ -891,31 +891,8 @@ public class ConfigManager {
             if (projectsState.value == null || projectsState.value.isEmpty()) {
                 projectsState.value = readList(paths.projectsFile, PROJECTS_REF, projectsState);
                 // Initialize a project with id ProjectService.PROJECT_ID_DEFAULT when the system
-                // starts for the first time
                 if (projectsState.value == null || projectsState.value.isEmpty()) {
-                    ProjectInfo defaultProject = new ProjectInfo();
-                    defaultProject.setId(ProjectService.PROJECT_ID_DEFAULT);
-                    defaultProject.setName("Default");
-                    defaultProject.setBaseDirectory(
-                            AppHomeConstants.HOME_RESOLVED
-                                            .resolve(AppHomeConstants.PROJECTS_DIR)
-                                            .toAbsolutePath()
-                                    + "/"
-                                    + defaultProject.getId());
-                    try {
-                        Files.createDirectories(Path.of(defaultProject.getBaseDirectory()));
-                        LOGGER.log(
-                                Level.INFO,
-                                "Automatically created default project base directory: {0}",
-                                defaultProject.getBaseDirectory());
-                    } catch (IOException e) {
-                        LOGGER.log(
-                                Level.WARNING,
-                                "Failed to create default project base directory: "
-                                        + defaultProject.getBaseDirectory(),
-                                e);
-                    }
-                    defaultProject.setDefault(true);
+                    ProjectInfo defaultProject = ProjectService.PROJECT_DEFAULT;
                     projectsState.value.add(defaultProject);
                     projectsState.lastWrittenContent =
                             writeJson(

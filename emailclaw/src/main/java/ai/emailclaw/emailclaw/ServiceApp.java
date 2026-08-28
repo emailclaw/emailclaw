@@ -55,7 +55,8 @@ public class ServiceApp {
             wakeupDispatcherService =
                     new WakeupDispatcherService(
                             result.messageBusService(),
-                            ApplicationBootstrap.createWakeupTarget(result));
+                            ApplicationBootstrap.createWakeupTarget(result),
+                            result.projectService());
             wakeupDispatcherService.start();
             LOGGER.log(Level.INFO, "Wakeup dispatcher service started successfully");
         }

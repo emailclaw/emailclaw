@@ -63,8 +63,6 @@ import ai.emailclaw.emailclaw.storage.ConfigManager;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
-import io.agentscope.harness.agent.middleware.AsyncToolMiddleware;
-import io.agentscope.harness.agent.middleware.InboxMiddleware;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -138,6 +136,7 @@ public final class ApplicationBootstrap {
             PluginManager pluginManager,
             CronJobService cronJobService,
             MessageBusService messageBusService,
+            ChatSessionRepository chatSessionRepository,
             AppPaths paths) {}
 
     /**
@@ -190,12 +189,10 @@ public final class ApplicationBootstrap {
         AgentService agentService = new AgentService(repository);
         ProjectService projectService = new ProjectService(repository);
         // Message bus and sub-agent registry (prerequisite dependencies for ToolRuntimeContext)
-        MessageBusService messageBusService =
-                new MessageBusService(repository.paths().workspaceRoot);
-        SpawnRegistryService spawnRegistryService =
-                new SpawnRegistryService(repository.paths().workspaceRoot);
-        // Build tool runtime context, allowing tools to access system services and currently
-        // selected agent
+        MessageBusService messageBusService = new MessageBusService(projectService);
+        SpawnRegistryService spawnRegistryService = new SpawnRegistryService(projectService);
+        MemoryService memoryService =
+                new MemoryService(repository.paths().workspaceRoot, projectService);
         ToolRuntimeContext toolRuntimeContext =
                 new ToolRuntimeContext(
                         repository,
@@ -203,40 +200,29 @@ public final class ApplicationBootstrap {
                         providerService,
                         messageBusService,
                         spawnRegistryService,
-                        projectService);
+                        projectService,
+                        memoryService);
         ToolService toolService = new ToolService(repository);
         SkillService skillService = new SkillService(repository);
         GovernanceService governanceService = new GovernanceService(repository);
         RateLimitMiddleware rateLimitMiddleware = new RateLimitMiddleware(Duration.ofMillis(1000));
-        AsyncToolMiddleware asyncToolMiddleware =
-                new AsyncToolMiddleware(
-                        messageBusService.getMessageBus(),
-                        Duration.ofSeconds(30),
-                        messageBusService.getAsyncToolRegistry());
-        InboxMiddleware inboxMiddleware =
-                new InboxMiddleware(
-                        messageBusService.getMessageBus(),
-                        100,
-                        messageBusService.getAsyncToolRegistry(),
-                        Duration.ofMinutes(10));
-        PlanStore planStore = new JsonFilePlanStore(repository.paths().workspaceRoot);
+        PlanStore planStore = new JsonFilePlanStore(projectService);
         PlanHintCache planHintCache = new PlanHintCache();
         PlanBroadcaster planBroadcaster = new PlanBroadcaster(messageBusService);
         PlanService planService = new PlanService(planStore, planBroadcaster, planHintCache);
         PlanToHintMiddleware planToHintMiddleware =
                 new PlanToHintMiddleware(planService, planHintCache);
-        MemoryService memoryService = new MemoryService(repository.paths().workspaceRoot);
-        MemoryRecallMiddleware memoryRecallMiddleware = new MemoryRecallMiddleware(memoryService);
-        MemoAutoSync memoAutoSync = new MemoAutoSync(repository.paths().workspaceRoot);
+        MemoryRecallMiddleware memoryRecallMiddleware =
+                new MemoryRecallMiddleware(memoryService, toolRuntimeContext);
+        MemoAutoSync memoAutoSync = new MemoAutoSync(projectService);
         List<String> allAgentIds = agentService.list().stream().map(a -> a.getId()).toList();
         ProactiveMemoryTrigger proactiveTrigger =
-                new ProactiveMemoryTrigger(memoryService, messageBusService);
+                new ProactiveMemoryTrigger(memoryService, messageBusService, projectService);
         proactiveTrigger.start(allAgentIds);
+        ChatSessionRepository chatSessionRepository = new ChatSessionRepository(projectService);
         ChannelMessageBusIntegration channelMessageBusIntegration =
                 new ChannelMessageBusIntegration(messageBusService);
         SessionTitleGenerator titleGenerator = new SessionTitleGenerator(repository);
-        ChatSessionRepository chatSessionRepository =
-                new ChatSessionRepository(repository.paths().workspaceRoot);
         AgentRuntimeDispatcher agentRuntimeDispatcher =
                 new AgentRuntimeDispatcher(
                         repository,
@@ -245,8 +231,7 @@ public final class ApplicationBootstrap {
                         toolRuntimeContext,
                         governanceService,
                         rateLimitMiddleware,
-                        asyncToolMiddleware,
-                        inboxMiddleware,
+                        messageBusService,
                         planToHintMiddleware,
                         memoryRecallMiddleware,
                         chatSessionRepository);
@@ -322,6 +307,7 @@ public final class ApplicationBootstrap {
                 pluginManager,
                 cronJobService,
                 messageBusService,
+                chatSessionRepository,
                 paths);
     }
 
@@ -338,10 +324,11 @@ public final class ApplicationBootstrap {
         AgentService agentService = result.agentService();
         ProviderService providerService = result.providerService();
         ChatService chatService = result.chatService();
+        ChatSessionRepository chatSessionRepository = result.chatSessionRepository();
         return new WakeupDispatcherService.WakeupTarget() {
 
             @Override
-            public boolean isSessionRunning(String sessionId) {
+            public boolean isSessionRunning(String projectId, String sessionId) {
                 // Check if agent has running tasks
                 AgentInfo currentAgent = agentService.currentDefault();
                 if (currentAgent != null) {
@@ -352,14 +339,14 @@ public final class ApplicationBootstrap {
             }
 
             @Override
-            public Mono<Object> runWakeup(String sessionId, String agentId) {
+            public Mono<Object> runWakeup(String projectId, String sessionId, String agentId) {
                 if (agentId == null || agentId.isBlank()) {
                     LOGGER.log(
                             Level.WARNING, "Wakeup call missing agentId, sessionId={0}", sessionId);
                     return Mono.just("wakeup skipped: no agentId");
                 }
                 // Drain inbox to get agent_chat request
-                MessageBus bus = messageBusService.getMessageBus();
+                MessageBus bus = messageBusService.getMessageBus(projectId);
                 String inboxKey = "agentscope:inbox:agent:" + agentId;
                 List<BusEntry> entries = bus.queueDrain(inboxKey, 1).block();
                 if (entries == null || entries.isEmpty()) {

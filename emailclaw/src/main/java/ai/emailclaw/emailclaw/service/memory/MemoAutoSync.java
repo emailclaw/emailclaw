@@ -29,11 +29,11 @@ import java.util.logging.Logger;
 public class MemoAutoSync {
     private static final Logger LOGGER = Logger.getLogger(MemoAutoSync.class.getName());
 
-    private final Path workspaceRoot;
+    private final ai.emailclaw.emailclaw.service.ProjectService projectService;
     private String lastSyncedSummary = "";
 
-    public MemoAutoSync(Path workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
+    public MemoAutoSync(ai.emailclaw.emailclaw.service.ProjectService projectService) {
+        this.projectService = projectService;
         LOGGER.info("MemoAutoSync initialization completed");
     }
 
@@ -46,7 +46,7 @@ public class MemoAutoSync {
      * @param agentId The agent ID
      * @param summary The current session summary
      */
-    public void syncSummary(String agentId, String summary) {
+    public void syncSummary(String agentId, String summary, String projectId) {
         if (summary == null || summary.isBlank()) {
             return;
         }
@@ -56,7 +56,13 @@ public class MemoAutoSync {
         lastSyncedSummary = summary;
 
         try {
-            Path memoryMd = workspaceRoot.resolve(agentId).resolve(WorkspacePaths.MEMORY_MD);
+            ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
+            Path baseDir =
+                    Path.of(project.getBaseDirectory())
+                            .resolve(
+                                    ai.emailclaw.emailclaw.storage.AppHomeConstants
+                                            .AGENT_WORKSPACE_DIR);
+            Path memoryMd = baseDir.resolve(agentId).resolve(WorkspacePaths.MEMORY_MD);
             Files.createDirectories(memoryMd.getParent());
 
             String entry = String.format("\n## %s\n\n%s\n", LocalDate.now().toString(), summary);

@@ -74,7 +74,8 @@ public class App extends Application {
             wakeupDispatcherService =
                     new WakeupDispatcherService(
                             messageBusService,
-                            ApplicationBootstrap.createWakeupTarget(bootstrapResult));
+                            ApplicationBootstrap.createWakeupTarget(bootstrapResult),
+                            bootstrapResult.projectService());
             wakeupDispatcherService.start();
             LOGGER.log(Level.INFO, "Wakeup dispatcher service started");
         }

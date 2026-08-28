@@ -40,11 +40,15 @@ public class MemoryRecallMiddleware implements MiddlewareBase {
     private static final int MAX_MEMORY_HINTS = 5;
 
     private final MemoryService memoryService;
+    private final ai.emailclaw.emailclaw.service.ToolRuntimeContext toolRuntimeContext;
 
     private final ConcurrentHashMap<String, String> hintCache = new ConcurrentHashMap<>();
 
-    public MemoryRecallMiddleware(MemoryService memoryService) {
+    public MemoryRecallMiddleware(
+            MemoryService memoryService,
+            ai.emailclaw.emailclaw.service.ToolRuntimeContext toolRuntimeContext) {
         this.memoryService = memoryService;
+        this.toolRuntimeContext = toolRuntimeContext;
         LOGGER.info("MemoryRecallMiddleware initialization completed");
     }
 
@@ -65,28 +69,36 @@ public class MemoryRecallMiddleware implements MiddlewareBase {
                 return next.apply(input);
             }
 
-            List<String> keys = memoryService.listMemoryNotes(agentId);
-            if (keys.isEmpty()) {
-                return next.apply(input);
-            }
-
             List<HintBlock> hints = new ArrayList<>();
             StringBuilder hintText = new StringBuilder();
             hintText.append("The following context has been recalled from long-term memory:\n");
 
+            String projectId = toolRuntimeContext.currentProject().getId();
             int count = 0;
-            for (String key : keys) {
-                if (count >= MAX_MEMORY_HINTS) {
-                    break;
-                }
-                String cached = hintCache.get(key);
-                var opt = memoryService.readMemoryNote(agentId, key, Object.class);
-                if (opt.isPresent()) {
-                    String current = opt.get().toString();
-                    if (!current.equals(cached)) {
-                        hintCache.put(key, current);
-                        hintText.append("- ").append(key).append(": ").append(current).append("\n");
-                        count++;
+            for (MemoryScope scope : MemoryScope.values()) {
+                List<String> keys = memoryService.listMemoryNotes(agentId, scope, projectId);
+                for (String key : keys) {
+                    if (count >= MAX_MEMORY_HINTS) {
+                        break;
+                    }
+                    String cacheKey = scope.name() + ":" + key;
+                    String cached = hintCache.get(cacheKey);
+                    var opt =
+                            memoryService.readMemoryNote(
+                                    agentId, key, Object.class, scope, projectId);
+                    if (opt.isPresent()) {
+                        String current = opt.get().toString();
+                        if (!current.equals(cached)) {
+                            hintCache.put(cacheKey, current);
+                            hintText.append("- [")
+                                    .append(scope.name())
+                                    .append("] ")
+                                    .append(key)
+                                    .append(": ")
+                                    .append(current)
+                                    .append("\n");
+                            count++;
+                        }
                     }
                 }
             }
@@ -104,8 +116,8 @@ public class MemoryRecallMiddleware implements MiddlewareBase {
                     new ReasoningInput(newMessages, input.tools(), input.options());
             LOGGER.log(
                     Level.FINE,
-                    "Memory hints injected: agentId={0}, keys={1}",
-                    new Object[] {agentId, keys.size()});
+                    "Memory hints injected: agentId={0}, count={1}",
+                    new Object[] {agentId, count});
             return next.apply(newInput);
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Memory recall injection exception (skipped)", e);

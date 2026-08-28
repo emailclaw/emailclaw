@@ -77,7 +77,7 @@ EOF
                 else
                     USER_CMD="su -s /bin/sh '$INSTALL_USER' -c"
                 fi
-                CMD="XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload && XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable --now emailclaw"
+                CMD="XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload && XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable emailclaw && XDG_RUNTIME_DIR=/run/user/$uid systemctl --user restart emailclaw"
 
                 i=0
                 DAEMON_OK=""
@@ -93,7 +93,7 @@ EOF
                 if [ -z "$DAEMON_OK" ]; then
                     echo " [emailclaw] Warning: could not start the daemon now."
                     echo "            Run this in your own terminal once:"
-                    echo "            systemctl --user daemon-reload && systemctl --user enable --now emailclaw"
+                    echo "            systemctl --user daemon-reload && systemctl --user enable emailclaw && systemctl --user restart emailclaw"
                 fi
             fi
 

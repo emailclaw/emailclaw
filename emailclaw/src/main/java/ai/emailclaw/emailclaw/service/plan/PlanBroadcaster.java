@@ -139,7 +139,8 @@ public class PlanBroadcaster {
                 payload.put("subTaskId", subTaskId);
                 payload.put("subTaskStatus", subTaskStatus);
             }
-            messageBusService.getMessageBus().publish(eventType, payload).subscribe();
+            String projectId = plan.getProjectId() != null ? plan.getProjectId() : "default";
+            messageBusService.getMessageBus(projectId).publish(eventType, payload).subscribe();
             LOGGER.log(
                     Level.FINE,
                     "Plan event broadcasted: type={0}, planId={1}",

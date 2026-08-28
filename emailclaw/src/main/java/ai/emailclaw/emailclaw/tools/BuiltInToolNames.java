@@ -34,6 +34,8 @@ public final class BuiltInToolNames {
     public static final String CHAT_WITH_AGENT = "chat_with_agent";
     public static final String SUBMIT_TO_AGENT = "submit_to_agent";
     public static final String CHECK_AGENT_TASK = "check_agent_task";
+    public static final String SAVE_GLOBAL_PREFERENCE = "save_global_preference";
+    public static final String SAVE_PROJECT_MEMORY = "save_project_memory";
 
     private BuiltInToolNames() {}
 }

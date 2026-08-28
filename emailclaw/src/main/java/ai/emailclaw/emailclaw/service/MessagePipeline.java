@@ -184,7 +184,12 @@ public class MessagePipeline {
                             : sessionInfo.getChannel();
             AgentStateStore sessionStore =
                     new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                            new JsonFileAgentStateStore(chatService.sessionPath(agent.getId())));
+                            new JsonFileAgentStateStore(
+                                    chatService.sessionPath(
+                                            sessionInfo != null
+                                                    ? sessionInfo.projectId()
+                                                    : "default",
+                                            agent.getId())));
             sanitizeSessionMediaSources(sessionStore, sessionInfo.getId());
             // Append title generation instructions to the first message, asking the LLM to output
             // [TITLE: xxx] at the end of the main reply
@@ -744,8 +749,8 @@ public class MessagePipeline {
      * <p>Prioritize using the context registered by runWakeup() in {@link #pendingAgentChatReplies};
      * if not exists, fallback to draining the {@code agentscope:inbox:agent:{agentId}} queue.
      */
-    void drainAndReplyAgentChat(String agentId, String responseText) {
-        MessageBus bus = messageBusService.getMessageBus();
+    void drainAndReplyAgentChat(String projectId, String agentId, String responseText) {
+        MessageBus bus = messageBusService.getMessageBus(projectId);
         // 1) Prioritize checking pending reply contexts registered by runWakeup()
         AgentChatPending pending;
         synchronized (this) {

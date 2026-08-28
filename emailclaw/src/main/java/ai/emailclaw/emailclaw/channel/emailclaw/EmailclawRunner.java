@@ -959,8 +959,14 @@ public class EmailclawRunner {
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             String lower = line.trim().toLowerCase(Locale.ROOT);
-            String nextLower =
-                    i + 1 < lines.length ? lines[i + 1].trim().toLowerCase(Locale.ROOT) : "";
+            String nextLower = "";
+            for (int j = i + 1; j < lines.length; j++) {
+                String tmp = lines[j].trim().toLowerCase(Locale.ROOT);
+                if (!tmp.isEmpty()) {
+                    nextLower = tmp;
+                    break;
+                }
+            }
             if (isQuoteStartLine(line, lower, nextLower)) {
                 cutoff = i;
                 break;
@@ -1055,7 +1061,9 @@ public class EmailclawRunner {
             Set<String> result = new LinkedHashSet<>();
             List<Msg> records = chatService.loadHistory(agent.getId(), session.getId());
             for (var record : records) {
-                String content = record.getTextContent();
+                String content =
+                        ai.emailclaw.emailclaw.model.ChatMessageRecord.textOfParts(
+                                chatService.partsOf(record));
                 if (content == null || content.isBlank()) {
                     continue;
                 }
@@ -1161,7 +1169,9 @@ public class EmailclawRunner {
         } else {
             targetDir =
                     chatService
-                            .sessionPath(agent.getId())
+                            .sessionPath(
+                                    session != null ? session.projectId() : "default",
+                                    agent.getId())
                             .resolve(session.getId())
                             .resolve(ATTACHMENTS_DIR_NAME);
         }

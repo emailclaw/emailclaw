@@ -440,7 +440,8 @@ public class AgentManagementTool extends BaseEmailclawTool {
         if (mbs == null) {
             return "Error: MessageBusService not available. Agent: " + agent.getId();
         }
-        MessageBus bus = mbs.getMessageBus();
+        String projectId = context.currentProject().getId();
+        MessageBus bus = mbs.getMessageBus(projectId);
         String correlationId = UuidUtils.randomUUIDv7().toString();
         String replyQueue = "agentscope:reply:" + correlationId;
         Map<String, Object> request = new HashMap<>();

@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.service.memory;
 
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,61 +23,59 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Memory service - provides a CRUD wrapper for structured memory.
- *
- * <p>Stores key-value memory entries in the workspace/{agentId}/memory/ directory,
- * with each memory entry as a separate JSON file.
- *
- * <p>Under the hood, it reuses a JSON file storage pattern similar to JsonFilePlanStore.
  */
 public class MemoryService {
     private static final Logger LOGGER = Logger.getLogger(MemoryService.class.getName());
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String PROACTIVE_PREFIX = "proactive_";
 
-    private final Path workspaceRoot;
+    private final Path globalWorkspaceRoot;
+    private final ProjectService projectService;
 
-    public MemoryService(Path workspaceRoot) {
-        this.workspaceRoot = workspaceRoot;
+    public MemoryService(Path globalWorkspaceRoot, ProjectService projectService) {
+        this.globalWorkspaceRoot = globalWorkspaceRoot;
+        this.projectService = projectService;
         LOGGER.info("MemoryService initialization completed");
     }
 
-    private Path memoryDir(String agentId) {
-        return workspaceRoot.resolve(agentId).resolve(WorkspacePaths.MEMORY_DIR);
+    private Path memoryDir(String agentId, MemoryScope scope, String projectId) {
+        Path baseDir;
+        if (scope == MemoryScope.GLOBAL) {
+            baseDir = globalWorkspaceRoot;
+        } else {
+            ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
+            baseDir =
+                    Path.of(project.getBaseDirectory())
+                            .resolve(
+                                    ai.emailclaw.emailclaw.storage.AppHomeConstants
+                                            .AGENT_WORKSPACE_DIR);
+        }
+        return baseDir.resolve(agentId).resolve(WorkspacePaths.MEMORY_DIR);
     }
 
-    private Path noteFile(String agentId, String key) {
-        return memoryDir(agentId).resolve(key + ".json");
+    private Path noteFile(String agentId, String key, MemoryScope scope, String projectId) {
+        return memoryDir(agentId, scope, projectId).resolve(key + ".json");
     }
 
-    /**
-     * Save structured memory entry.
-     *
-     * @param agentId The agent ID
-     * @param key     The memory key (usually semantic names like user_preferences, project_context)
-     * @param content The memory content (any JSON serializable object)
-     */
-    public void saveMemoryNote(String agentId, String key, Object content) {
+    public void saveMemoryNote(
+            String agentId, String key, Object content, MemoryScope scope, String projectId) {
         try {
-            Path dir = memoryDir(agentId);
+            Path dir = memoryDir(agentId, scope, projectId);
             Files.createDirectories(dir);
-            MAPPER.writeValue(noteFile(agentId, key).toFile(), content);
-            LOGGER.log(Level.FINE, "Memory saved: agent={0}, key={1}", new Object[] {agentId, key});
+            MAPPER.writeValue(noteFile(agentId, key, scope, projectId).toFile(), content);
+            LOGGER.log(
+                    Level.FINE,
+                    "Memory saved: agent={0}, key={1}, scope={2}, project={3}",
+                    new Object[] {agentId, key, scope, projectId});
         } catch (IOException e) {
             LOGGER.log(
                     Level.WARNING, "Failed to save memory: agent=" + agentId + ", key=" + key, e);
         }
     }
 
-    /**
-     * Read structured memory entry.
-     *
-     * @param agentId The agent ID
-     * @param key     The memory key
-     * @param type    The target type for deserialization
-     * @return The memory content (might be empty)
-     */
-    public <T> Optional<T> readMemoryNote(String agentId, String key, Class<T> type) {
-        Path file = noteFile(agentId, key);
+    public <T> Optional<T> readMemoryNote(
+            String agentId, String key, Class<T> type, MemoryScope scope, String projectId) {
+        Path file = noteFile(agentId, key, scope, projectId);
         if (!Files.exists(file)) {
             return Optional.empty();
         }
@@ -89,11 +88,8 @@ public class MemoryService {
         }
     }
 
-    /**
-     * List all memory keys for the specified agent.
-     */
-    public List<String> listMemoryNotes(String agentId) {
-        Path dir = memoryDir(agentId);
+    public List<String> listMemoryNotes(String agentId, MemoryScope scope, String projectId) {
+        Path dir = memoryDir(agentId, scope, projectId);
         if (!Files.isDirectory(dir)) {
             return List.of();
         }
@@ -109,12 +105,9 @@ public class MemoryService {
         }
     }
 
-    /**
-     * Delete the specified memory entry.
-     */
-    public void deleteMemoryNote(String agentId, String key) {
+    public void deleteMemoryNote(String agentId, String key, MemoryScope scope, String projectId) {
         try {
-            Files.deleteIfExists(noteFile(agentId, key));
+            Files.deleteIfExists(noteFile(agentId, key, scope, projectId));
         } catch (IOException e) {
             LOGGER.log(
                     Level.WARNING, "Failed to delete memory: agent=" + agentId + ", key=" + key, e);
@@ -124,8 +117,8 @@ public class MemoryService {
     /**
      * List memory entry keys marked as "proactive".
      */
-    public List<String> listProactiveKeys(String agentId) {
-        return listMemoryNotes(agentId).stream()
+    public List<String> listProactiveKeys(String agentId, MemoryScope scope, String projectId) {
+        return listMemoryNotes(agentId, scope, projectId).stream()
                 .filter(k -> k.startsWith(PROACTIVE_PREFIX))
                 .toList();
     }

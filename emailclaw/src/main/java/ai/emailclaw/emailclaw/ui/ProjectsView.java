@@ -129,7 +129,7 @@ public class ProjectsView implements ViewPane {
         card.getStyleClass().add("card-elevated");
         // Name + default marker
         String nameText = "📁 " + project.getName();
-        if (project.isDefault()) {
+        if (project.getId().equals(projectService.currentDefault().getId())) {
             nameText += " ⭐";
         }
         Label nameLabel = new Label(nameText);
@@ -171,7 +171,8 @@ public class ProjectsView implements ViewPane {
         Button deleteBtn = new Button("Delete");
         deleteBtn.getStyleClass().add("btn-red-sm");
         deleteBtn.setDisable(
-                project.isDefault() || ProjectService.PROJECT_ID_DEFAULT.equals(project.getId()));
+                project.getId().equals(projectService.currentDefault().getId())
+                        || ProjectService.PROJECT_ID_DEFAULT.equals(project.getId()));
         deleteBtn.setOnAction(
                 e -> {
                     confirmDelete(project);
@@ -450,7 +451,8 @@ public class ProjectsView implements ViewPane {
      * Confirm and execute project deletion, supported via external UI (like MainWindow) or internal card triggers.
      */
     public boolean confirmDelete(ProjectInfo project) {
-        if (project.isDefault() || ProjectService.PROJECT_ID_DEFAULT.equals(project.getId())) {
+        if (project.getId().equals(projectService.currentDefault().getId())
+                || ProjectService.PROJECT_ID_DEFAULT.equals(project.getId())) {
             return false;
         }
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);

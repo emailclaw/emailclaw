@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.service;
 
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -39,19 +40,25 @@ public class ChatSessionRepository {
 
     private static final String SESSION_USER_ID = null;
 
-    private final Path chatHistoryRoot;
+    private final ProjectService projectService;
 
-    public ChatSessionRepository(Path chatHistoryRoot) {
-        this.chatHistoryRoot = chatHistoryRoot;
+    public ChatSessionRepository(ProjectService projectService) {
+        this.projectService = projectService;
     }
 
-    public Path sessionPath(String agentId) {
-        return chatHistoryRoot.resolve(agentId == null ? "default" : agentId).resolve("sessions");
+    public Path sessionPath(String projectId, String agentId) {
+        String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
+        ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
+        return Path.of(project.getBaseDirectory())
+                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+                .resolve(aId)
+                .resolve(AppHomeConstants.SESSIONS_DIR);
     }
 
-    public List<Msg> loadHistory(String agentId, String sessionId) {
+    public List<Msg> loadHistory(String projectId, String agentId, String sessionId) {
         AgentStateStore session =
-                new MergingAgentStateStore(new JsonFileAgentStateStore(sessionPath(agentId)));
+                new MergingAgentStateStore(
+                        new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
         AgentState state = loadAgentState(session, sessionId);
         List<Msg> msgs = state != null ? state.getContext() : null;
         return msgs != null ? new ArrayList<>(msgs) : new ArrayList<>();
@@ -69,7 +76,7 @@ public class ChatSessionRepository {
         return null;
     }
 
-    public void appendHistoryMsg(String agentId, String sessionId, Msg msg) {
+    public void appendHistoryMsg(String projectId, String agentId, String sessionId, Msg msg) {
         if (msg == null) {
             return;
         }
@@ -78,7 +85,8 @@ public class ChatSessionRepository {
              * Batch save session metadata.
              */
             AgentStateStore session =
-                    new MergingAgentStateStore(new JsonFileAgentStateStore(sessionPath(agentId)));
+                    new MergingAgentStateStore(
+                            new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
             /**
              * Load all session metadata (sorted descending by updatedAt).
              */

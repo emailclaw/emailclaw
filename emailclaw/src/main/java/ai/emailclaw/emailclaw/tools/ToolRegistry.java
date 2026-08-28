@@ -27,7 +27,8 @@ public class ToolRegistry {
                     new BrowserAutomationTool(),
                     new NetworkFetchTool(),
                     new SystemCommandTool(),
-                    new AgentManagementTool()
+                    new AgentManagementTool(),
+                    new MemoryTools()
                 };
 
         for (EmailclawTool t : tools) {

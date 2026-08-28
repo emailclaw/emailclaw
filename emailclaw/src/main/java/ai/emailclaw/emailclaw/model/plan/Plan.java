@@ -33,6 +33,9 @@ public class Plan {
     /** Belonging session ID. */
     private String sessionId = "";
 
+    /** Belonging project ID. */
+    private String projectId = "";
+
     /** Belonging Agent ID. */
     private String agentId = "";
 
@@ -105,6 +108,24 @@ public class Plan {
      */
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
+    }
+
+    /**
+     * Get the belonging project ID.
+     *
+     * @return Project ID
+     */
+    public String getProjectId() {
+        return projectId;
+    }
+
+    /**
+     * Set the belonging project ID.
+     *
+     * @param projectId Project ID
+     */
+    public void setProjectId(String projectId) {
+        this.projectId = projectId;
     }
 
     /**
@@ -218,12 +239,14 @@ public class Plan {
     /**
      * Create a new plan.
      *
+     * @param projectId Belonging Project ID
      * @param agentId   Belonging Agent ID
      * @param sessionId Belonging session ID
      * @param goal      User goal
      */
-    public Plan(String agentId, String sessionId, String goal) {
+    public Plan(String projectId, String agentId, String sessionId, String goal) {
         this.id = UUID.randomUUID().toString();
+        this.projectId = projectId == null ? "" : projectId;
         this.agentId = agentId == null ? "" : agentId;
         this.sessionId = sessionId == null ? "" : sessionId;
         this.goal = goal == null ? "" : goal;

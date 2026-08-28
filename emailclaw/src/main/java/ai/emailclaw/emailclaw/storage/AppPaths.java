@@ -44,10 +44,9 @@ public final class AppPaths {
     public final Path voiceTranscriptionFile;
     public final Path workspaceRoot;
     public final Path skillsPoolRoot;
-    //    public final Path sessionsRoot;
-    public final Path chatHistoryRoot;
     public final Path logsDir;
     public final Path pluginsDir;
+    public final Path projectsRoot;
 
     public AppPaths(Path root) {
         this.root = root;
@@ -73,9 +72,8 @@ public final class AppPaths {
         this.voiceTranscriptionFile = configDir.resolve("voice-transcription.json");
         this.workspaceRoot = root.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
         this.skillsPoolRoot = root.resolve(AppHomeConstants.SKILL_POOL_DIR);
-        //        this.sessionsRoot = root.resolve("workspace");
-        this.chatHistoryRoot = root.resolve(AppHomeConstants.CHAT_HISTORY_DIR);
         this.logsDir = root.resolve(AppHomeConstants.LOGS_DIR);
         this.pluginsDir = root.resolve(AppHomeConstants.PLUGINS_DIR);
+        this.projectsRoot = root.resolve(AppHomeConstants.PROJECTS_DIR);
     }
 }

@@ -51,6 +51,7 @@ public class ChannelMessageBusIntegration {
      *
      * <p>When a channel (e.g., Emailclaw, DingTalk) receives a user message, call this method to publish the message to the target agent's inbox.
      *
+     * @param projectId   Project ID
      * @param channelId   Channel ID
      * @param agentId     Target agent ID
      * @param sessionId   Session ID
@@ -59,6 +60,7 @@ public class ChannelMessageBusIntegration {
      * @param metadata    Extra metadata
      */
     public void publishInboundMessage(
+            String projectId,
             String channelId,
             String agentId,
             String sessionId,
@@ -67,7 +69,8 @@ public class ChannelMessageBusIntegration {
             Map<String, Object> metadata) {
         LOGGER.log(
                 Level.INFO,
-                "Publish channel inbound message: channel={0}, agent={1}, session={2}",
+                "Publish channel inbound message to agent inbox: channel={0}, agent={1},"
+                        + " session={2}",
                 new Object[] {channelId, agentId, sessionId});
         // Build message payload
         Map<String, Object> payload =
@@ -87,9 +90,12 @@ public class ChannelMessageBusIntegration {
                         "metadata",
                         metadata != null ? Map.copyOf(metadata) : Map.of());
         // Publish to agent's inbox
-        messageBusService.inboxPush(sessionId, payload);
+        messageBusService.getMessageBus(projectId).inboxPush(sessionId, payload).subscribe();
         // Publish channel event
-        messageBusService.sessionPublishEvent(sessionId, payload);
+        messageBusService
+                .getMessageBus(projectId)
+                .sessionPublishEvent(sessionId, payload)
+                .subscribe();
         LOGGER.log(
                 Level.INFO,
                 "Channel inbound message published: channel={0}, session={1}",
@@ -101,13 +107,18 @@ public class ChannelMessageBusIntegration {
      *
      * <p>When the agent finishes processing and generates a response, call this method to route the response back to the channel.
      *
+     * @param projectId   Project ID
      * @param channelId   Channel ID
      * @param sessionId   Session ID
      * @param response    Agent response
      * @param metadata    Extra metadata
      */
     public void publishOutboundMessage(
-            String channelId, String sessionId, String response, Map<String, Object> metadata) {
+            String projectId,
+            String channelId,
+            String sessionId,
+            String response,
+            Map<String, Object> metadata) {
         LOGGER.log(
                 Level.INFO,
                 "Publish agent response to channel: channel={0}, session={1}",
@@ -126,7 +137,10 @@ public class ChannelMessageBusIntegration {
                         "metadata",
                         metadata != null ? Map.copyOf(metadata) : Map.of());
         // Publish channel event
-        messageBusService.sessionPublishEvent(sessionId, payload);
+        messageBusService
+                .getMessageBus(projectId)
+                .sessionPublishEvent(sessionId, payload)
+                .subscribe();
         LOGGER.log(
                 Level.INFO,
                 "Agent response published to channel: channel={0}, session={1}",
@@ -136,11 +150,13 @@ public class ChannelMessageBusIntegration {
     /**
      * Subscribe to channel inbound messages.
      *
+     * @param projectId Project ID
      * @param sessionId Session ID
      * @return Inbound message flux
      */
-    public Flux<Map<String, Object>> subscribeInboundMessages(String sessionId) {
+    public Flux<Map<String, Object>> subscribeInboundMessages(String projectId, String sessionId) {
         return messageBusService
+                .getMessageBus(projectId)
                 .sessionSubscribeEvents(sessionId)
                 .filter(event -> "channel_inbound".equals(event.get("type")));
     }
@@ -148,11 +164,13 @@ public class ChannelMessageBusIntegration {
     /**
      * Subscribe to agent response messages.
      *
+     * @param projectId Project ID
      * @param sessionId Session ID
      * @return Response message flux
      */
-    public Flux<Map<String, Object>> subscribeOutboundMessages(String sessionId) {
+    public Flux<Map<String, Object>> subscribeOutboundMessages(String projectId, String sessionId) {
         return messageBusService
+                .getMessageBus(projectId)
                 .sessionSubscribeEvents(sessionId)
                 .filter(event -> "channel_outbound".equals(event.get("type")));
     }

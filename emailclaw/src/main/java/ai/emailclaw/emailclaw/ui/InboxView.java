@@ -59,7 +59,7 @@ public class InboxView implements ViewPane {
         // Subscribe to approval message channel
         try {
             messageBusService
-                    .getMessageBus()
+                    .getMessageBus("default")
                     .subscribe("agentscope:inbox:approvals")
                     .subscribe(
                             payload -> {
@@ -83,7 +83,7 @@ public class InboxView implements ViewPane {
         // Subscribe to push message channel
         try {
             messageBusService
-                    .getMessageBus()
+                    .getMessageBus("default")
                     .subscribe("agentscope:inbox:push")
                     .subscribe(
                             payload -> {

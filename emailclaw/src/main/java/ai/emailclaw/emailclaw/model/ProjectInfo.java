@@ -23,7 +23,6 @@ public class ProjectInfo {
     private String name = "";
     private String baseDirectory = "";
     private Map<String, Boolean> additionalDirs = new HashMap<>();
-    private boolean isDefault = false;
     private String createdAt = "";
 
     /**
@@ -96,24 +95,6 @@ public class ProjectInfo {
      */
     public void setAdditionalDirs(Map<String, Boolean> additionalDirs) {
         this.additionalDirs = additionalDirs;
-    }
-
-    /**
-     * Determine whether it is the default project.
-     *
-     * @return Whether it is the default project
-     */
-    public boolean isDefault() {
-        return isDefault;
-    }
-
-    /**
-     * Set whether it is the default project.
-     *
-     * @param isDefault Whether it is the default project
-     */
-    public void setDefault(boolean isDefault) {
-        this.isDefault = isDefault;
     }
 
     /**

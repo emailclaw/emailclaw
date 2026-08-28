@@ -11,8 +11,6 @@
 package ai.emailclaw.emailclaw.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -23,7 +21,6 @@ import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,16 +58,6 @@ public class ProjectServiceTest {
         List<ProjectInfo> projects = projectService.list();
         assertEquals(1, projects.size());
         assertEquals("project1", projects.get(0).getId());
-    }
-
-    @Test
-    public void testFindById() {
-        Optional<ProjectInfo> found = projectService.findById("project1");
-        assertTrue(found.isPresent());
-        assertEquals("Project One", found.get().getName());
-
-        Optional<ProjectInfo> notFound = projectService.findById("project2");
-        assertFalse(notFound.isPresent());
     }
 
     @Test

@@ -70,8 +70,6 @@ public class AppContext implements AutoCloseable {
             Files.createDirectories(paths.secretDir);
             Files.createDirectories(paths.workspaceRoot);
             Files.createDirectories(paths.skillsPoolRoot);
-            //            Files.createDirectories(paths.sessionsRoot);
-            Files.createDirectories(paths.chatHistoryRoot);
             Files.createDirectories(paths.backupsDir);
             Files.createDirectories(paths.logsDir);
             Files.createDirectories(paths.pluginsDir);

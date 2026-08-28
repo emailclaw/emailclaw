@@ -39,6 +39,8 @@ public class ProactiveMemoryTrigger {
 
     private final MessageBusService messageBusService;
 
+    private final ai.emailclaw.emailclaw.service.ProjectService projectService;
+
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(
                     r -> new Thread(r, "proactive-memory-trigger"));
@@ -46,9 +48,12 @@ public class ProactiveMemoryTrigger {
     private volatile boolean enabled = true;
 
     public ProactiveMemoryTrigger(
-            MemoryService memoryService, MessageBusService messageBusService) {
+            MemoryService memoryService,
+            MessageBusService messageBusService,
+            ai.emailclaw.emailclaw.service.ProjectService projectService) {
         this.memoryService = memoryService;
         this.messageBusService = messageBusService;
+        this.projectService = projectService;
         LOGGER.info("ProactiveMemoryTrigger initialization completed");
     }
 
@@ -63,21 +68,34 @@ public class ProactiveMemoryTrigger {
                     if (!enabled) return;
                     try {
                         for (String agentId : agentIds) {
-                            List<String> proactiveKeys = memoryService.listProactiveKeys(agentId);
-                            if (proactiveKeys.isEmpty()) continue;
-                            Map<String, Object> payload = new HashMap<>();
-                            payload.put("type", "memory.proactive_recall");
-                            payload.put("agentId", agentId);
-                            payload.put("keys", String.join(",", proactiveKeys));
-                            payload.put("timestamp", LocalDateTime.now().toString());
-                            messageBusService
-                                    .getMessageBus()
-                                    .publish("memory.proactive_recall", payload)
-                                    .subscribe();
-                            LOGGER.log(
-                                    Level.INFO,
-                                    "Proactive memory event pushed: agentId={0}, keys={1}",
-                                    new Object[] {agentId, proactiveKeys});
+                            for (ai.emailclaw.emailclaw.model.ProjectInfo project :
+                                    projectService.list()) {
+                                String projectId = project.getId();
+                                for (MemoryScope scope : MemoryScope.values()) {
+                                    List<String> proactiveKeys =
+                                            memoryService.listProactiveKeys(
+                                                    agentId, scope, projectId);
+                                    if (proactiveKeys.isEmpty()) continue;
+                                    Map<String, Object> payload = new HashMap<>();
+                                    payload.put("type", "memory.proactive_recall");
+                                    payload.put("agentId", agentId);
+                                    payload.put("scope", scope.name());
+                                    payload.put("projectId", projectId);
+                                    payload.put("keys", String.join(",", proactiveKeys));
+                                    payload.put("timestamp", LocalDateTime.now().toString());
+                                    messageBusService
+                                            .getMessageBus(projectId)
+                                            .publish("memory.proactive_recall", payload)
+                                            .subscribe();
+                                    LOGGER.log(
+                                            Level.INFO,
+                                            "Proactive memory event pushed: agentId={0}, scope={1},"
+                                                    + " project={2}, keys={3}",
+                                            new Object[] {
+                                                agentId, scope, projectId, proactiveKeys
+                                            });
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         LOGGER.log(Level.WARNING, "ProactiveMemoryTrigger scan exception", e);

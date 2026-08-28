@@ -76,14 +76,12 @@ public record MergingAgentStateStore(
                                     : new ArrayList<>();
                     // Map is required to remove duplicates by id, and LinkedHashMap is used to
                     // maintain order
-                    Map<String, Msg> mergedMap = new HashMap<>();
+                    Map<String, Msg> mergedMap = new java.util.LinkedHashMap<>();
                     Function<Msg, String> keyGen =
                             m -> {
                                 if (m.getId() != null && !m.getId().trim().isEmpty()) {
                                     return m.getId();
                                 }
-                                // Fallback to use characteristics to prevent duplication of
-                                // messages without ID
                                 return m.getRole()
                                         + "_"
                                         + m.getTimestamp()
@@ -92,15 +90,11 @@ public record MergingAgentStateStore(
                                                 ? m.getTextContent().hashCode()
                                                 : 0);
                             };
-                    // Retain existing messages on disk (including SYSTEM messages asynchronously
-                    // appended externally)
                     for (Msg msg : existingMsgs) {
                         if (msg != null) {
                             mergedMap.put(keyGen.apply(msg), msg);
                         }
                     }
-                    // Append new messages in memory (new outputs during Agent runtime), identical
-                    // keys will overwrite to retain the latest state of Agent runtime
                     for (Msg msg : newMsgs) {
                         if (msg != null) {
                             mergedMap.put(keyGen.apply(msg), msg);
@@ -108,14 +102,6 @@ public record MergingAgentStateStore(
                     }
                     List<Msg> mergedList = new ArrayList<>(mergedMap.values());
                     // ── Effective Timestamp Sorting ──
-                    // For each TOOL role message, use the timestamp of the ASSISTANT message where
-                    // its corresponding TOOL CALL is located
-                    // as the sorting key (instead of its own timestamp), ensuring the TOOL result
-                    // strictly follows its TOOL CALL.
-                    // This simultaneously meets the strict tool_call <-> tool_result alternation
-                    // requirement of the LLM API,
-                    // and correctly places externally asynchronous appended SYSTEM approval
-                    // messages in the timeline.
                     Map<String, String> toolCallTimestamps = new HashMap<>();
                     for (Msg m : mergedList) {
                         for (io.agentscope.core.message.ToolUseBlock tc :
@@ -147,9 +133,8 @@ public record MergingAgentStateStore(
                         } finally {
                             CLEARING.set(false);
                         }
-                    } else {
-                        newState.contextMutable().clear();
                     }
+                    newState.contextMutable().clear();
                     newState.contextMutable().addAll(mergedList);
                     LOGGER.log(
                             Level.INFO,

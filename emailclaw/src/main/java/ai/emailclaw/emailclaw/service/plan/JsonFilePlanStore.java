@@ -36,30 +36,33 @@ public class JsonFilePlanStore implements PlanStore {
     private static final String FILE_SUFFIX = ".json";
 
     private final ObjectMapper mapper;
-    private final Path workspaceRoot;
+    private final ai.emailclaw.emailclaw.service.ProjectService projectService;
 
-    public JsonFilePlanStore(Path workspaceRoot) {
-        this.workspaceRoot = workspaceRoot.toAbsolutePath().normalize();
+    public JsonFilePlanStore(ai.emailclaw.emailclaw.service.ProjectService projectService) {
+        this.projectService = projectService;
         this.mapper = new ObjectMapper();
-        LOGGER.log(
-                Level.INFO,
-                "JsonFilePlanStore initialization, storage root directory: {0}",
-                this.workspaceRoot);
+        LOGGER.log(Level.INFO, "JsonFilePlanStore initialization using ProjectService");
     }
 
     /** Get the directory where plan files for the specified agent are stored. */
-    private Path plansDir(String agentId) {
-        return workspaceRoot.resolve(agentId).resolve(PLANS_DIR);
+    private Path plansDir(String projectId, String agentId) {
+        String pId = (projectId == null || projectId.isBlank()) ? "default" : projectId;
+        String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
+        ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(pId);
+        return Path.of(project.getBaseDirectory())
+                .resolve(ai.emailclaw.emailclaw.storage.AppHomeConstants.AGENT_WORKSPACE_DIR)
+                .resolve(aId)
+                .resolve(PLANS_DIR);
     }
 
     /** Get the JSON file path for the specified plan. */
-    private Path planFile(String agentId, String planId) {
-        return plansDir(agentId).resolve(planId + FILE_SUFFIX);
+    private Path planFile(String projectId, String agentId, String planId) {
+        return plansDir(projectId, agentId).resolve(planId + FILE_SUFFIX);
     }
 
     /** Ensure the plans directory exists. */
-    private Path ensurePlansDir(String agentId) {
-        Path dir = plansDir(agentId);
+    private Path ensurePlansDir(String projectId, String agentId) {
+        Path dir = plansDir(projectId, agentId);
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {
@@ -75,8 +78,8 @@ public class JsonFilePlanStore implements PlanStore {
             return;
         }
         try {
-            ensurePlansDir(plan.getAgentId());
-            Path file = planFile(plan.getAgentId(), plan.getId());
+            ensurePlansDir(plan.getProjectId(), plan.getAgentId());
+            Path file = planFile(plan.getProjectId(), plan.getAgentId(), plan.getId());
             String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(plan);
             Files.writeString(file, json, StandardCharsets.UTF_8);
             LOGGER.log(Level.FINE, "Plan saved: {0}", file);
@@ -112,11 +115,7 @@ public class JsonFilePlanStore implements PlanStore {
         if (agentId == null || agentId.isBlank()) {
             return List.of();
         }
-        Path dir = plansDir(agentId);
-        if (!Files.isDirectory(dir)) {
-            return List.of();
-        }
-        return loadPlansFromDir(dir);
+        return listAll().stream().filter(p -> agentId.equals(p.getAgentId())).toList();
     }
 
     @Override
@@ -127,7 +126,7 @@ public class JsonFilePlanStore implements PlanStore {
         List<Plan> all = listAll();
         for (Plan p : all) {
             if (planId.equals(p.getId())) {
-                Path file = planFile(p.getAgentId(), p.getId());
+                Path file = planFile(p.getProjectId(), p.getAgentId(), p.getId());
                 try {
                     Files.deleteIfExists(file);
                     LOGGER.log(Level.FINE, "Plan deleted: {0}", file);
@@ -141,20 +140,29 @@ public class JsonFilePlanStore implements PlanStore {
 
     @Override
     public List<Plan> listAll() {
-        if (!Files.isDirectory(workspaceRoot)) {
-            return List.of();
-        }
         List<Plan> result = new ArrayList<>();
-        try (Stream<Path> agentDirs = Files.list(workspaceRoot)) {
-            List<Path> dirs = agentDirs.filter(Files::isDirectory).toList();
-            for (Path agentDir : dirs) {
-                Path plansDir = agentDir.resolve(PLANS_DIR);
-                if (Files.isDirectory(plansDir)) {
-                    result.addAll(loadPlansFromDir(plansDir));
+        for (ai.emailclaw.emailclaw.model.ProjectInfo project : projectService.list()) {
+            Path workspaceDir =
+                    Path.of(project.getBaseDirectory())
+                            .resolve(
+                                    ai.emailclaw.emailclaw.storage.AppHomeConstants
+                                            .AGENT_WORKSPACE_DIR);
+            if (Files.isDirectory(workspaceDir)) {
+                try (Stream<Path> agentDirs = Files.list(workspaceDir)) {
+                    List<Path> aDirs = agentDirs.filter(Files::isDirectory).toList();
+                    for (Path agentDir : aDirs) {
+                        Path plansDir = agentDir.resolve(PLANS_DIR);
+                        if (Files.isDirectory(plansDir)) {
+                            result.addAll(loadPlansFromDir(plansDir));
+                        }
+                    }
+                } catch (IOException e) {
+                    LOGGER.log(
+                            Level.WARNING,
+                            "Failed to iterate agent directories in project " + project.getId(),
+                            e);
                 }
             }
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to iterate agent directories", e);
         }
         result.sort((a, b) -> b.getUpdatedAt().compareTo(a.getUpdatedAt()));
         return result;

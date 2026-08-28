@@ -58,30 +58,39 @@ public class WakeupDispatcherService implements AutoCloseable {
         /**
          * Check if the specified session is running.
          *
+         * @param projectId Project ID
          * @param sessionId Session ID
          * @return true if session is running
          */
-        boolean isSessionRunning(String sessionId);
+        boolean isSessionRunning(String projectId, String sessionId);
 
         /**
          * Trigger wakeup run for the specified session/agent.
          *
+         * @param projectId Project ID
          * @param sessionId Session ID (may be null, in which case agentId identifies wakeup source)
          * @param agentId   Agent ID to wake up
          * @return run result
          */
-        Mono<Object> runWakeup(String sessionId, String agentId);
+        Mono<Object> runWakeup(String projectId, String sessionId, String agentId);
     }
+
+    private final ProjectService projectService;
 
     /**
      * Create wakeup dispatcher service.
      *
      * @param messageBusService message bus service
      * @param wakeupTarget      wakeup target interface
+     * @param projectService    project service
      */
-    public WakeupDispatcherService(MessageBusService messageBusService, WakeupTarget wakeupTarget) {
+    public WakeupDispatcherService(
+            MessageBusService messageBusService,
+            WakeupTarget wakeupTarget,
+            ProjectService projectService) {
         this.messageBusService = messageBusService;
         this.wakeupTarget = wakeupTarget;
+        this.projectService = projectService;
         LOGGER.log(Level.INFO, "Wakeup dispatcher service created");
     }
 
@@ -101,12 +110,13 @@ public class WakeupDispatcherService implements AutoCloseable {
         // Initial drain: handle signals generated during startup
         drainAndDispatch();
 
-        // Subscribe to real-time wakeup signal channel
+        // Subscribe to real-time wakeup signal channel for all projects
+        // (For simplicity, we'll poll all projects periodically instead of using Flux merge,
+        //  since projects can be created dynamically)
         subscription =
-                messageBusService
-                        .subscribeWakeup()
+                reactor.core.publisher.Flux.interval(java.time.Duration.ofSeconds(1))
                         .subscribe(
-                                signal -> drainAndDispatch(),
+                                tick -> drainAndDispatch(),
                                 err ->
                                         LOGGER.log(
                                                 Level.SEVERE,
@@ -129,32 +139,41 @@ public class WakeupDispatcherService implements AutoCloseable {
     }
 
     /**
-     * Drain wakeup queue and dispatch wakeup requests.
+     * Drain wakeup queue and dispatch wakeup requests for all projects.
      */
     private void drainAndDispatch() {
-        try {
-            List<BusEntry> entries =
-                    messageBusService.inboxDrain("agentscope:wakeups", MAX_DRAIN_COUNT);
-            if (entries == null || entries.isEmpty()) {
-                return;
-            }
+        for (ai.emailclaw.emailclaw.model.ProjectInfo project : projectService.list()) {
+            try {
+                List<BusEntry> entries =
+                        messageBusService
+                                .getMessageBus(project.getId())
+                                .inboxDrain("agentscope:wakeups", MAX_DRAIN_COUNT)
+                                .block();
+                if (entries == null || entries.isEmpty()) {
+                    continue;
+                }
 
-            LOGGER.log(Level.FINE, "Drained wakeup queue: {0} entries", entries.size());
+                LOGGER.log(
+                        Level.FINE,
+                        "Drained wakeup queue for project {0}: {1} entries",
+                        new Object[] {project.getId(), entries.size()});
 
-            for (BusEntry entry : entries) {
-                dispatch(entry.payload());
+                for (BusEntry entry : entries) {
+                    dispatch(project.getId(), entry.payload());
+                }
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Wakeup drain error for project " + project.getId(), e);
             }
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to drain wakeup queue", e);
         }
     }
 
     /**
      * Dispatch single wakeup request.
      *
+     * @param projectId project ID
      * @param payload wakeup request payload
      */
-    private void dispatch(Map<String, Object> payload) {
+    private void dispatch(String projectId, Map<String, Object> payload) {
         String sessionId = getString(payload, "sessionId");
         String agentId = getString(payload, "agentId");
 
@@ -171,7 +190,7 @@ public class WakeupDispatcherService implements AutoCloseable {
                 (agentId != null && !agentId.isBlank()) ? agentId : effectiveSessionId;
 
         // Check if session is running
-        if (wakeupTarget.isSessionRunning(effectiveSessionId)) {
+        if (wakeupTarget.isSessionRunning(projectId, effectiveSessionId)) {
             LOGGER.log(Level.FINE, "Session {0} is running, skipping wakeup", effectiveSessionId);
             return;
         }
@@ -183,7 +202,7 @@ public class WakeupDispatcherService implements AutoCloseable {
 
         // Trigger wakeup run
         wakeupTarget
-                .runWakeup(effectiveSessionId, effectiveAgentId)
+                .runWakeup(projectId, effectiveSessionId, effectiveAgentId)
                 .subscribe(
                         msg ->
                                 LOGGER.log(

@@ -148,7 +148,12 @@ final class PostStreamHandler {
         try {
             sessionStore
                     .get(SESSION_USER_ID, sessionInfo.getId(), AGENT_STATE_KEY, AgentState.class)
-                    .ifPresent(state -> memoAutoSync.syncSummary(agentId, state.getSummary()));
+                    .ifPresent(
+                            state ->
+                                    memoAutoSync.syncSummary(
+                                            agentId,
+                                            state.getSummary(),
+                                            sessionInfo.getProjectId()));
             LOGGER.log(
                     Level.FINE,
                     "MEMORY.md synchronization completed: session={0}",
@@ -163,15 +168,19 @@ final class PostStreamHandler {
      * if so, push this inference result to the replyTo queue.
      */
     private void drainAndReplyAgentChat(String completedText) {
-        if (completedText == null || completedText.isBlank()) {
-            return;
-        }
-        try {
-            chatService.drainAndReplyAgentChat(agentId, completedText);
-            LOGGER.log(
-                    Level.FINE, "Internal agent communication reply completed: agent={0}", agentId);
-        } catch (Exception e) {
-            LOGGER.log(Level.FINE, "Internal agent communication reply failed (non-critical)", e);
+        if (completedText != null && !completedText.trim().isEmpty()) {
+            try {
+                LOGGER.log(Level.FINE, "Draining agent chat replies for agentId: {0}", agentId);
+                chatService.drainAndReplyAgentChat(
+                        sessionInfo.getProjectId(), agentId, completedText);
+                LOGGER.log(
+                        Level.FINE,
+                        "Internal agent communication reply completed: agent={0}",
+                        agentId);
+            } catch (Exception e) {
+                LOGGER.log(
+                        Level.FINE, "Internal agent communication reply failed (non-critical)", e);
+            }
         }
     }
 }

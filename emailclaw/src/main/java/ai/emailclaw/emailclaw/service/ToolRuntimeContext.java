@@ -48,19 +48,23 @@ public class ToolRuntimeContext {
     /** Spawn registry service, manages child agent metadata to support cross-replica routing and session recovery. */
     private SpawnRegistryService spawnRegistryService;
 
+    private ai.emailclaw.emailclaw.service.memory.MemoryService memoryService;
+
     public ToolRuntimeContext(
             AppContext repository,
             AgentService agentService,
             ProviderService providerService,
             MessageBusService messageBusService,
             SpawnRegistryService spawnRegistryService,
-            ProjectService projectService) {
+            ProjectService projectService,
+            ai.emailclaw.emailclaw.service.memory.MemoryService memoryService) {
         this.repository = repository;
         this.agentService = agentService;
         this.providerService = providerService;
         this.messageBusService = messageBusService;
         this.spawnRegistryService = spawnRegistryService;
         this.projectService = projectService;
+        this.memoryService = memoryService;
         this.currentAgent = agentService.currentDefault();
         LOGGER.log(
                 Level.INFO,
@@ -84,6 +88,10 @@ public class ToolRuntimeContext {
      */
     public SpawnRegistryService getSpawnRegistryService() {
         return spawnRegistryService;
+    }
+
+    public ai.emailclaw.emailclaw.service.memory.MemoryService getMemoryService() {
+        return memoryService;
     }
 
     public void refreshForAgent(AgentInfo agent) {

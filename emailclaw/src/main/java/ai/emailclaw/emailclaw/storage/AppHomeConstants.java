@@ -22,16 +22,17 @@ public final class AppHomeConstants {
     public static final String DEFAULT_HOME_DIR_NAME = "emailclaw";
     public static final Path HOME_RESOLVED = resolveHome();
 
+    public static final String AGENT_WORKSPACE_DIR = "agent-workspace";
     public static final String BACKUPS_DIR = ".backups";
-    public static final String CHAT_HISTORY_DIR = ".chat-history";
     public static final String CONFIG_DIR = ".config";
+    public static final String LOGS_DIR = "logs";
+    public static final String OFFLOADS_DIR = ".offloads";
+    public static final String PLUGINS_DIR = "plugins";
+    public static final String PROJECTS_DIR = "projects";
+    public static final String SKILL_POOL_DIR = "skill-pool";
     public static final String SECRET_DIR = ".secret";
     public static final String SECURITY_APPROVALS_DIR = ".security/approvals";
-    public static final String LOGS_DIR = "logs";
-    public static final String PLUGINS_DIR = "plugins";
-    public static final String SKILL_POOL_DIR = "skill-pool";
-    public static final String AGENT_WORKSPACE_DIR = "agent-workspace";
-    public static final String PROJECTS_DIR = "projects";
+    public static final String SESSIONS_DIR = "sessions";
     public static final Path BROWSER_DATA_PATH =
             AppHomeConstants.HOME_RESOLVED.resolve(".browser-data");
 
