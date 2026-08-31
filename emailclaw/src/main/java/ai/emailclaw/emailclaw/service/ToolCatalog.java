@@ -52,6 +52,11 @@ public final class ToolCatalog {
                         "Submit a background task to another agent"));
         tools.add(
                 tool(BuiltInToolNames.CHECK_AGENT_TASK, "Check status of a background agent task"));
+        tools.add(
+                tool(
+                        BuiltInToolNames.INVOKE_ANTIGRAVITY_CLI,
+                        "Invoke Antigravity CLI in headless print mode to execute agent tasks and"
+                                + " return structured JSON results"));
         return tools;
     }
 

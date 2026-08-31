@@ -202,7 +202,8 @@ public final class ApplicationBootstrap {
                         spawnRegistryService,
                         projectService,
                         memoryService);
-        ToolService toolService = new ToolService(repository);
+        PluginRegistry pluginRegistry = new PluginRegistry();
+        ToolService toolService = new ToolService(repository, pluginRegistry);
         SkillService skillService = new SkillService(repository);
         GovernanceService governanceService = new GovernanceService(repository);
         RateLimitMiddleware rateLimitMiddleware = new RateLimitMiddleware(Duration.ofMillis(1000));
@@ -258,7 +259,6 @@ public final class ApplicationBootstrap {
                         chatService);
         chatService.setMessagePipeline(messagePipeline);
         // Other modular services
-        PluginRegistry pluginRegistry = new PluginRegistry();
         ChannelService channelService = new ChannelService(repository, pluginRegistry);
         McpService mcpService = new McpService(repository);
         AcpService acpService = new AcpService(repository);

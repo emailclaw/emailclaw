@@ -1,102 +1,77 @@
+# DingTalk 插件使用与部署指南
 
-# DingTalk 插件编译说明
+`dingtalk` 插件是 Emailclaw 的官方第三方**渠道插件（Channel Plugin）**示例，用于将钉钉企业内部机器人消息与 Emailclaw 的 AI Agent 进行双向集成。
 
-编译生成可部署的插件 JAR文件用于复制到 `plugins` 目录时，请先回到上级目录，确认当前目录中pom.xml文件中emailclaw版本正确（否则编译报错），然后执行：
+---
+
+## 1. 编译与打包
+
+在生成可部署的插件 JAR 文件前，请先回到 `plugin-samples` 根目录，执行 Maven Reactor 多模块打包命令：
 
 ```sh
-cd ..
-mvn -pl dingtalk -am package 
+# 进入 plugin-samples 目录
+cd plugin-samples
+
+# 使用 Reactor 模式编译并打包 dingtalk 模块
+mvn -pl dingtalk -am package
 ```
 
-不要直接在 `dingtalk` 目录内执行 `mvn clean compile`
+> **注意**：请勿直接在 `dingtalk` 目录内单独执行 `mvn clean compile`（缺少父级 Reactor 本地解析依赖会导致编译失败）。
 
-# DingTalk 插件配置说明
-本插件已提供原生配置界面（UI），您可以直接在系统设置的「渠道配置（Channels）」页面找到 DingTalk，点击 `Configure` 按钮进行可视化配置，同时还支持扫描二维码快速自动填充 AppKey 和 AppSecret。
+打包成功后，将在 `dingtalk/target/` 目录下生成包含必要依赖（如 dingtalk-stream）的独立 Shaded 插件包：
+- **产物路径**：`dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar`
 
-当然，如果您更习惯直接修改配置文件，也可参考下方说明手工编辑：
+---
 
+## 2. 部署与生效步骤
 
-## 1. 配置文件位置
+Emailclaw 具备外部插件的自动扫描与热加载机制，部署步骤如下：
 
-请打开用户配置目录下的 `channels.json`：
+### 步骤 1：确保插件目录存在
+Emailclaw 默认的外部插件加载目录为：
+- **Linux / macOS**：`~/emailclaw/plugins/`
+- **Windows**：`%USERPROFILE%\emailclaw\plugins\`
 
-- Linux / macOS: `~/emailclaw/.config/channels.json`
-- Windows: `%USERPROFILE%\\emailclaw\\.config\\channels.json`
-
-在该文件中找到或新增钉钉渠道对应的 `ChannelInfo` 条目，然后将 `pluginConfig` 字段补充为以下配置项。
-
-## 2. 配置方式
-
-建议写入 `pluginConfig` 对象内，如：
-
-```json
-{
-  "pluginConfig": {
-    "clientId": "...",
-    "clientSecret": "..."
-  }
-}
+如果目录不存在，可先手动创建：
+```sh
+mkdir -p ~/emailclaw/plugins
 ```
 
-## 3. 字段说明
+### 步骤 2：拷贝生成的 JAR 文件
+将编译好的插件 JAR 文件拷贝到 `plugins` 目录下：
 
-- `clientId`
-  - 钉钉应用的 AppKey 或客户 ID。
-  - 必填，用于插件向钉钉鉴权。
+```sh
+# Linux / macOS
+cp dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar ~/emailclaw/plugins/
 
-- `clientSecret`
-  - 钉钉应用的 AppSecret 或客户密钥。
-  - 必填，与 `clientId` 一起完成鉴权。
+# Windows (PowerShell)
+Copy-Item dingtalk\target\emailclaw-plugin-channel-dingtalk-1.0.0.jar $HOME\emailclaw\plugins\
+```
 
-- `showToolMessages`
-  - 是否在钉钉消息中显示工具消息内容。
-  - 布尔值，`true` 表示展示，`false` 表示隐藏。
-  - 默认值为 `true`。
+### 步骤 3：验证插件生效
+- **动态热加载（无需重启）**：Emailclaw 内置后台目录监听器（默认每 5 秒扫描一次），检测到新放入的 JAR 文件后会自动加载，日志将输出：
+  ```
+  INFO: Discovered external plugin: emailclaw-plugin-channel-dingtalk
+  INFO: Channel plugin started: dingtalk
+  ```
+- **随系统启动载入**：若 Emailclaw 处于未启动状态，启动应用时 `PluginManager` 会自动扫描 `~/emailclaw/plugins/` 并完成装载。
 
-- `showThinking`
-  - 是否在钉钉消息中显示“思考中”或处理中状态。
-  - 布尔值，`true` 表示显示，`false` 表示不显示。
-  - 默认值为 `true`。
+---
 
-- `messageType`
-  - 普通消息的发送格式。
-  - 推荐值：`markdown`。
-  - 如果你希望使用其他钉钉消息格式，可按钉钉 API 要求填写。
-  - 默认值为 `markdown`。
+## 3. 在 Emailclaw 中配置与使用 DingTalk 渠道
 
-- `cronMessageType`
-  - 定时消息（cron 推送）使用的消息格式。
-  - 同样推荐值为 `markdown`。
-  - 默认值为 `markdown`。
+### 方式一：可视化界面配置（推荐）
+1. 打开 Emailclaw 客户端，进入系统设置中的「渠道配置（Channels）」页面。
+2. 列表中将展示「DingTalk」渠道项。
+3. 点击 `Configure`（配置）按钮，在弹出面板中填入钉钉应用的 `AppKey`（`clientId`）和 `AppSecret`（`clientSecret`），支持扫描二维码快速自动填充。
+4. 将渠道状态切换为「已启用（Enabled）」，钉钉机器人即刻开始在后台监听并响应用户消息。
 
-- `atSenderOnReply`
-  - 当插件回复时，是否 @ 回复发起者。
-  - 布尔值，`true` 表示 @，`false` 表示不 @。
-  - 默认值为 `false`。
+### 方式二：手动编辑配置文件
+也可以直接编辑用户配置目录下的 `channels.json`：
+- **Linux / macOS**: `~/emailclaw/.config/channels.json`
+- **Windows**: `%USERPROFILE%\emailclaw\.config\channels.json`
 
-- `dmPolicy`
-  - 私聊消息的访问策略。
-  - 目前默认值为 `open`。
-  - 如果没有特殊要求，可保持 `open`。
-
-- `groupPolicy`
-  - 群聊消息的访问策略。
-  - 目前默认值为 `open`。
-  - 如果没有特殊要求，可保持 `open`。
-
-- `requireMention`
-  - 是否要求群聊消息中必须被 @ 才会触发插件。
-  - 布尔值，`true` 表示需要 @，`false` 表示不需要。
-  - 默认值为 `false`。
-
-- `allowlistUsers`
-  - 白名单用户列表。
-  - 写入字符串数组，数组内每个值为允许使用该钉钉渠道的用户 ID。
-  - 如果不需要限制，可省略或置为空数组 `[]`。
-
-## 4. 参考示例
-
-下面给出一个常见的 `channels.json` 中钉钉渠道条目示例，仅供参考：
+在 `channels.json` 中添加或补充 `dingtalk` 条目：
 
 ```json
 {
@@ -115,12 +90,23 @@ mvn -pl dingtalk -am package
     "dmPolicy": "open",
     "groupPolicy": "open",
     "requireMention": false,
-    "allowlistUsers": [
-      "user1",
-      "user2"
-    ]
+    "allowlistUsers": []
   }
 }
 ```
 
-> 注意：`clientId` 和 `clientSecret` 为必填项，只有同时配置这两个字段后，钉钉渠道才会被视为已配置。
+---
+
+## 4. 字段说明
+
+- `clientId`：钉钉应用的 AppKey / Client ID（必填）。
+- `clientSecret`：钉钉应用的 AppSecret / Client Secret（必填）。
+- `showToolMessages`：是否在钉钉消息中展示工具调用过程（布尔值，默认 `true`）。
+- `showThinking`：是否展示思考中状态（布尔值，默认 `true`）。
+- `messageType`：消息发送格式（默认 `"markdown"`）。
+- `cronMessageType`：定时推送格式（默认 `"markdown"`）。
+- `atSenderOnReply`：回复时是否 @ 发送者（布尔值，默认 `false`）。
+- `dmPolicy`：私聊访问策略（默认 `"open"`）。
+- `groupPolicy`：群聊访问策略（默认 `"open"`）。
+- `requireMention`：群聊中是否必须 @ 机器人（布尔值，默认 `false`）。
+- `allowlistUsers`：允许使用该渠道的用户 ID 白名单列表（字符串数组，空数组 `[]` 表示不限制）。

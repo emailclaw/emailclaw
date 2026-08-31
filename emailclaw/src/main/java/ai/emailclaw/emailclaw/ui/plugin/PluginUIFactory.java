@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.ui.plugin;
 
-import ai.emailclaw.emailclaw.channel.emailclaw.ui.EmailclawConfigViewProvider;
+import ai.emailclaw.emailclaw.plugin.channel.emailclaw.ui.EmailclawChannelConfigViewProvider;
 import java.util.Map;
 import java.util.Optional;
 
@@ -25,7 +25,7 @@ public class PluginUIFactory {
                     //                    ai.emailclaw.emailclaw.channel.ChannelIds.DINGTALK,
                     //                            new DingTalkConfigViewProvider(),
                     ai.emailclaw.emailclaw.channel.ChannelIds.EMAILCLAW,
-                    new EmailclawConfigViewProvider());
+                    new EmailclawChannelConfigViewProvider());
 
     /**
      * Get the corresponding custom view provider based on the plugin ID.

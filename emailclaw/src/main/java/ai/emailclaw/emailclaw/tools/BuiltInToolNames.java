@@ -36,6 +36,7 @@ public final class BuiltInToolNames {
     public static final String CHECK_AGENT_TASK = "check_agent_task";
     public static final String SAVE_GLOBAL_PREFERENCE = "save_global_preference";
     public static final String SAVE_PROJECT_MEMORY = "save_project_memory";
+    public static final String INVOKE_ANTIGRAVITY_CLI = "invokeAntigravityCli";
 
     private BuiltInToolNames() {}
 }

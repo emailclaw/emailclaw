@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "author": "Example Author",
   "type": "channel",
-  "entry_point": "ai.emailclaw.emailclaw.channel.dingtalk.DingTalkPlugin",
+  "entry_point": "ai.emailclaw.emailclaw.plugin.channel.dingtalk.DingTalkChannelPlugin",
   "description": "Third-party DingTalk channel plugin for Emailclaw."
 }

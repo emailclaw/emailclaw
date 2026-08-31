@@ -466,3 +466,60 @@ private record PendingApprovalRequest(
 | Approval Confirmation | Reply email | Send confirmation message |
 
 The core logic of the two implementations is the same, and the main difference lies in how messages are sent and received.
+
+## 11. Packaging, Deployment & Usage Guide
+
+### 11.1 Compilation & Packaging Mechanism
+
+Third-party and sample plugins are typically developed as standalone modules. In a multi-module Maven Reactor project, to correctly resolve local `emailclaw` host dependencies, execute targeted packaging commands from the project root:
+
+```sh
+# Example: Package Tool plugin
+mvn -pl invokeAntigravityCli -am package
+
+# Example: Package Channel plugin
+mvn -pl dingtalk -am package
+```
+
+Upon completion, each submodule's `target/` directory will contain a standalone shaded JAR with bundled third-party dependencies:
+- `invokeAntigravityCli/target/emailclaw-plugin-tool-invokeAntigravityCli-1.0.0.jar`
+- `dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar`
+
+### 11.2 Deploying to Emailclaw
+
+The default external plugin directory in Emailclaw is:
+- **Linux / macOS**: `~/emailclaw/plugins/`
+- **Windows**: `%USERPROFILE%\emailclaw\plugins\`
+
+Copy the built JAR files directly into the plugins directory:
+
+```sh
+# Deploy Tool plugin
+cp invokeAntigravityCli/target/emailclaw-plugin-tool-invokeAntigravityCli-1.0.0.jar ~/emailclaw/plugins/
+
+# Deploy Channel plugin
+cp dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar ~/emailclaw/plugins/
+```
+
+### 11.3 Dynamic Hot-Reloading & Verification
+
+Emailclaw provides out-of-the-box plugin lifecycle management and hot-reloading:
+1. **Runtime Hot-Loading**: A background daemon thread scans `~/emailclaw/plugins/` every 5 seconds. When a new `.jar` is detected, it automatically isolates the ClassLoader, parses `plugin.json`, instantiates the entry point, and invokes `register()` and `initialize()`.
+2. **Startup Assembly**: Whenever Emailclaw starts up, `PluginManager` automatically scans `~/emailclaw/plugins/` and loads all available plugins.
+3. **Log Verification**: When successfully loaded, the console/log will display:
+   ```
+   INFO: Discovered external plugin: emailclaw-plugin-tool-invokeAntigravityCli
+   INFO: Successfully registered Tool plugin: invokeAntigravityCli
+   INFO: InvokeAntigravityCliPlugin started
+   ```
+
+### 11.4 Using Plugins in Emailclaw
+
+1. **Channel Plugins (e.g. DingTalk)**:
+   - Go to System Settings -> "Channels" page in the UI.
+   - The new channel plugin will appear. Click `Configure` to set credentials (`clientId` / `clientSecret`).
+   - Toggle the channel to "Enabled" to allow users to interact with AI Agents via DingTalk.
+2. **Tool Plugins (e.g. invokeAntigravityCli)**:
+   - Once loaded, the tool is dynamically added to the Agent's `Toolkit`.
+   - In chat sessions, instructing the Agent with tasks (e.g. *"Use invokeAntigravityCli to run unit tests and output a JSON report"*) will prompt the LLM to autonomously trigger the tool in the background.
+

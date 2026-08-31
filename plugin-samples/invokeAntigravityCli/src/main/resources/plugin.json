@@ -1,0 +1,9 @@
+{
+  "id": "emailclaw-plugin-tool-invokeAntigravityCli",
+  "name": "Invoke Antigravity CLI",
+  "version": "1.0.0",
+  "author": "Example Author",
+  "type": "tool",
+  "entry_point": "ai.emailclaw.emailclaw.plugin.tool.antigravity.InvokeAntigravityCliPlugin",
+  "description": "Plugin adapter for the Google Antigravity CLI Tool."
+}

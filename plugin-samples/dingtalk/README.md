@@ -1,101 +1,77 @@
-# DingTalk Plugin Compilation Instructions
+# DingTalk Plugin Usage & Deployment Guide
 
-When compiling to generate a deployable plugin JAR file to be copied into the `plugins` directory, please return to the parent directory first, verify that the `emailclaw` version in the `pom.xml` file in the current directory is correct (otherwise compilation will fail), and then execute:
+The `dingtalk` plugin is Emailclaw's sample **Channel Plugin**, providing bidirectional integration between DingTalk enterprise internal bot messaging and Emailclaw AI Agents.
+
+---
+
+## 1. Compilation & Packaging
+
+To compile and produce the deployable plugin JAR file, navigate to the `plugin-samples` root directory and execute the Maven Reactor build command:
 
 ```sh
-cd ..
-mvn -pl dingtalk -am package 
+# Navigate to the plugin-samples root
+cd plugin-samples
+
+# Build and package dingtalk using Maven Reactor
+mvn -pl dingtalk -am package
 ```
 
-Do not directly execute `mvn clean compile` inside the `dingtalk` directory.
+> **Important**: Do not execute `mvn clean compile` directly inside the `dingtalk` directory without the parent reactor context, as local artifact resolution requires the reactor.
 
-# DingTalk Plugin Configuration Instructions
-This plugin provides a native configuration interface (UI). You can directly find DingTalk on the "Channels" page in system settings, click the `Configure` button for visual configuration. It also supports scanning a QR code to quickly and automatically fill in the AppKey and AppSecret.
+After packaging succeeds, the standalone shaded plugin JAR (containing necessary dependencies like `dingtalk-stream`) will be generated in `dingtalk/target/`:
+- **Artifact Path**: `dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar`
 
-Of course, if you are more accustomed to directly modifying the configuration file, you can also refer to the instructions below to edit it manually:
+---
 
+## 2. Deployment & Activation
 
-## 1. Configuration File Location
+Emailclaw provides **built-in dynamic scanning and hot-reloading** for external plugins. Deployment is straightforward:
 
-Please open `channels.json` in the user configuration directory:
+### Step 1: Ensure Plugins Directory Exists
+The default external plugins directory in Emailclaw is:
+- **Linux / macOS**: `~/emailclaw/plugins/`
+- **Windows**: `%USERPROFILE%\emailclaw\plugins\`
 
-- Linux / macOS: `~/emailclaw/.config/channels.json`
-- Windows: `%USERPROFILE%\emailclaw\.config\channels.json`
-
-Find or add the corresponding `ChannelInfo` entry for the DingTalk channel in this file, and then complete the `pluginConfig` field with the following configuration items.
-
-## 2. Configuration Method
-
-It is recommended to write it inside the `pluginConfig` object, like:
-
-```json
-{
-  "pluginConfig": {
-    "clientId": "...",
-    "clientSecret": "..."
-  }
-}
+If this directory does not exist yet, create it:
+```sh
+mkdir -p ~/emailclaw/plugins
 ```
 
-## 3. Field Descriptions
+### Step 2: Copy the Generated JAR File
+Copy the built plugin JAR into the `plugins` directory:
 
-- `clientId`
-  - The AppKey or Client ID of the DingTalk application.
-  - Required, used for the plugin to authenticate with DingTalk.
+```sh
+# Linux / macOS
+cp dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar ~/emailclaw/plugins/
 
-- `clientSecret`
-  - The AppSecret or Client Secret of the DingTalk application.
-  - Required, used with `clientId` to complete authentication.
+# Windows (PowerShell)
+Copy-Item dingtalk\target\emailclaw-plugin-channel-dingtalk-1.0.0.jar $HOME\emailclaw\plugins\
+```
 
-- `showToolMessages`
-  - Whether to display tool message content in DingTalk messages.
-  - Boolean, `true` indicates display, `false` indicates hide.
-  - Default value is `true`.
+### Step 3: Verify Activation
+- **Dynamic Hot-Loading (No Restart Required)**: Emailclaw's background directory watcher (scanning every 5 seconds) will automatically detect the new JAR, instantiate the channel plugin, and start listening. The console/log will report:
+  ```
+  INFO: Discovered external plugin: emailclaw-plugin-channel-dingtalk
+  INFO: Channel plugin started: dingtalk
+  ```
+- **Application Startup Loading**: If Emailclaw is not currently running, `PluginManager` will automatically scan `~/emailclaw/plugins/` and load the plugin during system bootstrap.
 
-- `showThinking`
-  - Whether to show the "Thinking" or processing status in DingTalk messages.
-  - Boolean, `true` indicates show, `false` indicates do not show.
-  - Default value is `true`.
+---
 
-- `messageType`
-  - Sending format for normal messages.
-  - Recommended value: `markdown`.
-  - If you wish to use other DingTalk message formats, you can fill them in according to the DingTalk API requirements.
-  - Default value is `markdown`.
+## 3. How to Configure & Use DingTalk in Emailclaw
 
-- `cronMessageType`
-  - Message format used for scheduled messages (cron pushes).
-  - The recommended value is also `markdown`.
-  - Default value is `markdown`.
+### Method 1: Visual Configuration via UI (Recommended)
+1. Launch Emailclaw and open the "Channels" page in System Settings.
+2. Locate the "DingTalk" entry.
+3. Click `Configure` to open the configuration panel and input your DingTalk application's `AppKey` (`clientId`) and `AppSecret` (`clientSecret`), with QR code scanning auto-fill support.
+4. Toggle the status switch to "Enabled". The bot will immediately connect in the background.
 
-- `atSenderOnReply`
-  - When the plugin replies, whether to @ the reply initiator.
-  - Boolean, `true` indicates @, `false` indicates do not @.
-  - Default value is `false`.
+### Method 2: Manual Configuration via JSON File
+Alternatively, edit `channels.json` in the user configuration directory:
+- **Linux / macOS**: `~/emailclaw/.config/channels.json`
+- **Windows**: `%USERPROFILE%\emailclaw\.config\channels.json`
 
-- `dmPolicy`
-  - Access policy for direct messages.
-  - The current default value is `open`.
-  - If there are no special requirements, it can be kept as `open`.
-
-- `groupPolicy`
-  - Access policy for group messages.
-  - The current default value is `open`.
-  - If there are no special requirements, it can be kept as `open`.
-
-- `requireMention`
-  - Whether it is required to be @'ed in group messages to trigger the plugin.
-  - Boolean, `true` indicates @ is required, `false` indicates it is not required.
-  - Default value is `false`.
-
-- `allowlistUsers`
-  - Whitelist user list.
-  - Write a string array, where each value in the array is a user ID permitted to use this DingTalk channel.
-  - If no restriction is needed, it can be omitted or set to an empty array `[]`.
-
-## 4. Reference Example
-
-Below is a common example of the DingTalk channel entry in `channels.json` for reference only:
+Add or update the `dingtalk` entry:
 
 ```json
 {
@@ -114,12 +90,23 @@ Below is a common example of the DingTalk channel entry in `channels.json` for r
     "dmPolicy": "open",
     "groupPolicy": "open",
     "requireMention": false,
-    "allowlistUsers": [
-      "user1",
-      "user2"
-    ]
+    "allowlistUsers": []
   }
 }
 ```
 
-> Note: `clientId` and `clientSecret` are required fields. The DingTalk channel will only be considered configured after both of these fields are set.
+---
+
+## 4. Field Descriptions
+
+- `clientId`: DingTalk application AppKey / Client ID (Required).
+- `clientSecret`: DingTalk application AppSecret / Client Secret (Required).
+- `showToolMessages`: Whether to show tool execution progress in DingTalk messages (Boolean, default `true`).
+- `showThinking`: Whether to show reasoning/thinking state in messages (Boolean, default `true`).
+- `messageType`: Format for standard messages (default `"markdown"`).
+- `cronMessageType`: Format for scheduled messages (default `"markdown"`).
+- `atSenderOnReply`: Whether to @ the user when replying (Boolean, default `false`).
+- `dmPolicy`: Policy for direct messages (default `"open"`).
+- `groupPolicy`: Policy for group chats (default `"open"`).
+- `requireMention`: Whether @mention is required in group chats (Boolean, default `false`).
+- `allowlistUsers`: Array of user IDs permitted to interact with the bot (default `[]` for unrestricted).

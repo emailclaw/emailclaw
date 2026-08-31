@@ -279,22 +279,66 @@ public class PluginManager {
      * @throws Exception Thrown when stopping the plugin fails, or when disk file deletion encounters I/O errors such as lack of permission or file locks
      */
     public void uninstallPlugin(String id) throws Exception {
-        // First unload the running instance from memory
+        // 1. Retrieve the runtime record to preserve its physical sourcePath before unloading
+        PluginRecord record = loadedPlugins.get(id);
+        Path targetPath = record != null ? record.sourcePath : null;
+
+        // 2. Unload the running instance from memory
         unloadPlugin(id);
-        // Then delete files from disk
+
+        // 3. If sourcePath was recorded and exists on disk, delete it directly
+        if (targetPath != null && Files.exists(targetPath)) {
+            if (Files.isDirectory(targetPath)) {
+                pluginLoader.deleteDirectoryRecursively(targetPath);
+            } else {
+                Files.delete(targetPath);
+            }
+            LOGGER.info("Deleted plugin from sourcePath: " + targetPath);
+            return;
+        }
+
+        // 4. Try exact directory match
         Path pluginDir = pluginsDir.resolve(id);
         if (Files.exists(pluginDir) && Files.isDirectory(pluginDir)) {
             pluginLoader.deleteDirectoryRecursively(pluginDir);
             LOGGER.info("Deleted plugin directory: " + id);
             return;
         }
-        // Could also be a single JAR file
-        Path jarFile = pluginsDir.resolve(id + ".jar");
-        if (Files.exists(jarFile)) {
-            Files.delete(jarFile);
-            LOGGER.info("Deleted JAR plugin: " + id);
+
+        // 5. Try exact JAR match (id.jar)
+        Path exactJarFile = pluginsDir.resolve(id + ".jar");
+        if (Files.exists(exactJarFile)) {
+            Files.delete(exactJarFile);
+            LOGGER.info("Deleted exact JAR plugin: " + id);
             return;
         }
+
+        // 6. Scan pluginsDir for versioned JARs (e.g. id-1.0.0.jar) or match by parsing plugin.json
+        if (pluginsDir != null && Files.exists(pluginsDir) && Files.isDirectory(pluginsDir)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(pluginsDir)) {
+                for (Path p : stream) {
+                    String fileName = p.getFileName().toString();
+                    // 6.1 Match versioned JAR filename prefix (e.g., id-*.jar)
+                    if (Files.isRegularFile(p)
+                            && fileName.startsWith(id + "-")
+                            && fileName.endsWith(".jar")) {
+                        Files.delete(p);
+                        LOGGER.info("Deleted versioned JAR plugin: " + fileName);
+                        return;
+                    }
+                    // 6.2 Match by reading plugin.json manifest inside JAR
+                    if (Files.isRegularFile(p) && fileName.endsWith(".jar")) {
+                        PluginManifest manifest = pluginLoader.parsePluginJarMeta(p);
+                        if (manifest != null && id.equals(manifest.id)) {
+                            Files.delete(p);
+                            LOGGER.info("Deleted matched JAR plugin by manifest ID: " + fileName);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         throw new FileNotFoundException(
                 "Could not find directory or JAR file corresponding to plugin: " + id);
     }

@@ -466,3 +466,60 @@ private record PendingApprovalRequest(
 | 审批确认 | 回复邮件 | 发送确认消息 |
 
 两种实现的核心逻辑相同，主要区别在于消息发送和接收的方式。
+
+## 11. 插件打包、部署与使用说明
+
+### 11.1 编译打包机制
+
+第三方插件与样例插件通常作为独立模块开发。在多模块 Maven Reactor 工程中，为了正确解析宿主 `emailclaw` 依赖，请在工程根目录执行定向打包命令：
+
+```sh
+# 示例：打包 Tool 插件
+mvn -pl invokeAntigravityCli -am package
+
+# 示例：打包 Channel 插件
+mvn -pl dingtalk -am package
+```
+
+打包完成后，各子模块的 `target/` 目录将生成包含必要依赖的独立 Shaded JAR：
+- `invokeAntigravityCli/target/emailclaw-plugin-tool-invokeAntigravityCli-1.0.0.jar`
+- `dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar`
+
+### 11.2 部署到 Emailclaw
+
+Emailclaw 的外部插件根目录为：
+- **Linux / macOS**：`~/emailclaw/plugins/`
+- **Windows**：`%USERPROFILE%\emailclaw\plugins\`
+
+将编译生成的 JAR 文件拷贝到该目录即可完成部署：
+
+```sh
+# 拷贝 Tool 插件
+cp invokeAntigravityCli/target/emailclaw-plugin-tool-invokeAntigravityCli-1.0.0.jar ~/emailclaw/plugins/
+
+# 拷贝 Channel 插件
+cp dingtalk/target/emailclaw-plugin-channel-dingtalk-1.0.0.jar ~/emailclaw/plugins/
+```
+
+### 11.3 动态热重载与生效验证
+
+Emailclaw 提供了开箱即用的插件生命周期管理与热重载机制：
+1. **运行期动态热加载**：系统后台守护线程每 5 秒扫描一次 `~/emailclaw/plugins/` 目录。一旦检测到新拷贝入的 `.jar` 文件，将自动通过独立 ClassLoader 装载、解析 `plugin.json`、实例化入口类并调用 `register()` 与 `initialize()`。
+2. **启动期全量装配**：每次启动 Emailclaw 客户端或服务时，`PluginManager` 会自动扫描 `~/emailclaw/plugins/` 下的所有 JAR 文件并全量加载。
+3. **日志验证**：成功加载后，控制台/日志将输出如下信息：
+   ```
+   INFO: Discovered external plugin: emailclaw-plugin-tool-invokeAntigravityCli
+   INFO: Successfully registered Tool plugin: invokeAntigravityCli
+   INFO: InvokeAntigravityCliPlugin started
+   ```
+
+### 11.4 在 Emailclaw 中使用插件
+
+1. **渠道插件（Channel Plugin，如 DingTalk）**：
+   - 打开客户端「系统设置 -> 渠道配置（Channels）」页面。
+   - 列表中将自动出现新插件条目，点击 `Configure` 配置连接凭据（如 AppKey / AppSecret）。
+   - 将开关切换为启用，即可通过钉钉与 AI Agent 建立会话交互。
+2. **工具插件（Tool Plugin，如 invokeAntigravityCli）**：
+   - 插件加载后，工具将自动注入到智能体的工具集（`Toolkit`）中。
+   - 在与 Agent 的对话会话中，只需提出相关任务（例如：“请调用 invokeAntigravityCli 运行测试并生成 JSON 报告”），大模型将自动决定并触发该 Tool 的后台执行。
+
