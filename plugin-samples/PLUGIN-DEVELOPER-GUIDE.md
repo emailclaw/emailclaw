@@ -283,13 +283,13 @@ When a third-party plugin depends on Emailclaw, it usually uses the `provided` s
 
 ## 9. Example Module
 
-`plugin-samples/dingtalk` is a Channel plugin sample module, showing:
+`plugin-samples/invokeAntigravityCli` is a Tool plugin sample module, showing:
 
 - The `entry_point` configuration of `plugin.json`.
-- The basic inheritance method of `AbstractChannelPlugin`.
-- Hot-reading configurations via `ChannelService`.
-- Mapping external sessions to `ChatSessionInfo`.
-- Sending messages carrying routes via `ChatService.sendMessage(...)`.
+- The basic inheritance method of `AbstractToolPlugin`.
+- Using `@Tool` and `@ToolParam` to define structured tools for LLMs.
+- Returning `ToolResultBlock` with structured JSON output and metadata.
+- Using `AntigravityProcessRunner` to safely execute background processes.
 
 When implementing new Email, IM, or Webhook Channels, you can prioritize referring to the built-in `EmailclawPlugin`, `DingTalkPlugin`, and the ToolGuard approval code processing flow in their corresponding Runners.
 

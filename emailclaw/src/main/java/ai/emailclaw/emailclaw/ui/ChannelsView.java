@@ -134,7 +134,7 @@ public class ChannelsView implements ViewPane {
                             javafx.stage.Stage dialogStage = new javafx.stage.Stage();
                             dialogStage.initOwner(owner);
                             dialogStage.initModality(javafx.stage.Modality.WINDOW_MODAL);
-                            dialogStage.setTitle(plugin.displayName() + " Settings");
+                            dialogStage.setTitle(plugin.displayName() + " Channel Settings");
 
                             // Because lambdas require effectively final variables
                             final ai.emailclaw.emailclaw.model.ChannelInfo finalChannel = channel;

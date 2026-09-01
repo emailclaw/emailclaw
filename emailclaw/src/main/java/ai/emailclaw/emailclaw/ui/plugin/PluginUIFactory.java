@@ -20,6 +20,16 @@ import java.util.Optional;
  */
 public class PluginUIFactory {
 
+    private static ai.emailclaw.emailclaw.service.AgentService agentService;
+
+    public static void setAgentService(ai.emailclaw.emailclaw.service.AgentService service) {
+        agentService = service;
+    }
+
+    public static ai.emailclaw.emailclaw.service.AgentService getAgentService() {
+        return agentService;
+    }
+
     private static final Map<String, CustomConfigViewProvider> PROVIDERS =
             Map.of(
                     //                    ai.emailclaw.emailclaw.channel.ChannelIds.DINGTALK,

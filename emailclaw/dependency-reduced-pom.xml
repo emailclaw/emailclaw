@@ -4,8 +4,8 @@
   <groupId>ai.emailclaw</groupId>
   <artifactId>emailclaw</artifactId>
   <name>emailclaw</name>
-  <version>26.8.31</version>
-  <url>http://www.emailclaw.ai</url>
+  <version>26.8.30</version>
+  <url>http://www.emailclaw.email</url>
   <build>
     <plugins>
       <plugin>

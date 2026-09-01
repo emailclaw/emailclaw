@@ -377,18 +377,21 @@ public class PluginLoader {
      */
     private EmailclawPlugin instantiatePlugin(URLClassLoader classLoader, PluginManifest manifest)
             throws Exception {
-        // Try the SPI mechanism first
-        ServiceLoader<EmailclawPlugin> serviceLoader =
-                ServiceLoader.load(EmailclawPlugin.class, classLoader);
-        for (EmailclawPlugin plugin : serviceLoader) {
-            // Take the first SPI entry point for each JAR
-            return plugin;
-        }
-        // Fallback to reflective loading of the entry_point declared in plugin.json
+        // Prefer reflective loading of the entry_point declared in plugin.json
         if (manifest.entryPoint != null && !manifest.entryPoint.isBlank()) {
             Class<?> clazz = classLoader.loadClass(manifest.entryPoint);
             return (EmailclawPlugin) clazz.getDeclaredConstructor().newInstance();
         }
+
+        // Fallback to the SPI mechanism, but ONLY accept plugins loaded by this classLoader
+        ServiceLoader<EmailclawPlugin> serviceLoader =
+                ServiceLoader.load(EmailclawPlugin.class, classLoader);
+        for (EmailclawPlugin plugin : serviceLoader) {
+            if (plugin.getClass().getClassLoader() == classLoader) {
+                return plugin;
+            }
+        }
+
         return null;
     }
 

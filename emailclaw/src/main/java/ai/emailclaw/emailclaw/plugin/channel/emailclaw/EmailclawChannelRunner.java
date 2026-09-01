@@ -28,6 +28,7 @@ import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.event.ConfirmResult;
@@ -59,6 +60,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -68,6 +70,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -76,204 +79,113 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Emailclaw background polling executor.
- * Emailclaw's channel enable/disable mechanism is fully inherited from agentscope-java, implementation method:
- * Background virtual threads periodically check configuration, taking effect in real-time without restart.
- *
- * <p>Responsibilities:
- * <ul>
- *   <li>Periodically fetch unread emails from mailbox (based on Jakarta Mail)</li>
- *   <li>Filter emails based on allowed sender whitelist</li>
- *   <li>Convert email content to prompt and hand it over to the current default Agent</li>
- *   <li>Send model response back to the other party via email (based on Jakarta Mail)</li>
- * </ul>
- *
- * <p>Implementation strategy:
- * <ul>
- *   <li>Use Jakarta Mail (Eclipse Angus 2.0.5) as the email protocol layer, replacing the original Socket implementation</li>
- *   <li>Use IMAP UID to record the last processing position to avoid duplicate consumption</li>
- *   <li>Auto-complete server parameters for common email domains</li>
- * </ul>
- *
- * Complete Emailclaw approval event flow
- * ① User sends email -> EmailclawRunner.pollInbox()
- * ② -> ChatService.sendMessage() -> reactAgent.streamEvents()
- * ③ ReActAgent acting -> PermissionEngine -> ASK
- * ④ -> emit RequireUserConfirmEvent + RequestStopEvent
- * ⑤ ChatService detect RequireUserConfirmEvent
- *    ├─ Extract pending ToolUseBlock
- *    ├─ Build approval email (tool name + parameters + 4-digit code)
- *    ├─ Send to user via Jakarta Mail
- *    └─ Block and wait (CompletableFuture)
- * ⑥ User replies to email (approval code)
- *    ├─ EmailclawRunner.handleApprovalReply() -> complete future
- *    └─ ChatService receives APPROVED/REJECTED
- * ⑦ Construct ConfirmResult (including "remember" rules)
- * ⑧ Call agent.call(List.of(resumeMsg)) to resume
- * ⑨ ReActAgent.applyConfirmResults() -> Mark tool ALLOWED
- *    -> Continue ReAct loop -> Execute tool -> Send result email to user
+ * Emailclaw background multi-mailbox polling and dispatch executor.
+ * Supports multiple mailbox accounts with session-driven Agent resolution.
  */
 public class EmailclawChannelRunner {
 
     private static final Logger LOGGER = Logger.getLogger(EmailclawChannelRunner.class.getName());
 
     // ======================== Constants Area ========================
-    /**
-     * Maximum concurrent mail processing threads
-     */
+    /** Maximum concurrent mail processing threads per mailbox dispatch */
     private static final int MAIL_PROCESSING_MAX_CONCURRENCY = 4;
 
-    /**
-     * Attachment size limit: 10MB
-     */
+    /** Attachment size limit: 10MB */
     private static final long EMAIL_ATTACHMENT_MAX_BYTES = 10L * 1024L * 1024L;
 
-    /**
-     * Email address extraction regex
-     */
+    /** Email address extraction regex */
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+)");
 
-    /**
-     * Quoted prefix line detection: > ＞ | │ ┃ ¦
-     */
+    /** Quoted prefix line detection: > ＞ | │ ┃ ¦ */
     private static final Pattern QUOTED_PREFIX_LINE =
             Pattern.compile("^\\s{0,6}(?:[>＞]|\\|\\s|│|┃|¦).*$");
 
-    /**
-     * English reply marker: On ... wrote:
-     */
+    /** English reply marker: On ... wrote: */
     private static final Pattern EN_REPLY_WROTE_LINE =
             Pattern.compile("(?i)^\\s*on\\s+.+\\s+wrote\\s*:\\s*$");
 
-    /**
-     * Chinese reply marker
-     */
+    /** Chinese reply marker */
     private static final Pattern ZH_REPLY_WROTE_LINE =
             Pattern.compile("(?i)^\\s*on\\s+.+\\s+wrote\\s*:\\s*$");
 
-    /**
-     * English original message marker: -----Original Message----- / -----Forwarded Message-----
-     */
+    /** English original message marker */
     private static final Pattern ORIGINAL_MESSAGE_LINE =
             Pattern.compile(
                     "(?i)^\\s*-{2,}\\s*(?:original message|forwarded message)\\s*-{2,}\\s*$");
 
-    /**
-     * Chinese original message marker
-     */
+    /** Chinese original message marker */
     private static final Pattern ZH_ORIGINAL_MESSAGE_LINE =
             Pattern.compile("^\\s*-{2,}\\s*(?:原始邮件|转发邮件)\\s*-{2,}\\s*$");
 
-    /**
-     * RFC822 header start line (English)
-     */
+    /** RFC822 header start line (English) */
     private static final Pattern RFC822_HEADER_LINE =
             Pattern.compile("(?i)^\\s*(?:from|sent|to|subject|cc|date|reply-to)\\s*:");
 
-    /**
-     * RFC822 header start line (Chinese)
-     */
+    /** RFC822 header start line (Chinese) */
     private static final Pattern ZH_RFC822_HEADER_LINE =
             Pattern.compile("^\\s*(?:发件人|发送时间|收件人|主题|抄送|日期|答复至)\\s*[：:]");
 
-    /**
-     * Next line header (Chinese)
-     */
-    private static final Pattern ZH_NEXT_LINE_HEADER =
-            Pattern.compile("^(?:to:|subject:|date:|sent:|发件人|主题|日期|发送时间).*");
-
-    /**
-     * Signature separator line: --
-     */
+    /** Signature separator line: -- */
     private static final Pattern SIGNATURE_SEPARATOR_LINE = Pattern.compile("^\\s*--\\s*$");
 
-    /**
-     * Long separator line: continuous - _ = (at least 6)
-     */
+    /** Long separator line: continuous - _ = (at least 6) */
     private static final Pattern LONG_SEPARATOR_LINE = Pattern.compile("^\\s*[-_=]{6,}\\s*$");
 
-    /**
-     * Used for multiple spaces folding
-     */
+    /** Used for multiple spaces folding */
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
 
-    /**
-     * Attachment tag pattern (used to detect attachment tags in model replies)
-     */
+    /** Attachment tag pattern */
     private static final Pattern ATTACHMENT_TAG_PATTERN =
             Pattern.compile("^" + MessageMarkupTags.ATTACHMENT_PATTERN + "$", Pattern.MULTILINE);
 
-    /**
-     * Guide reply email template
-     */
+    /** Guide reply email template */
     private static final String BOOTSTRAP_GUIDANCE_TEMPLATE =
             "For security reasons, the system only processes emails with valid TaskId in the"
                 + " subject line. This email has now been updated with the newly created TaskId."
                 + " Please reply to this email, and the system will immediately start working for"
                 + " you.";
 
-    /**
-     * Attachment error: file not found
-     */
+    /** Attachment error: file not found */
     private static final String ATTACHMENT_ERR_NOT_FOUND = "[Attachment Error: File not found: %s]";
 
-    /**
-     * Attachment error: invalid path
-     */
+    /** Attachment error: invalid path */
     private static final String ATTACHMENT_ERR_INVALID_PATH =
             "[Attachment Error: Invalid path: %s]";
 
-    /**
-     * Attachment directory name
-     */
+    /** Attachment directory name */
     private static final String ATTACHMENTS_DIR_NAME = WorkspacePaths.ATTACHMENTS_DIR;
 
-    /**
-     * Default attachment MIME type
-     */
-    private static final String DEFAULT_MIME_TYPE = "application/octet-stream";
-
-    /**
-     * IMAP connection timeout (ms)
-     */
+    /** IMAP/SMTP connection timeout (ms) */
     private static final String MAIL_TIMEOUT = "15000";
 
-    /**
-     * Sender display name
-     */
+    /** Sender display name */
     private static final String FROM_NAME = "Emailclaw";
 
     // ======================== Instance Fields ========================
     private final ChannelService channelService;
-
     private final ChatService chatService;
-
     private final AgentService agentService;
-
     private final ProviderService providerService;
-
-    private final ai.emailclaw.emailclaw.storage.ConfigManager configManager;
-
+    private final ConfigManager configManager;
     private final ProjectService projectService;
 
     private final AtomicBoolean running = new AtomicBoolean(true);
-
     private final Semaphore mailProcessingPermits = new Semaphore(MAIL_PROCESSING_MAX_CONCURRENCY);
 
-    // Use GovernanceService to manage pending approval requests, no longer use memory blocking Map
-    // ======================== Construction & Lifecycle ========================
     /**
-     * Constructs and starts the background polling thread.
-     *
-     * <p>The thread continuously reads the latest Channel configuration, supporting immediate effect after the user modifies the configuration in the UI.
+     * In-memory cache for processed IMAP UIDs per mailbox during this runtime.
+     * Not persisted to disk to avoid UIDVALIDITY mismatch issues.
      */
+    private final Map<String, Set<Long>> inMemoryProcessedUids = new ConcurrentHashMap<>();
+
+    // ======================== Construction & Lifecycle ========================
     public EmailclawChannelRunner(
             ChannelService channelService,
             ChatService chatService,
             AgentService agentService,
             ProviderService providerService,
-            ai.emailclaw.emailclaw.storage.ConfigManager configManager,
+            ConfigManager configManager,
             ProjectService projectService) {
         this.channelService = channelService;
         this.chatService = chatService;
@@ -281,80 +193,397 @@ public class EmailclawChannelRunner {
         this.providerService = providerService;
         this.configManager = configManager;
         this.projectService = projectService;
+
         Thread.startVirtualThread(
                 () -> {
                     while (running.get()) {
                         int sleepSeconds = 30;
                         try {
                             ChannelInfo channel = findEmailChannel();
-                            if (channel != null) {
+                            if (channel != null && channel.isEnabled()) {
                                 sleepSeconds =
                                         Math.max(
                                                 5,
                                                 EmailclawChannelConfig.getEmailPollIntervalSeconds(
                                                         channel));
-                                if (isConfiguredAndEnabled(channel)) {
-                                    pollInbox(channel);
+                                List<MailboxAccountConfig> mailboxes =
+                                        EmailclawChannelConfig.getMailboxes(channel);
+                                for (MailboxAccountConfig mailbox : mailboxes) {
+                                    if (mailbox.isRunnable()) {
+                                        pollMailboxInbox(channel, mailbox);
+                                    } else {
+                                        LOGGER.fine(
+                                                () ->
+                                                        "Skipping mailbox because it is not"
+                                                            + " runnable (missing credentials or"
+                                                            + " disabled): "
+                                                                + mailbox.emailAddress());
+                                    }
                                 }
+                            } else if (channel != null && !channel.isEnabled()) {
+                                LOGGER.fine(
+                                        "Emailclaw channel is globally disabled, skipping"
+                                                + " polling.");
                             }
                         } catch (Throwable t) {
-                            LOGGER.log(Level.WARNING, "Emailclaw polling exception", t);
+                            LOGGER.log(
+                                    Level.WARNING, "Emailclaw multi-mailbox polling exception", t);
                         }
                         sleepQuietly(sleepSeconds * 1000L);
                     }
                 });
-        LOGGER.info("EmailclawRunner background polling thread has started");
+        LOGGER.info("EmailclawChannelRunner multi-mailbox background polling supervisor started");
     }
 
-    /**
-     * Requests to stop the background polling thread.
-     */
     public void stop() {
         running.set(false);
-        LOGGER.info("EmailclawRunner stop has been requested");
+        LOGGER.info("EmailclawChannelRunner stop has been requested");
     }
 
-    // ======================== ToolGuard Approval Process ========================
-    /**
-     * Sends an approval request email to the user (non-blocking).
-     * Called by the onCompleted callback of handleMail when a pending approval request is detected.
-     */
+    // ======================== Channel Finding & Setup ========================
+    private ChannelInfo findEmailChannel() {
+        ChannelInfo channel =
+                channelService.list().stream()
+                        .filter(ch -> ChannelIds.EMAILCLAW.equals(ch.getId()))
+                        .findFirst()
+                        .orElse(null);
+        if (channel != null) {
+            if (EmailclawChannelConfig.normalizeEmailclawPluginConfig(channel)) {
+                channelService.save();
+            }
+        }
+        return channel;
+    }
+
+    // ======================== Polling & Ingestion ========================
+    private void pollMailboxInbox(ChannelInfo channel, MailboxAccountConfig mailbox) {
+        LOGGER.info(
+                () -> "Polling mailbox: " + mailbox.emailAddress() + " (id=" + mailbox.id() + ")");
+        List<EmailEnvelope> mails = fetchUnreadEmails(mailbox);
+        if (mails.isEmpty()) {
+            return;
+        }
+        LOGGER.info("Unread emails count for " + mailbox.emailAddress() + ": " + mails.size());
+
+        Set<Long> processedSet =
+                inMemoryProcessedUids.computeIfAbsent(
+                        mailbox.id(), k -> Collections.newSetFromMap(new ConcurrentHashMap<>()));
+
+        for (EmailEnvelope mail : mails) {
+            if (processedSet.contains(mail.uid())) {
+                continue;
+            }
+            if (!allowedSender(channel, mailbox, mail.from())) {
+                LOGGER.info("Skipping email from non-allowlisted sender: " + mail.from());
+                continue;
+            }
+            processedSet.add(mail.uid());
+            markMailAsRead(mailbox, mail.uid());
+            dispatchMailHandling(channel, mailbox, mail);
+        }
+    }
+
+    private void dispatchMailHandling(
+            ChannelInfo channel, MailboxAccountConfig mailbox, EmailEnvelope mail) {
+        Thread.startVirtualThread(
+                () -> {
+                    boolean acquired = false;
+                    try {
+                        mailProcessingPermits.acquire();
+                        acquired = true;
+                        safeHandleMail(channel, mailbox, mail);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        LOGGER.log(
+                                Level.WARNING,
+                                "Emailclaw processing thread interrupted: subject={0}, from={1}",
+                                new Object[] {mail.subject(), mail.from()});
+                    } catch (Throwable t) {
+                        LOGGER.log(Level.WARNING, "Emailclaw email processing uncaught error", t);
+                    } finally {
+                        if (acquired) {
+                            mailProcessingPermits.release();
+                        }
+                    }
+                });
+    }
+
+    private void safeHandleMail(
+            ChannelInfo channel, MailboxAccountConfig mailbox, EmailEnvelope mail) {
+        try {
+            handleMail(channel, mailbox, mail);
+        } catch (Throwable t) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Emailclaw handleMail exception for " + mailbox.emailAddress(),
+                    t);
+        }
+    }
+
+    // ======================== Core Business Processing ========================
+    private void handleMail(ChannelInfo channel, MailboxAccountConfig mailbox, EmailEnvelope mail)
+            throws Exception {
+        String sender = normalizeSender(mail.from());
+        String sessionIdFromSubject = extractTrailingSessionId(mail.subject());
+        LOGGER.info(
+                "Processing inbound email: from="
+                        + sender
+                        + ", mailbox="
+                        + mailbox.emailAddress()
+                        + ", sessionIdInSubject="
+                        + sessionIdFromSubject);
+
+        ChatSessionInfo session = null;
+        if (isUuid(sessionIdFromSubject)) {
+            session = chatService.findSession(sessionIdFromSubject);
+        }
+
+        // Rule 1: New Email Session (Subject does not contain existing SessionID)
+        if (session == null) {
+            AgentInfo targetAgent = null;
+            if (notBlank(mailbox.targetAgentId())) {
+                targetAgent = agentService.findById(mailbox.targetAgentId()).orElse(null);
+            }
+            if (targetAgent == null) {
+                targetAgent = agentService.currentDefault();
+            }
+
+            ChatSessionInfo newSession =
+                    createNewEmailSession(targetAgent, mailbox, sender, mail.subject());
+            materializeMailAttachments(targetAgent, newSession, mail);
+            persistBootstrapMailToSession(targetAgent, newSession, mail);
+            String newSubject = truncateSubject(mail.subject()) + " " + newSession.getId();
+            sendMail(mailbox, mail.replyTo(), newSubject.trim(), BOOTSTRAP_GUIDANCE_TEMPLATE);
+            return;
+        }
+
+        // Rule 2: Existing Session -> Resolve Agent strictly from session.getAgentId()
+        AgentInfo sessionAgent = agentService.findById(session.getAgentId()).orElse(null);
+        if (sessionAgent == null) {
+            LOGGER.warning(
+                    "Session "
+                            + session.getId()
+                            + " references missing agent "
+                            + session.getAgentId()
+                            + ", using default agent");
+            sessionAgent = agentService.currentDefault();
+        }
+
+        ProviderInfo provider = chatService.resolveEffectiveProvider(sessionAgent);
+        if (provider == null || provider.allModels().isEmpty()) {
+            LOGGER.warning("Provider unavailable for agent: " + sessionAgent.getId());
+            return;
+        }
+        String modelId = chatService.resolveEffectiveModelId(sessionAgent, provider);
+        if (modelId == null || modelId.isBlank()) {
+            LOGGER.warning("ModelId unavailable for agent: " + sessionAgent.getId());
+            return;
+        }
+
+        // Backfill session attributes
+        boolean sessionUpdated = false;
+        if (session.getUserId() == null || session.getUserId().isBlank()) {
+            session.setUserId(sender);
+            sessionUpdated = true;
+        }
+        if (!ChannelIds.EMAILCLAW.equals(session.getChannel())) {
+            session.setChannel(ChannelIds.EMAILCLAW);
+            sessionUpdated = true;
+        }
+        if (sessionUpdated) {
+            chatService.updateSession(session);
+        }
+
+        // Rule 3: Approval Code Detection
+        GovernanceService guardService = chatService.getGovernanceService();
+        String emailBody = extractLatestUserContent(mail, sessionAgent, session).trim();
+        if (emailBody.matches("\\d{4}")) {
+            Optional<PendingApproval> pendingOpt =
+                    guardService.findPendingByCode(
+                            ChannelIds.EMAILCLAW, session.getId(), sender, emailBody);
+            if (pendingOpt.isPresent()) {
+                handleApprovalReply(
+                        mailbox, mail, sessionAgent, session, sender, pendingOpt.get(), false);
+                return;
+            }
+            pendingOpt =
+                    guardService.findPendingByRememberCode(
+                            ChannelIds.EMAILCLAW, session.getId(), sender, emailBody);
+            if (pendingOpt.isPresent()) {
+                handleApprovalReply(
+                        mailbox, mail, sessionAgent, session, sender, pendingOpt.get(), true);
+                return;
+            }
+        }
+
+        // Rule 4: Normal User Message Dispatch
+        String prompt = buildPrompt(mail, sessionAgent, session);
+        List<Path> attachmentPaths = materializeMailAttachments(sessionAgent, session, mail);
+        if ((prompt == null || prompt.isBlank()) && !attachmentPaths.isEmpty()) {
+            prompt =
+                    "Please process the attachments of this email and reply based on the attachment"
+                            + " contents.";
+        }
+
+        final AgentInfo effectiveAgent = sessionAgent;
+        final ChatSessionInfo effectiveSession = session;
+        final MailboxAccountConfig outboundMailbox = mailbox;
+        final String replySender = sender;
+
+        chatService.sendMessage(
+                effectiveAgent,
+                provider,
+                modelId,
+                effectiveSession,
+                prompt,
+                attachmentPaths,
+                Map.of(
+                        "originalSubject",
+                        mail.subject() == null ? "" : mail.subject(),
+                        "originMailboxId",
+                        mailbox.id()),
+                new StreamCallback() {
+                    @Override
+                    public void onPart(ChatMessagePart part, boolean startsNew) {}
+
+                    @Override
+                    public void onCompleted(Msg message) {
+                        try {
+                            List<PendingApproval> pendingForSession =
+                                    guardService.getPendingApprovals().stream()
+                                            .filter(
+                                                    p ->
+                                                            effectiveSession
+                                                                            .getId()
+                                                                            .equals(
+                                                                                    p
+                                                                                            .getSessionId())
+                                                                    && !p.isDelivered())
+                                            .toList();
+                            if (!pendingForSession.isEmpty()) {
+                                for (PendingApproval approval : pendingForSession) {
+                                    String subject = mail.subject() == null ? "" : mail.subject();
+                                    sendApprovalRequestMail(
+                                            outboundMailbox,
+                                            replySender,
+                                            subject.trim(),
+                                            approval.getToolName(),
+                                            String.valueOf(approval.getToolInput()),
+                                            approval.getApprovalCode(),
+                                            approval.getRememberCode());
+                                    guardService.markDelivered(approval.getId());
+                                }
+                            } else {
+                                String replyText =
+                                        ChatMessageRecord.textOfParts(chatService.partsOf(message));
+                                sendReply(
+                                        outboundMailbox,
+                                        mail,
+                                        replyText,
+                                        effectiveAgent,
+                                        effectiveSession);
+                            }
+                        } catch (Exception e) {
+                            LOGGER.log(
+                                    Level.WARNING,
+                                    "Emailclaw failed to dispatch reply/approval email",
+                                    e);
+                        }
+                    }
+                });
+    }
+
+    // ======================== Approval Handling ========================
+    private void handleApprovalReply(
+            MailboxAccountConfig mailbox,
+            EmailEnvelope mail,
+            AgentInfo agent,
+            ChatSessionInfo session,
+            String sender,
+            PendingApproval approval,
+            boolean remember) {
+        String replyContent = extractLatestUserContent(mail, agent, session).trim();
+        chatService.appendHistory(
+                agent.getId(),
+                session.getId(),
+                new ChatMessageRecord(
+                        ChatMessageRoles.USER,
+                        List.of(ChatMessagePart.text(sender + " wrote: " + replyContent)),
+                        LocalDateTime.now().toString()));
+
+        LOGGER.info(
+                "Emailclaw approval code matched: session="
+                        + session.getId()
+                        + ", tool="
+                        + approval.getToolName());
+
+        ToolUseBlock toolBlock =
+                new ToolUseBlock(approval.getId(), approval.getToolName(), approval.getToolInput());
+        List<PermissionRule> rules =
+                remember
+                        ? List.of(
+                                new PermissionRule(
+                                        approval.getToolName(),
+                                        null,
+                                        PermissionBehavior.ALLOW,
+                                        "user_email_approved"))
+                        : List.of();
+        ConfirmResult confirmResult = new ConfirmResult(true, toolBlock, rules);
+
+        chatService.resumeWithConfirmResult(
+                agent.getId(),
+                session.getId(),
+                ChannelIds.EMAILCLAW,
+                approval.getRoute() != null ? approval.getRoute() : Map.of(),
+                List.of(confirmResult));
+
+        chatService.appendHistory(
+                agent.getId(),
+                session.getId(),
+                new ChatMessageRecord(
+                        ChatMessageRoles.SYSTEM,
+                        List.of(
+                                ChatMessagePart.text(
+                                        "User approved tool call via approval code: "
+                                                + approval.getToolName())),
+                        LocalDateTime.now().toString()));
+
+        try {
+            sendMail(
+                    mailbox,
+                    mail.replyTo(),
+                    mail.subject(),
+                    "Approval code received, tool call approved: " + approval.getToolName());
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to send approval confirmation email", e);
+        }
+    }
+
     public void sendApprovalRequestMail(
-            ChannelInfo channel,
+            MailboxAccountConfig mailbox,
             String to,
             String subject,
             String toolName,
             String toolInput,
             String code,
             String rememberCode) {
-        if (channel == null || !isConfiguredAndEnabled(channel)) {
-            LOGGER.warning(
-                    "Emailclaw approval email sending failed: Emailclaw is not enabled or"
-                            + " configuration is incomplete");
+        if (mailbox == null || !mailbox.isRunnable()) {
+            LOGGER.warning("Cannot send approval email: mailbox not configured or enabled");
             return;
         }
         if (to == null || to.isBlank()) {
-            LOGGER.warning("Emailclaw approval email sending failed: Missing recipient");
+            LOGGER.warning("Cannot send approval email: Missing recipient");
             return;
         }
         try {
             String mailBody = buildApprovalMailBody(toolName, toolInput, code, rememberCode);
-            sendMail(channel, to, subject.trim(), mailBody);
-            LOGGER.info(
-                    "Emailclaw approval email sent successfully: to="
-                            + to
-                            + ", oneTimeCode="
-                            + code
-                            + ", rememberCode="
-                            + rememberCode);
+            sendMail(mailbox, to, subject.trim(), mailBody);
+            LOGGER.info("Emailclaw approval email sent: to=" + to + ", code=" + code);
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Emailclaw failed to send approval email", e);
+            LOGGER.log(Level.WARNING, "Failed to send approval email", e);
         }
     }
 
-    /**
-     * Builds the body of the approval email.
-     */
     private String buildApprovalMailBody(
             String toolName, String toolInput, String code, String rememberCode) {
         return "Emailclaw has detected a high-risk tool call that requires your approval.\n\n"
@@ -383,440 +612,32 @@ public class EmailclawChannelRunner {
         return value.substring(0, maxLength).trim() + "...";
     }
 
-    // ======================== Channel Configuration ========================
-    /**
-     * Finds the Emailclaw configuration object in the channel list.
-     */
-    private ChannelInfo findEmailChannel() {
-        ChannelInfo channel =
-                channelService.list().stream()
-                        .filter(ch -> ChannelIds.EMAILCLAW.equals(ch.getId()))
-                        .findFirst()
-                        .orElse(null);
-        if (EmailclawChannelConfig.normalizeEmailclawPluginConfig(channel)) {
-            channelService.save();
-        }
-        if (EmailclawChannelConfig.isSysEmailMode(channel)
-                && notBlank(EmailclawChannelConfig.getRegistrantEmail(channel))
-                && notBlank(EmailclawChannelConfig.getOneTimePassword(channel))) {
-            String sysEmail =
-                    OneTimePasswordAuth.oneTimePasswordAuth(
-                            channel,
-                            EmailclawChannelConfig.getRegistrantEmail(channel),
-                            EmailclawChannelConfig.getOneTimePassword(channel));
-            if (sysEmail != null) {
-                channelService.save();
-            }
-        }
-        return channel;
-    }
-
-    /**
-     * Determines whether Emailclaw has reached a 'runnable' state.
-     */
-    private boolean isConfiguredAndEnabled(ChannelInfo channel) {
-        MailRuntimeConfig runtime = resolveRuntimeConfig(channel);
-        return channel.isEnabled()
-                && notBlank(EmailclawChannelConfig.getEmailAddress(channel))
-                && notBlank(EmailclawChannelConfig.getEmailPassword(channel))
-                && notBlank(runtime.imapHost())
-                && notBlank(runtime.smtpHost());
-    }
-
-    // ======================== Core Polling ========================
-    /**
-     * Executes a single inbox poll and processes new emails.
-     */
-    private void pollInbox(ChannelInfo channel) {
-        LOGGER.info("Emailclaw polling mailbox " + EmailclawChannelConfig.getEmailAddress(channel));
-        List<EmailEnvelope> mails = fetchUnreadEmails(channel);
-        LOGGER.info("Unread emails count: " + mails.size());
-        if (mails.isEmpty()) {
-            return;
-        }
-        for (EmailEnvelope mail : mails) {
-            // Only process allowedSender, i.e., do not process non-allowedSender
-            if (!allowedSender(channel, mail.from())) {
-                continue;
-            }
-            markMailAsRead(channel, mail.uid());
-            ChannelInfo smtpSnapshot = snapshotChannelForMailProcessing(channel);
-            dispatchMailHandling(smtpSnapshot, mail);
-        }
-    }
-
-    /**
-     * Dispatches a single email processing task.
-     */
-    private void dispatchMailHandling(ChannelInfo channelSnapshot, EmailEnvelope mail) {
-        LOGGER.info(
-                "dispatchMailHandling: channel==="
-                        + channelSnapshot.getId()
-                        + channelSnapshot.getName());
-        Thread.startVirtualThread(
-                () -> {
-                    boolean acquired = false;
-                    try {
-                        mailProcessingPermits.acquire();
-                        acquired = true;
-                        safeHandleMail(channelSnapshot, mail);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        LOGGER.log(
-                                Level.WARNING,
-                                "Emailclaw email processing thread interrupted: subject={0},"
-                                        + " from={1}",
-                                new Object[] {
-                                    mail == null || mail.subject() == null ? "" : mail.subject(),
-                                    mail == null || mail.from() == null ? "" : mail.from()
-                                });
-                    } catch (Throwable t) {
-                        LOGGER.log(Level.WARNING, "Emailclaw email processing thread exception", t);
-                    } finally {
-                        if (acquired) {
-                            mailProcessingPermits.release();
-                        }
-                    }
-                });
-    }
-
-    /**
-     * Outermost fallback for single email processing.
-     */
-    private void safeHandleMail(ChannelInfo channelSnapshot, EmailEnvelope mail) {
-        LOGGER.info(
-                "safeHandleMail: channel===" + channelSnapshot.getId() + channelSnapshot.getName());
-        try {
-            handleMail(channelSnapshot, mail);
-        } catch (Throwable t) {
-            LOGGER.log(Level.WARNING, "Emailclaw handleMail uncaught exception (isolated)", t);
-        }
-    }
-
-    /**
-     * Copy sending-related configuration in the current channel to avoid affecting ongoing mail tasks during concurrent UI thread modifications.
-     */
-    private ChannelInfo snapshotChannelForMailProcessing(ChannelInfo channel) {
-        LOGGER.info(
-                "snapshotChannelForMailProcessing: channel==="
-                        + channel.getId()
-                        + channel.getName());
-        ChannelInfo copied = new ChannelInfo();
-        copied.setId(channel.getId());
-        copied.setName(channel.getName());
-        copied.setBuiltIn(channel.isBuiltIn());
-        copied.setEnabled(channel.isEnabled());
-        copied.setPluginConfig(EmailclawChannelConfig.copyPluginConfig(channel));
-        return copied;
-    }
-
     // ======================== Sender Filtering ========================
-    /**
-     * Whitelist is not empty and requires a whitelist hit.
-     */
-    private boolean allowedSender(ChannelInfo channel, String sender) {
-        boolean allowed = false;
-        if (EmailclawChannelConfig.getEmailAllowlistSenders(channel).isEmpty()) {
-            allowed = false;
-        } else {
-            String normalized = normalizeSender(sender);
-            allowed =
-                    EmailclawChannelConfig.getEmailAllowlistSenders(channel).stream()
-                            .map(this::normalizeSender)
-                            .anyMatch(normalized::equals);
+    private boolean allowedSender(
+            ChannelInfo channel, MailboxAccountConfig mailbox, String sender) {
+        String normalized = normalizeSender(sender);
+        if (mailbox != null && !mailbox.allowlistSenders().isEmpty()) {
+            return mailbox.allowlistSenders().stream()
+                    .map(this::normalizeSender)
+                    .anyMatch(normalized::equals);
         }
-        if (allowed) LOGGER.info(allowed + "===allowedSender: sender===" + sender);
-        return allowed;
+        List<String> globalAllowlist = EmailclawChannelConfig.getEmailAllowlistSenders(channel);
+        if (!globalAllowlist.isEmpty()) {
+            return globalAllowlist.stream().map(this::normalizeSender).anyMatch(normalized::equals);
+        }
+        return false;
     }
 
-    // ======================== Mark as Read ========================
-    /**
-     * Mark specified UID email as read (based on Jakarta Mail).
-     */
-    private void markMailAsRead(ChannelInfo channel, long uid) {
-        LOGGER.info("markMailAsRead: uid===" + uid);
-        MailRuntimeConfig runtime = resolveRuntimeConfig(channel);
-        Store store = null;
-        Folder folder = null;
-        try {
-            Session session = createImapSession(runtime);
-            store = session.getStore("imap");
-            store.connect(
-                    runtime.imapHost(),
-                    runtime.imapPort(),
-                    EmailclawChannelConfig.getEmailAddress(channel),
-                    EmailclawChannelConfig.getEmailPassword(channel));
-            folder = store.getFolder("INBOX");
-            folder.open(Folder.READ_WRITE);
-            if (folder instanceof UIDFolder uidFolder) {
-                Message msg = uidFolder.getMessageByUID(uid);
-                if (msg != null) {
-                    msg.setFlag(Flags.Flag.SEEN, true);
-                    LOGGER.fine("Email marked as read, uid=" + uid);
-                }
-            }
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Emailclaw failed to mark email as read, uid=" + uid, e);
-        } finally {
-            closeFolder(folder);
-            closeStore(store);
-        }
-    }
-
-    // ======================== Core Business Processing ========================
-    /**
-     * Core business process for handling a single email.
-     */
-    private void handleMail(ChannelInfo channel, EmailEnvelope mail) {
-        LOGGER.info("Emailclaw single email processing started");
-        try {
-            AgentInfo agent = agentService.currentDefault();
-            ProviderInfo provider = chatService.resolveEffectiveProvider(agent);
-            if (provider == null || provider.allModels().isEmpty()) {
-                return;
-            }
-            String modelId = chatService.resolveEffectiveModelId(agent, provider);
-            if (modelId == null || modelId.isBlank()) {
-                return;
-            }
-            String sender = normalizeSender(mail.from());
-            String sessionIdFromSubject = extractTrailingSessionId(mail.subject());
-            LOGGER.info("sessionIdFromSubject=" + sessionIdFromSubject);
-            Optional<ChatSessionInfo> optSession =
-                    findSessionBySessionId(agent, sessionIdFromSubject);
-            ChatSessionInfo session = optSession.orElse(null);
-            // Rule 1: Subject does not end with a valid SessionID or historical session not matched
-            // -> Create new session and return bootstrap email
-            if (session == null) {
-                ChatSessionInfo newSession = createNewEmailSession(agent, sender, mail.subject());
-                materializeMailAttachments(agent, newSession, mail);
-                persistBootstrapMailToSession(agent, newSession, mail);
-                String newSubject = truncateSubject(mail.subject()) + " " + newSession.getId();
-                sendMail(channel, mail.replyTo(), newSubject.trim(), BOOTSTRAP_GUIDANCE_TEMPLATE);
-                return;
-            }
-            // Historical session may lack userId/channel, backfill
-            boolean sessionUpdated = false;
-            if (session.getUserId() == null || session.getUserId().isBlank()) {
-                LOGGER.info(
-                        "Emailclaw session missing userId, backfilling with sender: session="
-                                + session.getId());
-                session.setUserId(sender);
-                sessionUpdated = true;
-            }
-            if (session.getChannel() == null
-                    || session.getChannel().isBlank()
-                    || !ChannelIds.EMAILCLAW.equals(session.getChannel())) {
-                LOGGER.info(
-                        "Emailclaw session channel corrected to EMAILCLAW: session="
-                                + session.getId());
-                session.setChannel(ChannelIds.EMAILCLAW);
-                sessionUpdated = true;
-            }
-            if (sessionUpdated) {
-                chatService.updateSession(session);
-            }
-            LOGGER.fine(
-                    "Processing session: userId="
-                            + session.getUserId()
-                            + ", channel="
-                            + session.getChannel());
-            // Rule 2: Approval code reply detection - Supports double codes (1234 for this time
-            // only, 5678 to approve and remember)
-            GovernanceService guardService = chatService.getGovernanceService();
-            String emailBody = extractLatestUserContent(mail, agent, session).trim();
-            if (emailBody.matches("\\d{4}")) {
-                // Check for 'this time only' code first
-                Optional<PendingApproval> pendingOpt =
-                        guardService.findPendingByCode(
-                                ChannelIds.EMAILCLAW, session.getId(), sender, emailBody);
-                if (pendingOpt.isPresent()) {
-                    handleApprovalReply(
-                            channel, mail, agent, session, sender, pendingOpt.get(), false);
-                    return;
-                }
-                // Then check 'remember' code
-                pendingOpt =
-                        guardService.findPendingByRememberCode(
-                                ChannelIds.EMAILCLAW, session.getId(), sender, emailBody);
-                if (pendingOpt.isPresent()) {
-                    handleApprovalReply(
-                            channel, mail, agent, session, sender, pendingOpt.get(), true);
-                    return;
-                }
-            }
-            // Rule 3: Normal message -> Build prompt to call LLM
-            String prompt = buildPrompt(mail, agent, session);
-            List<Path> attachmentPaths = materializeMailAttachments(agent, session, mail);
-            if ((prompt == null || prompt.isBlank()) && !attachmentPaths.isEmpty()) {
-                prompt =
-                        "Please process the attachments of this email and reply based on the"
-                                + " attachment contents.";
-            }
-            // ── Current channel / mail / sender for StreamCallback closure use ──
-            final ChannelInfo channelSnapshot = channel;
-            final String replySender = sender;
-            chatService.sendMessage(
-                    agent,
-                    provider,
-                    modelId,
-                    session,
-                    prompt,
-                    attachmentPaths,
-                    Map.of("originalSubject", mail.subject() == null ? "" : mail.subject()),
-                    new StreamCallback() {
-
-                        @Override
-                        public void onPart(ChatMessagePart part, boolean startsNew) {}
-
-                        @Override
-                        public void onCompleted(Msg message) {
-                            try {
-                                // Check if there are pending approval requests triggered by
-                                // PermissionEngine that need to send emails
-                                List<PendingApproval> pendingForSession =
-                                        guardService.getPendingApprovals().stream()
-                                                .filter(
-                                                        p ->
-                                                                session.getId()
-                                                                                .equals(
-                                                                                        p
-                                                                                                .getSessionId())
-                                                                        && !p.isDelivered())
-                                                .toList();
-                                if (!pendingForSession.isEmpty()) {
-                                    for (PendingApproval approval : pendingForSession) {
-                                        String subject =
-                                                mail.subject() == null ? "" : mail.subject();
-                                        sendApprovalRequestMail(
-                                                channelSnapshot,
-                                                replySender,
-                                                subject.trim(),
-                                                approval.getToolName(),
-                                                String.valueOf(approval.getToolInput()),
-                                                approval.getApprovalCode(),
-                                                approval.getRememberCode());
-                                        guardService.markDelivered(approval.getId());
-                                    }
-                                } else {
-                                    String replyText =
-                                            ai.emailclaw.emailclaw.model.ChatMessageRecord
-                                                    .textOfParts(chatService.partsOf(message));
-                                    sendReply(channelSnapshot, mail, replyText, agent, session);
-                                }
-                            } catch (Exception e) {
-                                LOGGER.log(
-                                        Level.WARNING,
-                                        "Emailclaw failed to send reply/approval email",
-                                        e);
-                            }
-                        }
-                    });
-        } catch (Throwable e) {
-            LOGGER.log(Level.WARNING, "Emailclaw handleMail failed", e);
-        }
-    }
-
-    /**
-     * Handle approval code reply.
-     */
-    private void handleApprovalReply(
-            ChannelInfo channel,
-            EmailEnvelope mail,
-            AgentInfo agent,
-            ChatSessionInfo session,
-            String sender,
-            PendingApproval approval,
-            boolean remember) {
-        String replyContent = extractLatestUserContent(mail, agent, session).trim();
-        chatService.appendHistory(
-                agent.getId(),
-                session.getId(),
-                new ChatMessageRecord(
-                        ChatMessageRoles.USER,
-                        List.of(ChatMessagePart.text(sender + " wrote: " + replyContent)),
-                        LocalDateTime.now().toString()));
-        LOGGER.info(
-                "Emailclaw approval code matched successfully: session="
-                        + session.getId()
-                        + ", tool="
-                        + approval.getToolName()
-                        + ", remember="
-                        + remember);
-        ToolUseBlock toolBlock =
-                new ToolUseBlock(approval.getId(), approval.getToolName(), approval.getToolInput());
-        // Only add ALLOW rule when remember=true ("remember this decision")
-        List<PermissionRule> rules =
-                remember
-                        ? List.of(
-                                new PermissionRule(
-                                        approval.getToolName(),
-                                        null,
-                                        PermissionBehavior.ALLOW,
-                                        "user_email_approved"))
-                        : List.of();
-        ConfirmResult confirmResult = new ConfirmResult(true, toolBlock, rules);
-        chatService.resumeWithConfirmResult(
-                agent.getId(),
-                session.getId(),
-                ChannelIds.EMAILCLAW,
-                approval.getRoute() != null ? approval.getRoute() : Map.of(),
-                List.of(confirmResult));
-        chatService.appendHistory(
-                agent.getId(),
-                session.getId(),
-                new ChatMessageRecord(
-                        ChatMessageRoles.SYSTEM,
-                        List.of(
-                                ChatMessagePart.text(
-                                        "User has approved tool call via approval code: "
-                                                + approval.getToolName())),
-                        LocalDateTime.now().toString()));
-        try {
-            sendMail(
-                    channel,
-                    mail.replyTo(),
-                    mail.subject(),
-                    "Approval code received, tool call approved: " + approval.getToolName());
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to send approval confirmation email", e);
-        }
-    }
-
-    /**
-     * Truncate subject to first 165 characters.
-     */
-    private String truncateSubject(String subject) {
-        if (subject == null || subject.trim().isEmpty()) {
-            return "";
-        }
-        return subject.trim().length() > 165 ? subject.trim().substring(0, 165) : subject.trim();
-    }
-
-    // ======================== Session Management ========================
-    /**
-     * Find historical session under specified Agent by sessionId.
-     */
-    private Optional<ChatSessionInfo> findSessionBySessionId(AgentInfo agent, String sessionId) {
-        if (!isUuid(sessionId)) {
-            return Optional.empty();
-        }
-        return chatService.sessions(agent.getId()).stream()
-                .filter(item -> sessionId.equals(item.getId()))
-                .findFirst();
-    }
-
-    /**
-     * Create Emailclaw exclusive session.
-     */
+    // ======================== Session Creation & Persistence ========================
     private ChatSessionInfo createNewEmailSession(
-            AgentInfo agent, String sender, String mailSubject) {
+            AgentInfo agent, MailboxAccountConfig mailbox, String sender, String mailSubject) {
         ChatSessionInfo session = chatService.newSession(agent.getId());
         session.setChannel(ChannelIds.EMAILCLAW);
         session.setUserId(sender);
         String normalizedSubject = mailSubject == null ? "" : mailSubject.trim();
         session.setName(normalizedSubject.isBlank() ? ("Email: " + sender) : normalizedSubject);
         session.setKind(ChatSessionInfo.KIND_TASK);
+        session.setDescription("originMailboxId=" + mailbox.id());
 
         if (this.configManager != null) {
             ai.emailclaw.emailclaw.model.ProjectInfo project =
@@ -832,7 +653,7 @@ public class EmailclawChannelRunner {
                             + safeName
                             + "-"
                             + project.getId());
-            project.setCreatedAt(java.time.LocalDateTime.now().toString());
+            project.setCreatedAt(LocalDateTime.now().toString());
 
             try {
                 Files.createDirectories(Path.of(project.getBaseDirectory()));
@@ -845,12 +666,10 @@ public class EmailclawChannelRunner {
             session.setProjectId(project.getId());
 
             if (this.projectService != null) {
-                // Persist through ProjectService so registered listeners (e.g. UI refresh)
-                // are notified of the new project.
                 this.projectService.save(project);
             } else {
-                java.util.List<ai.emailclaw.emailclaw.model.ProjectInfo> projects =
-                        new java.util.ArrayList<>(this.configManager.getProjects());
+                List<ai.emailclaw.emailclaw.model.ProjectInfo> projects =
+                        new ArrayList<>(this.configManager.getProjects());
                 projects.add(project);
                 this.configManager.saveProjects(projects);
             }
@@ -860,12 +679,8 @@ public class EmailclawChannelRunner {
         return session;
     }
 
-    /**
-     * When a new session is created, write the original email to history.
-     */
     private void persistBootstrapMailToSession(
             AgentInfo agent, ChatSessionInfo session, EmailEnvelope mail) {
-        LOGGER.info("persistBootstrapMailToSession from " + mail.from());
         try {
             String now = LocalDateTime.now().toString();
             chatService.appendHistory(
@@ -877,43 +692,11 @@ public class EmailclawChannelRunner {
                             now));
             chatService.touchSession(session);
         } catch (Exception e) {
-            LOGGER.log(
-                    Level.WARNING,
-                    "Emailclaw failed to write new session initialization history",
-                    e);
+            LOGGER.log(Level.WARNING, "Failed to write bootstrap mail history", e);
         }
     }
 
-    /**
-     * Extract the last 36 characters of the subject as a candidate sessionId.
-     */
-    private String extractTrailingSessionId(String subject) {
-        String text = subject == null ? "" : subject.trim().replace(" ", "");
-        if (text.length() < 36) {
-            return "";
-        }
-        return text.substring(text.length() - 36);
-    }
-
-    /**
-     * Check if a string is a valid UUID.
-     */
-    private boolean isUuid(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        try {
-            UUID.fromString(value);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    // ======================== Prompt Build ========================
-    /**
-     * Assemble the final prompt for the LLM.
-     */
+    // ======================== Prompt & Attachments ========================
     private String buildPrompt(EmailEnvelope mail, AgentInfo agent, ChatSessionInfo session) {
         String subject = mail.subject() == null ? "" : mail.subject().trim();
         if (subject.replace(" ", "").endsWith(session.getId())) {
@@ -927,11 +710,6 @@ public class EmailclawChannelRunner {
         return mail.from() + " wrote: " + subject + " \n " + body + attachmentHint;
     }
 
-    /**
-     * Extract the "new input this time" from the email body.
-     *
-     * <p>Adopts a two-layer strategy: first trim quoted blocks by format, then deduplicate based on historical content.
-     */
     private String extractLatestUserContent(
             EmailEnvelope mail, AgentInfo agent, ChatSessionInfo session) {
         String rawBody = normalizeMailBody(mail.body());
@@ -944,29 +722,19 @@ public class EmailclawChannelRunner {
             String cleaned = cleanupExtractedBody(deDuplicated);
             return cleaned.isBlank() ? "" : cleaned;
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Emailclaw failed to extract new content from this email", e);
+            LOGGER.log(Level.WARNING, "Failed to extract user content from email", e);
             return cleanupExtractedBody(rawBody);
         }
     }
 
-    // ======================== Quote Block Extraction ========================
-    /**
-     * Truncate according to common reply formats of email clients.
-     */
     private String stripQuotedBlocksByFormat(String body) {
         String[] lines = body.split("\n", -1);
         int cutoff = lines.length;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             String lower = line.trim().toLowerCase(Locale.ROOT);
-            String nextLower = "";
-            for (int j = i + 1; j < lines.length; j++) {
-                String tmp = lines[j].trim().toLowerCase(Locale.ROOT);
-                if (!tmp.isEmpty()) {
-                    nextLower = tmp;
-                    break;
-                }
-            }
+            String nextLower =
+                    (i + 1 < lines.length) ? lines[i + 1].trim().toLowerCase(Locale.ROOT) : "";
             if (isQuoteStartLine(line, lower, nextLower)) {
                 cutoff = i;
                 break;
@@ -975,17 +743,13 @@ public class EmailclawChannelRunner {
         List<String> kept = new ArrayList<>();
         for (int i = 0; i < cutoff; i++) {
             String line = lines[i];
-            if (QUOTED_PREFIX_LINE.matcher(line).matches()) {
-                continue;
+            if (!QUOTED_PREFIX_LINE.matcher(line).matches()) {
+                kept.add(line);
             }
-            kept.add(line);
         }
         return String.join("\n", kept);
     }
 
-    /**
-     * Determine if a line represents the "start of a quote block".
-     */
     private boolean isQuoteStartLine(String line, String lowerLine, String nextLowerLine) {
         String lineTrimmed = line == null ? "" : line.trim();
         if (lineTrimmed.isBlank()) {
@@ -999,53 +763,48 @@ public class EmailclawChannelRunner {
                 || ZH_ORIGINAL_MESSAGE_LINE.matcher(lineTrimmed).matches()) {
             return true;
         }
-        if (lineTrimmed.toLowerCase(Locale.ROOT).startsWith("begin forwarded message")) {
+        if ((RFC822_HEADER_LINE.matcher(lowerLine).find()
+                        || ZH_RFC822_HEADER_LINE.matcher(lineTrimmed).find())
+                && (RFC822_HEADER_LINE.matcher(nextLowerLine).find()
+                        || ZH_NEXT_LINE_HEADER.matcher(nextLowerLine).matches())) {
             return true;
         }
-        if (LONG_SEPARATOR_LINE.matcher(lineTrimmed).matches()) {
-            if (ZH_NEXT_LINE_HEADER.matcher(nextLowerLine).matches()) {
-                return true;
-            }
-        }
-        if (RFC822_HEADER_LINE.matcher(lineTrimmed).matches()
-                || ZH_RFC822_HEADER_LINE.matcher(lineTrimmed).matches()) {
-            if (ZH_NEXT_LINE_HEADER.matcher(nextLowerLine).matches()) {
-                return true;
-            }
-        }
-        return false;
+        return LONG_SEPARATOR_LINE.matcher(lineTrimmed).matches();
     }
 
-    /**
-     * Remove residual old content based on session history.
-     */
+    private static final Pattern ZH_NEXT_LINE_HEADER =
+            Pattern.compile("^(?:to:|subject:|date:|sent:|发件人|主题|日期|发送时间).*");
+
     private String removeSessionHistoryLines(
             String text, AgentInfo agent, ChatSessionInfo session) {
-        Set<String> historyLines = collectNormalizedHistoryLines(agent, session);
-        if (historyLines.isEmpty()) {
+        if (text == null || text.isBlank() || agent == null || session == null) {
+            return text == null ? "" : text;
+        }
+        List<Msg> history = chatService.loadHistory(agent.getId(), session.getId());
+        if (history == null || history.isEmpty()) {
+            return text;
+        }
+        Set<String> knownHistoryLines = new LinkedHashSet<>();
+        for (Msg msg : history) {
+            String fullText = ChatMessageRecord.textOfParts(chatService.partsOf(msg));
+            if (fullText == null || fullText.isBlank()) {
+                continue;
+            }
+            for (String rawLine : fullText.split("\n", -1)) {
+                String normalized = normalizeComparableLine(rawLine);
+                if (normalized.length() >= 4) {
+                    knownHistoryLines.add(normalized);
+                }
+            }
+        }
+        if (knownHistoryLines.isEmpty()) {
             return text;
         }
         String[] lines = text.split("\n", -1);
-        int cutoff = lines.length;
-        int streak = 0;
-        for (int i = 0; i < lines.length; i++) {
-            String normalized = normalizeComparableLine(lines[i]);
-            boolean matched = normalized.length() >= 12 && historyLines.contains(normalized);
-            if (matched) {
-                streak++;
-                if (streak >= 2) {
-                    cutoff = i - streak + 1;
-                    break;
-                }
-            } else if (!normalized.isBlank()) {
-                streak = 0;
-            }
-        }
         List<String> kept = new ArrayList<>();
-        for (int i = 0; i < cutoff; i++) {
-            String line = lines[i];
-            String normalized = normalizeComparableLine(line);
-            if (normalized.length() >= 24 && historyLines.contains(normalized)) {
+        for (String line : lines) {
+            String norm = normalizeComparableLine(line);
+            if (norm.length() >= 4 && knownHistoryLines.contains(norm)) {
                 continue;
             }
             kept.add(line);
@@ -1053,50 +812,6 @@ public class EmailclawChannelRunner {
         return String.join("\n", kept);
     }
 
-    /**
-     * Collect "comparable lines" from the session history.
-     */
-    private Set<String> collectNormalizedHistoryLines(AgentInfo agent, ChatSessionInfo session) {
-        try {
-            Set<String> result = new LinkedHashSet<>();
-            List<Msg> records = chatService.loadHistory(agent.getId(), session.getId());
-            for (var record : records) {
-                String content =
-                        ai.emailclaw.emailclaw.model.ChatMessageRecord.textOfParts(
-                                chatService.partsOf(record));
-                if (content == null || content.isBlank()) {
-                    continue;
-                }
-                for (String line : normalizeMailBody(content).split("\n")) {
-                    String normalized = normalizeComparableLine(line);
-                    if (normalized.length() >= 12) {
-                        result.add(normalized);
-                    }
-                }
-            }
-            return result;
-        } catch (Exception e) {
-            LOGGER.log(Level.FINE, "Failed to read session history line index (ignored)", e);
-            return Set.of();
-        }
-    }
-
-    // ======================== Text Tools ========================
-    /**
-     * Normalize body line breaks and invisible whitespace.
-     */
-    private String normalizeMailBody(String body) {
-        if (body == null) {
-            return "";
-        }
-        String text = body.replace("\n", "\n").replace('\r', '\n');
-        text = text.replace('\u00a0', ' ');
-        return text.trim();
-    }
-
-    /**
-     * Normalize a single line into a comparison key (remove quote prefixes, collapse whitespace, lowercase).
-     */
     private String normalizeComparableLine(String line) {
         if (line == null) {
             return "";
@@ -1107,9 +822,6 @@ public class EmailclawChannelRunner {
         return text.trim().toLowerCase(Locale.ROOT);
     }
 
-    /**
-     * Final cleanup: remove empty lines, remove content after signature separator.
-     */
     private String cleanupExtractedBody(String text) {
         if (text == null || text.isBlank()) {
             return "";
@@ -1123,13 +835,9 @@ public class EmailclawChannelRunner {
             }
             kept.add(line);
         }
-        String merged = String.join("\n", kept).trim();
-        return merged.isBlank() ? "" : merged;
+        return String.join("\n", kept).trim();
     }
 
-    /**
-     * Build attachment hint text.
-     */
     private String buildAttachmentHint(EmailEnvelope mail) {
         if (mail == null || mail.attachments() == null || mail.attachments().isEmpty()) {
             return "";
@@ -1151,20 +859,14 @@ public class EmailclawChannelRunner {
         return sb.toString().trim().isBlank() ? "" : ("\n" + sb.toString().trim());
     }
 
-    /**
-     * Write email attachments to disk.
-     */
     private List<Path> materializeMailAttachments(
             AgentInfo agent, ChatSessionInfo session, EmailEnvelope mail) {
-        LOGGER.info("materializeMailAttachments from: " + mail.from());
         if (mail == null || mail.attachments() == null || mail.attachments().isEmpty()) {
             return List.of();
         }
         Path targetDir;
         ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
-        if (project != null
-                && project.getBaseDirectory() != null
-                && !project.getBaseDirectory().isBlank()) {
+        if (project != null && notBlank(project.getBaseDirectory())) {
             targetDir = Path.of(project.getBaseDirectory()).resolve(ATTACHMENTS_DIR_NAME);
         } else {
             targetDir =
@@ -1172,14 +874,14 @@ public class EmailclawChannelRunner {
                             .sessionPath(
                                     session != null ? session.projectId() : "default",
                                     agent.getId())
-                            .resolve(session.getId())
+                            .resolve(session != null ? session.getId() : "temp")
                             .resolve(ATTACHMENTS_DIR_NAME);
         }
         List<Path> paths = new ArrayList<>();
         try {
             Files.createDirectories(targetDir);
         } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to create attachment directory: " + targetDir, e);
+            LOGGER.log(Level.WARNING, "Failed to create attachments directory: " + targetDir, e);
             return List.of();
         }
         int index = 1;
@@ -1197,7 +899,6 @@ public class EmailclawChannelRunner {
                 continue;
             }
             try {
-                // Clean up invalid characters in the attachment filename.
                 String filename =
                         FileNameUtils.sanitizePathName(
                                 attachment.filename(), "attachment_" + index);
@@ -1212,9 +913,6 @@ public class EmailclawChannelRunner {
         return paths;
     }
 
-    /**
-     * Generate unique attachment path.
-     */
     private Path uniqueAttachmentPath(Path dir, String filename) {
         Path candidate = dir.resolve(filename);
         if (!Files.exists(candidate)) {
@@ -1237,10 +935,6 @@ public class EmailclawChannelRunner {
         }
     }
 
-    /**
-     * Find the task project bound to the given session (project id equals session id for email
-     * tasks). Returns null when no matching project record exists.
-     */
     private ai.emailclaw.emailclaw.model.ProjectInfo findSessionProject(ChatSessionInfo session) {
         if (session == null || this.configManager == null || session.getId() == null) {
             return null;
@@ -1252,11 +946,8 @@ public class EmailclawChannelRunner {
     }
 
     // ======================== Send Reply Email ========================
-    /**
-     * Send model result as a reply email to the user.
-     */
     private void sendReply(
-            ChannelInfo channel,
+            MailboxAccountConfig mailbox,
             EmailEnvelope mail,
             String content,
             AgentInfo agent,
@@ -1282,16 +973,11 @@ public class EmailclawChannelRunner {
                 if (!pathStr.isEmpty()) {
                     try {
                         Path file = Path.of(pathStr);
-                        LOGGER.info("Sending attachment: " + file);
                         if (!file.isAbsolute()) {
-                            // Resolve relative paths against the task project directory first;
-                            // fall back to the legacy agent workspace when no project exists.
                             Path baseDir;
                             ai.emailclaw.emailclaw.model.ProjectInfo project =
                                     findSessionProject(session);
-                            if (project != null
-                                    && project.getBaseDirectory() != null
-                                    && !project.getBaseDirectory().isBlank()) {
+                            if (project != null && notBlank(project.getBaseDirectory())) {
                                 baseDir = Path.of(project.getBaseDirectory());
                             } else {
                                 baseDir =
@@ -1329,54 +1015,53 @@ public class EmailclawChannelRunner {
             finalContent = cleanText.toString().trim();
         }
         try {
-            sendMail(channel, mail.replyTo(), subject, finalContent, sendAttachments);
+            sendMail(mailbox, mail.replyTo(), subject, finalContent, sendAttachments);
         } catch (Exception e) {
             throw new IOException("Failed to send reply email", e);
         }
     }
 
-    // ======================== Send Email (Jakarta Mail) ========================
-    /**
-     * Sends a plain text email (no attachments).
-     */
-    void sendMail(ChannelInfo channel, String to, String subject, String content)
+    public void sendMail(MailboxAccountConfig mailbox, String to, String subject, String content)
             throws IOException {
         try {
-            sendMail(channel, to, subject, content, List.of());
+            sendMail(mailbox, to, subject, content, List.of());
         } catch (Exception e) {
             throw new IOException("Failed to send email", e);
         }
     }
 
-    /**
-     * Sends an email (supports attachments), based on Jakarta Mail Transport.
-     */
-    private void sendMail(
-            ChannelInfo channel, String to, String subject, String content, List<Path> attachments)
+    public void sendMail(
+            MailboxAccountConfig mailbox,
+            String to,
+            String subject,
+            String content,
+            List<Path> attachments)
             throws Exception {
-        LOGGER.info("sendMail to " + to + ", subject=" + subject);
-        MailRuntimeConfig runtime = resolveRuntimeConfig(channel);
+        if (mailbox == null || !mailbox.isRunnable()) {
+            throw new IllegalArgumentException("Mailbox is not configured or not runnable");
+        }
+        LOGGER.info(
+                "sendMail via " + mailbox.emailAddress() + " to " + to + ", subject=" + subject);
         Properties props = new Properties();
-        props.put("mail.smtp.host", runtime.smtpHost());
-        props.put("mail.smtp.port", String.valueOf(runtime.smtpPort()));
+        props.put("mail.smtp.host", mailbox.effectiveSmtpHost());
+        props.put("mail.smtp.port", String.valueOf(mailbox.effectiveSmtpPort()));
         props.put("mail.smtp.auth", "true");
         props.put("mail.smtp.connectiontimeout", MAIL_TIMEOUT);
         props.put("mail.smtp.timeout", MAIL_TIMEOUT);
-        if (runtime.smtpSsl()) {
+        if (mailbox.effectiveSmtpSsl()) {
             props.put("mail.smtp.ssl.enable", "true");
-            props.put("mail.smtp.socketFactory.port", String.valueOf(runtime.smtpPort()));
+            props.put("mail.smtp.socketFactory.port", String.valueOf(mailbox.effectiveSmtpPort()));
             props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
         }
-        if (runtime.smtpStartTls()) {
+        if (mailbox.effectiveSmtpStartTls()) {
             props.put("mail.smtp.starttls.enable", "true");
         }
-        String user = EmailclawChannelConfig.getEmailAddress(channel);
-        String password = EmailclawChannelConfig.getEmailPassword(channel);
+        String user = mailbox.emailAddress();
+        String password = mailbox.emailPassword();
         Session session =
                 Session.getInstance(
                         props,
                         new Authenticator() {
-
                             @Override
                             protected PasswordAuthentication getPasswordAuthentication() {
                                 return new PasswordAuthentication(user, password);
@@ -1395,42 +1080,40 @@ public class EmailclawChannelRunner {
             textPart.setText(content == null ? "" : content, "UTF-8");
             multipart.addBodyPart(textPart);
             for (Path file : attachments) {
-                if (file == null || !Files.exists(file) || !Files.isRegularFile(file)) {
-                    continue;
+                if (file != null && Files.exists(file) && Files.isRegularFile(file)) {
+                    MimeBodyPart attachPart = new MimeBodyPart();
+                    attachPart.attachFile(file.toFile());
+                    multipart.addBodyPart(attachPart);
                 }
-                MimeBodyPart attachPart = new MimeBodyPart();
-                attachPart.attachFile(file.toFile());
-                multipart.addBodyPart(attachPart);
             }
             message.setContent(multipart);
         }
         message.saveChanges();
         Transport.send(message);
-        LOGGER.info("Email sent successfully: to=" + to + ", subject=" + subject);
+        LOGGER.info(
+                "Email sent successfully: from=" + user + ", to=" + to + ", subject=" + subject);
     }
 
-    // ======================== Receive Email (Jakarta Mail) ========================
-    /**
-     * Fetches and parses unread emails, based on Jakarta Mail IMAP.
-     */
-    private List<EmailEnvelope> fetchUnreadEmails(ChannelInfo channel) {
-        MailRuntimeConfig runtime = resolveRuntimeConfig(channel);
+    // ======================== Fetch Emails (Jakarta Mail) ========================
+    private List<EmailEnvelope> fetchUnreadEmails(MailboxAccountConfig mailbox) {
         Store store = null;
         Folder folder = null;
         try {
-            Session session = createImapSession(runtime);
+            Session session = createImapSession(mailbox);
             store = session.getStore("imap");
             store.connect(
-                    runtime.imapHost(),
-                    runtime.imapPort(),
-                    EmailclawChannelConfig.getEmailAddress(channel),
-                    EmailclawChannelConfig.getEmailPassword(channel));
+                    mailbox.effectiveImapHost(),
+                    mailbox.effectiveImapPort(),
+                    mailbox.emailAddress(),
+                    mailbox.emailPassword());
             folder = store.getFolder("INBOX");
             folder.open(Folder.READ_WRITE);
-            // Search for unread emails
+
             FlagTerm unseenFlagTerm = new FlagTerm(new Flags(Flags.Flag.SEEN), false);
             Message[] messages = folder.search(unseenFlagTerm);
-            LOGGER.info("messages.length==" + (messages == null ? 0 : messages.length));
+            if (messages == null || messages.length == 0) {
+                return List.of();
+            }
             UIDFolder uidFolder = (UIDFolder) folder;
             List<EmailEnvelope> mails = new ArrayList<>();
             for (Message msg : messages) {
@@ -1442,7 +1125,10 @@ public class EmailclawChannelRunner {
             }
             return mails;
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to fetch unread emails", e);
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to fetch unread emails for " + mailbox.emailAddress(),
+                    e);
             return List.of();
         } finally {
             closeFolder(folder);
@@ -1450,9 +1136,42 @@ public class EmailclawChannelRunner {
         }
     }
 
-    /**
-     * Parses a single email into an internal Envelope using Jakarta Mail.
-     */
+    private void markMailAsRead(MailboxAccountConfig mailbox, long uid) {
+        Store store = null;
+        Folder folder = null;
+        try {
+            Session session = createImapSession(mailbox);
+            store = session.getStore("imap");
+            store.connect(
+                    mailbox.effectiveImapHost(),
+                    mailbox.effectiveImapPort(),
+                    mailbox.emailAddress(),
+                    mailbox.emailPassword());
+            folder = store.getFolder("INBOX");
+            folder.open(Folder.READ_WRITE);
+            if (folder instanceof UIDFolder uidFolder) {
+                Message msg = uidFolder.getMessageByUID(uid);
+                if (msg != null) {
+                    msg.setFlag(Flags.Flag.SEEN, true);
+                    LOGGER.fine(
+                            () ->
+                                    "Marked email as read: mailbox="
+                                            + mailbox.emailAddress()
+                                            + ", uid="
+                                            + uid);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to mark email as read for " + mailbox.emailAddress() + ", uid=" + uid,
+                    e);
+        } finally {
+            closeFolder(folder);
+            closeStore(store);
+        }
+    }
+
     private EmailEnvelope parseMessage(long uid, Message msg) {
         try {
             String from = normalizeSender(getFirstEmail(msg.getFrom()));
@@ -1463,12 +1182,10 @@ public class EmailclawChannelRunner {
             if (replyTo.isBlank()) {
                 replyTo = from;
             }
-            String subject = msg.getSubject();
-            subject = subject == null ? "" : subject;
+            String subject = msg.getSubject() == null ? "" : msg.getSubject();
             List<MailAttachment> attachments = new ArrayList<>();
             StringBuilder bodyBuilder = new StringBuilder();
-            Object content = msg.getContent();
-            extractContent(content, bodyBuilder, attachments);
+            extractContent(msg.getContent(), bodyBuilder, attachments);
             return new EmailEnvelope(
                     uid,
                     from,
@@ -1482,9 +1199,6 @@ public class EmailclawChannelRunner {
         }
     }
 
-    /**
-     * Extracts the email string of the first address in Address[].
-     */
     private String getFirstEmail(Address[] addresses) {
         if (addresses == null || addresses.length == 0) {
             return "";
@@ -1492,9 +1206,6 @@ public class EmailclawChannelRunner {
         return ((InternetAddress) addresses[0]).getAddress();
     }
 
-    /**
-     * Recursively extracts the body and attachments from a Jakarta Mail Part.
-     */
     private void extractContent(
             Object content, StringBuilder body, List<MailAttachment> attachments) throws Exception {
         if (content instanceof String text) {
@@ -1503,15 +1214,11 @@ public class EmailclawChannelRunner {
             }
         } else if (content instanceof Multipart mp) {
             for (int i = 0; i < mp.getCount(); i++) {
-                Part part = mp.getBodyPart(i);
-                extractPart(part, body, attachments);
+                extractPart(mp.getBodyPart(i), body, attachments);
             }
         }
     }
 
-    /**
-     * Recursively processes a MIME Part.
-     */
     private void extractPart(Part part, StringBuilder body, List<MailAttachment> attachments)
             throws Exception {
         String disposition = part.getDisposition();
@@ -1550,7 +1257,6 @@ public class EmailclawChannelRunner {
                 extractPart(mp.getBodyPart(i), body, attachments);
             }
         } else {
-            // Other types: attempt to read as text
             try {
                 Object subContent = part.getContent();
                 if (subContent instanceof String text && body.length() == 0) {
@@ -1561,62 +1267,45 @@ public class EmailclawChannelRunner {
                     }
                 }
             } catch (Exception ignore) {
-                // Ignore unparseable Parts
             }
         }
     }
 
-    // ======================== Jakarta Mail Session Tools ========================
-    /**
-     * Creates an IMAP Session.
-     */
-    private Session createImapSession(MailRuntimeConfig runtime) {
+    private Session createImapSession(MailboxAccountConfig mailbox) {
         Properties props = new Properties();
-        props.put("mail.imap.host", runtime.imapHost());
-        props.put("mail.imap.port", String.valueOf(runtime.imapPort()));
+        props.put("mail.imap.host", mailbox.effectiveImapHost());
+        props.put("mail.imap.port", String.valueOf(mailbox.effectiveImapPort()));
         props.put("mail.imap.connectiontimeout", MAIL_TIMEOUT);
         props.put("mail.imap.timeout", MAIL_TIMEOUT);
-        if (runtime.imapSsl()) {
+        if (mailbox.effectiveImapSsl()) {
             props.put("mail.imap.ssl.enable", "true");
         }
-        if (runtime.imapStartTls()) {
+        if (mailbox.effectiveImapStartTls()) {
             props.put("mail.imap.starttls.enable", "true");
         }
         return Session.getInstance(props);
     }
 
-    /**
-     * Safely closes the Folder.
-     */
     private void closeFolder(Folder folder) {
         if (folder != null) {
             try {
                 folder.close(false);
             } catch (MessagingException ignore) {
-                // Ignore
             }
         }
     }
 
-    /**
-     * Safely closes the Store.
-     */
     private void closeStore(Store store) {
         if (store != null) {
             try {
                 store.close();
             } catch (MessagingException ignore) {
-                // Ignore
             }
         }
     }
 
-    // ======================== Configuration Parsing ========================
-    /**
-     * Normalizes the sender's email: extracts the email from the 'Name <email>' format.
-     */
     private String normalizeSender(String sender) {
-        if (sender == null) {
+        if (sender == null || sender.isBlank()) {
             return "";
         }
         Matcher matcher = EMAIL_PATTERN.matcher(sender);
@@ -1626,89 +1315,60 @@ public class EmailclawChannelRunner {
         return sender.trim().toLowerCase(Locale.ROOT);
     }
 
-    /**
-     * Sleeps quietly.
-     */
+    private String normalizeMailBody(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        return body.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    private String truncateSubject(String subject) {
+        if (subject == null || subject.trim().isEmpty()) {
+            return "";
+        }
+        return subject.trim().length() > 165 ? subject.trim().substring(0, 165) : subject.trim();
+    }
+
+    private String extractTrailingSessionId(String subject) {
+        String text = subject == null ? "" : subject.trim().replace(" ", "");
+        if (text.length() < 36) {
+            return "";
+        }
+        return text.substring(text.length() - 36);
+    }
+
+    private boolean isUuid(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean notBlank(String s) {
+        return s != null && !s.isBlank();
+    }
+
     private void sleepQuietly(long millis) {
         try {
             Thread.sleep(millis);
-        } catch (InterruptedException ie) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
 
-    /**
-     * Null check utility.
-     */
-    private boolean notBlank(String value) {
-        return value != null && !value.isBlank();
-    }
-
-    /**
-     * Parses the runtime email configuration (prioritizes presets, falls back to manual configuration).
-     */
-    private MailRuntimeConfig resolveRuntimeConfig(ChannelInfo channel) {
-        EmailMailPreset preset =
-                EmailPresetRegistry.presetOf(
-                        channel == null ? null : EmailclawChannelConfig.getEmailAddress(channel));
-        if (preset != null) {
-            return new MailRuntimeConfig(
-                    preset.imapHost(),
-                    preset.imapPort(),
-                    preset.imapSsl(),
-                    preset.imapStartTls(),
-                    preset.smtpHost(),
-                    preset.smtpPort(),
-                    preset.smtpSsl(),
-                    preset.smtpStartTls());
-        }
-        if (channel == null) {
-            return new MailRuntimeConfig("", 0, false, false, "", 0, false, false);
-        }
-        return new MailRuntimeConfig(
-                EmailclawChannelConfig.getImapHost(channel),
-                EmailclawChannelConfig.getImapPort(channel),
-                EmailclawChannelConfig.isImapSsl(channel),
-                EmailclawChannelConfig.isImapStartTls(channel),
-                EmailclawChannelConfig.getSmtpHost(channel),
-                EmailclawChannelConfig.getSmtpPort(channel),
-                EmailclawChannelConfig.isSmtpSsl(channel),
-                EmailclawChannelConfig.isSmtpStartTls(channel));
-    }
-
-    // ======================== Internal Data Structures ========================
-    /**
-     * Runtime email server configuration.
-     */
-    private record MailRuntimeConfig(
-            String imapHost,
-            int imapPort,
-            boolean imapSsl,
-            boolean imapStartTls,
-            String smtpHost,
-            int smtpPort,
-            boolean smtpSsl,
-            boolean smtpStartTls) {}
-
-    /**
-     * Email envelope: a parsed email.
-     */
-    private record EmailEnvelope(
+    // ======================== Inner Helper Types ========================
+    record EmailEnvelope(
             long uid,
             String from,
             String replyTo,
             String subject,
             String body,
-            List<MailAttachment> attachments) {
+            List<MailAttachment> attachments) {}
 
-        EmailEnvelope {
-            // Defensive copy
-            attachments = attachments == null ? List.of() : List.copyOf(attachments);
-        }
-    }
-
-    /**
-     * Email attachment.
-     */
-    private record MailAttachment(String filename, String contentType, byte[] data) {}
+    record MailAttachment(String filename, String contentType, byte[] data) {}
 }

@@ -151,7 +151,7 @@ Cron jobs usually read the latest configuration and reschedule; after modificati
 
 Enable suitable operational instructions for tasks in **Skills**, add vetted tool services in **MCP**, and manage extensions in **Plugins**. Plugins can add tools, models, hooks, interfaces, or extra channels, but the default product workflow remains centered around the Emailclaw Channel.
 
-Third-party plugins have the potential for code execution and network access. Install only from trusted sources, read their permissions and configuration instructions, and verify them first on a test account or a low-privilege Agent. Developers can refer to the `plugin-samples/PLUGIN_DEVELOPER_GUIDE.md` and `plugin-samples/dingtalk` examples in the repository.
+Third-party plugins have the potential for code execution and network access. Install only from trusted sources, read their permissions and configuration instructions, and verify them first on a test account or a low-privilege Agent. Developers can refer to the `plugin-samples/PLUGIN_DEVELOPER_GUIDE.md` and `plugin-samples/invokeAntigravityCli` examples in the repository.
 
 ## 9. Linux Background Service: A Complete Installation Guide for PC Beginners
 

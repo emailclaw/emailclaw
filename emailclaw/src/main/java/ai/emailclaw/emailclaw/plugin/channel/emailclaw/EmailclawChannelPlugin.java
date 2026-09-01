@@ -71,6 +71,22 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
                 LOGGER.log(Level.WARNING, "Emailclaw channel not enabled, unable to send email");
                 return;
             }
+            String originMailboxId = null;
+            if (session.getDescription() != null
+                    && session.getDescription().startsWith("originMailboxId=")) {
+                originMailboxId =
+                        session.getDescription().substring("originMailboxId=".length()).trim();
+            }
+            MailboxAccountConfig mailbox =
+                    EmailclawChannelConfig.resolveOutboundMailbox(channel, originMailboxId)
+                            .orElse(null);
+            if (mailbox == null || !mailbox.isRunnable()) {
+                LOGGER.log(
+                        Level.WARNING,
+                        "No runnable mailbox configured in Emailclaw channel, unable to send"
+                                + " reply");
+                return;
+            }
             // If session.userId is not set, automatically take the first from
             // emailAllowlistSenders; note this is not an error return.
             String to = session.getUserId();
@@ -80,17 +96,17 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
                         "Session is missing a valid recipient address: sessionId={0}, userId={1};"
                                 + " will take the first from emailAllowlistSenders",
                         new Object[] {sessionId, to});
-                to = EmailclawChannelConfig.resolveDefaultRecipient(channel);
+                to = EmailclawChannelConfig.resolveDefaultRecipient(channel, mailbox);
                 session.setUserId(to);
             }
             // session.name saves the original email title, future email titles will be
             // "session.name session.id"
             String subject = session.getName() + " " + sessionId;
-            runner.sendMail(channel, to, subject, content);
+            runner.sendMail(mailbox, to, subject, content);
             LOGGER.log(
                     Level.INFO,
-                    "EmailclawPlugin has sent reply to {0} (sessionId={1})",
-                    new Object[] {to, sessionId});
+                    "EmailclawPlugin has sent reply to {0} (sessionId={1}) via mailbox {2}",
+                    new Object[] {to, sessionId, mailbox.emailAddress()});
         } catch (Exception e) {
             LOGGER.log(
                     Level.WARNING, "EmailclawPlugin failed to reply to session: " + sessionId, e);

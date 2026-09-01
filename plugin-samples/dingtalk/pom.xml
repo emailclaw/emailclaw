@@ -7,11 +7,12 @@
   <parent>
     <groupId>ai.emailclaw.emailclaw.plugin.samples</groupId>
     <artifactId>emailclaw-plugin-samples</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>emailclaw-plugin-channel-dingtalk</artifactId>
+  <version>1.0.1</version>
   <name>Emailclaw DingTalk Channel Plugin</name>
   <description>Example Emailclaw DingTalk plugin module for reactor build.</description>
 

@@ -152,7 +152,7 @@ Subject: 为 8 月产品评审整理竞品摘要
 
 在 **Skills** 中启用适合任务的操作说明，在 **MCP** 中添加经审查的工具服务，在 **Plugins** 中管理扩展。插件可以增加工具、模型、钩子、界面或额外渠道，但默认产品工作流仍以 Emailclaw Channel 为中心。
 
-第三方插件拥有代码执行和网络访问的可能性。只从可信来源安装，阅读其权限和配置说明，并先在测试账户或低权限 Agent 上验证。开发者可参考仓库中的 `plugin-samples/PLUGIN_DEVELOPER_GUIDE.md` 与 `plugin-samples/dingtalk` 示例。
+第三方插件拥有代码执行和网络访问的可能性。只从可信来源安装，阅读其权限和配置说明，并先在测试账户或低权限 Agent 上验证。开发者可参考仓库中的 `plugin-samples/PLUGIN_DEVELOPER_GUIDE.md` 与 `plugin-samples/invokeAntigravityCli` 示例。
 
 ## 9. Linux 后台服务：给电脑入门者的完整安装指南
 

@@ -200,7 +200,7 @@ mvn -B test
 
 ```text
 emailclaw/                 Java 应用源码和 Maven 构建
-plugin-samples/            插件开发指南与 DingTalk 渠道示例
+plugin-samples/            插件开发指南与 InvokeAntigravityCli 工具示例
 docs/                      产品功能、架构和用户手册
 .github/workflows/         GitHub Release 构建工作流
 ```
@@ -219,7 +219,7 @@ docs/                      产品功能、架构和用户手册
 
 ## 扩展与插件
 
-插件可以提供工具、模型 Provider、启动/关闭钩子、MCP、界面或渠道能力。请从 [插件开发指南](./plugin-samples/PLUGIN-DEVELOPER-GUIDE-zh.md) 与 [`plugin-samples/dingtalk`](./plugin-samples/dingtalk) 开始。渠道插件需要负责外部会话映射、消息转发和（如需要）审批请求的安全投递。
+插件可以提供工具、模型 Provider、启动/关闭钩子、MCP、界面或渠道能力。请从 [插件开发指南](./plugin-samples/PLUGIN-DEVELOPER-GUIDE-zh.md) 与 [`plugin-samples/invokeAntigravityCli`](./plugin-samples/invokeAntigravityCli) 开始。渠道插件需要负责外部会话映射、消息转发和（如需要）审批请求的安全投递。
 
 ## 文档
 

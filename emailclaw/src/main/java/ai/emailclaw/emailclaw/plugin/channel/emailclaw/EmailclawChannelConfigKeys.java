@@ -11,24 +11,13 @@
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 /**
- * JSON key constants used when synchronizing Email channel {@code pluginConfig} with flat fields.
+ * JSON key constants used when synchronizing Email channel {@code pluginConfig}.
  */
 public final class EmailclawChannelConfigKeys {
 
-    public static final String EMAIL_ADDRESS = "emailAddress";
-    public static final String EMAIL_PASSWORD = "emailPassword";
-    public static final String IMAP_HOST = "imapHost";
-    public static final String IMAP_PORT = "imapPort";
-    public static final String IMAP_SSL = "imapSsl";
-    public static final String IMAP_START_TLS = "imapStartTls";
-    public static final String SMTP_HOST = "smtpHost";
-    public static final String SMTP_PORT = "smtpPort";
-    public static final String SMTP_SSL = "smtpSsl";
-    public static final String SMTP_START_TLS = "smtpStartTls";
+    public static final String MAILBOXES = "mailboxes";
     public static final String EMAIL_ALLOWLIST_SENDERS = "emailAllowlistSenders";
     public static final String EMAIL_POLL_INTERVAL_SECONDS = "emailPollIntervalSeconds";
-    // Caused many issues so not used: public static final String EMAIL_LAST_SEEN_UID =
-    // "emailLastSeenUid";
     public static final String SYS_EMAIL_MODE = "sysEmailMode";
     public static final String RESGISTRANT_EMAIL = "registrantEmail";
     public static final String ONE_TIME_PASSWORD = "oneTimePassword";

@@ -86,7 +86,7 @@ class InvokeAntigravityCliToolTest {
 
         ToolResultBlock resultBlock =
                 tool.invokeAntigravityCli(
-                        "Generate report", null, "gemini-2.5-pro", 60, true, "--verbose");
+                        "Generate report", null, null, "gemini-2.5-pro", 60, true, "--verbose");
 
         assertNotNull(resultBlock);
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
@@ -131,7 +131,7 @@ class InvokeAntigravityCliToolTest {
         InvokeAntigravityCliTool tool =
                 new InvokeAntigravityCliTool(null, timeoutRunner, "agy", 10, true);
         ToolResultBlock errorBlock =
-                tool.invokeAntigravityCli("Long running task", null, null, 10, true, null);
+                tool.invokeAntigravityCli("Long running task", null, null, null, 10, true, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -149,7 +149,7 @@ class InvokeAntigravityCliToolTest {
     @DisplayName("Tool should reject empty prompts immediately with error ToolResultBlock")
     void testEmptyPromptHandling() throws Exception {
         InvokeAntigravityCliTool tool = new InvokeAntigravityCliTool(null);
-        ToolResultBlock errorBlock = tool.invokeAntigravityCli("   ", null, null, null, null, null);
+        ToolResultBlock errorBlock = tool.invokeAntigravityCli("   ", null, null, null, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());

@@ -101,7 +101,7 @@ public class PluginService {
                     HttpRequest.newBuilder()
                             .uri(
                                     URI.create(
-                                            "https://download.emailclaw.ai/metadata/plugins/index.json"))
+                                            "https://platform.emailclaw.email/metadata/plugins/index.json"))
                             .header("Accept", "application/json")
                             .timeout(Duration.ofSeconds(30))
                             .GET()
@@ -138,7 +138,7 @@ public class PluginService {
                         String relUrl = getJsonString(entry, "url", "");
                         String installUrl;
                         if (relUrl.startsWith("/")) {
-                            installUrl = "https://download.emailclaw.ai" + relUrl;
+                            installUrl = "https://platform.emailclaw.email" + relUrl;
                         } else {
                             installUrl = relUrl;
                         }
