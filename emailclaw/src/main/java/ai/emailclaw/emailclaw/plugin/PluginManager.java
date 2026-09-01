@@ -63,7 +63,7 @@ public class PluginManager {
      * CDN address of the official plugin catalog.
      */
     private static final String OFFICIAL_CATALOG_URL =
-            "https://download.emailclaw.ai/metadata/plugins/index.json";
+            "https://platform.emailclaw.email/metadata/plugins/index.json";
 
     /**
      * Local plugin installation directory.
@@ -438,7 +438,7 @@ public class PluginManager {
                         // Assemble full download URL
                         String relUrl = pluginLoader.getJsonString(entry, "url", "");
                         if (relUrl.startsWith("/")) {
-                            manifest.installUrl = "https://download.emailclaw.ai" + relUrl;
+                            manifest.installUrl = "https://platform.emailclaw.email" + relUrl;
                         } else {
                             manifest.installUrl = relUrl;
                         }

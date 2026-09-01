@@ -21,16 +21,16 @@ import tools.jackson.databind.JsonNode;
 /**
  * Emailclaw official skill market Provider.
  *
- * <p>Calls Emailclaw Platform OpenAPI {@code GET https://platform.emailclaw.ai/openapi/v1/skills} interface.
+ * <p>Calls Emailclaw Platform OpenAPI {@code GET https://platform.emailclaw.email/api/v1/skills} interface.
  * Public interface, no authentication required.
  *
  * <p>This provider supports searching skills in the skill market by keyword and category.
  */
 public class EmailclawMarketProvider implements MarketProvider {
 
-    private static final String BASE_URL = "https://platform.emailclaw.ai";
+    private static final String BASE_URL = "https://platform.emailclaw.email";
 
-    private static final String SEARCH_PATH = "/openapi/v1/skills";
+    private static final String SEARCH_PATH = "/api/v1/skills";
 
     // Upstream API limit: page_size must be between 1..100, otherwise returns 400
     private static final int MAX_PAGE_SIZE = 100;

@@ -125,7 +125,7 @@ find $DOC_DIR -type f -name "*.md"
 
 若前面步骤无法完成（本地无文档、文档缺失、信息不足），使用官网作为兜底：
 
-- http://emailclaw.ai/
+- http://emailclaw.email/
 
 基于官网可获得内容继续回答，并在答案中明确说明该结论来自官网文档。
 

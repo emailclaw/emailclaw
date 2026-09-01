@@ -13,10 +13,12 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw.ui;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailMailPreset;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailPresetRegistry;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailclawChannelConfig;
+import ai.emailclaw.emailclaw.plugin.channel.emailclaw.MailboxAccountConfig;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.OneTimePasswordAuth;
 import ai.emailclaw.emailclaw.ui.plugin.CustomConfigViewProvider;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -24,10 +26,13 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
@@ -47,22 +52,15 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 
 /**
- * Emailclaw configuration view provider.
+ * Emailclaw configuration view provider supporting Multi-Agent Mailboxes.
  */
 public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvider {
     private static final Logger LOG =
             Logger.getLogger(EmailclawChannelConfigViewProvider.class.getName());
-    private static final String EMAILCLAW_CHANNEL_AGREEMENT =
-"""
-By using the Service, you acknowledge and agree to be bound by the following Emailclaw Channel Service Agreement:
-1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
-2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
-3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
-4. If a user registers for the Emailclaw Channel service provided by the system but does not use the service for more than 100 consecutive days, the Service Provider will delete the user's service.
-5. By using this service, you agree to comply with all applicable local and international laws and regulations.
-""";
 
     @Override
     public String targetPluginId() {
@@ -74,13 +72,241 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             Map<String, Object> initialConfig,
             Consumer<Map<String, Object>> onSave,
             Runnable onCancel) {
-        return new EmailclawConfigPane(initialConfig, onSave, onCancel);
+        return new EmailclawMultiMailboxConfigPane(initialConfig, onSave, onCancel);
     }
 
-    private static class EmailclawConfigPane extends VBox {
+    /**
+     * The main window view that shows the Enable Plugin switch, Configured Mailboxes label,
+     * + Add Mailbox button, and the list of mailboxes.
+     */
+    private static class EmailclawMultiMailboxConfigPane extends VBox {
         private final Map<String, Object> config;
         private final Consumer<Map<String, Object>> onSave;
         private final Runnable onCancel;
+        private final SimpleToggleSwitch enableSwitch = new SimpleToggleSwitch();
+        private final VBox mailboxCardsContainer = new VBox(8);
+        private final Button saveButton = new Button("Save Global Configuration");
+
+        private final List<MailboxAccountConfig> mailboxes = new ArrayList<>();
+
+        public EmailclawMultiMailboxConfigPane(
+                Map<String, Object> initialConfig,
+                Consumer<Map<String, Object>> onSave,
+                Runnable onCancel) {
+            this.config = new HashMap<>(initialConfig);
+            this.onSave = onSave;
+            this.onCancel = onCancel;
+
+            this.setPadding(new Insets(20));
+            this.setSpacing(12);
+
+            loadValues();
+
+            HBox switchBox = new HBox(8, new Label("Enable Plugin"), enableSwitch);
+            switchBox.setAlignment(Pos.CENTER_LEFT);
+
+            Button addBtn = new Button("+ Add Mailbox");
+            addBtn.getStyleClass().add("btn-primary");
+            addBtn.setOnAction(e -> showAddOrEditDialog(null));
+
+            HBox headerBox = new HBox(8, new Label("Configured Mailboxes:"), addBtn);
+            headerBox.setAlignment(Pos.CENTER_LEFT);
+            headerBox.setPadding(new Insets(10, 0, 0, 0));
+
+            ScrollPane scrollPane = new ScrollPane(mailboxCardsContainer);
+            scrollPane.setFitToWidth(true);
+            scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+            scrollPane.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+            VBox.setVgrow(scrollPane, Priority.ALWAYS);
+
+            this.getChildren().addAll(switchBox, headerBox, scrollPane);
+
+            saveButton.getStyleClass().add("btn-primary");
+            saveButton.setOnAction(
+                    e -> {
+                        this.config.put("enabled", enableSwitch.isSelected());
+                        EmailclawChannelConfig.setMailboxes(this.config, this.mailboxes);
+                        onSave.accept(this.config);
+                    });
+
+            Button cancelBtn = new Button("Cancel");
+            cancelBtn.setOnAction(
+                    e -> {
+                        if (onCancel != null) onCancel.run();
+                    });
+
+            HBox btnBox = new HBox(8, cancelBtn, saveButton);
+            btnBox.setAlignment(Pos.BOTTOM_RIGHT);
+            btnBox.setPadding(new Insets(20, 0, 0, 0));
+            this.getChildren().add(btnBox);
+
+            refreshMailboxList();
+        }
+
+        private void loadValues() {
+            boolean isEnabled = (Boolean) this.config.getOrDefault("enabled", false);
+            enableSwitch.setSelected(isEnabled);
+            List<MailboxAccountConfig> mbs = EmailclawChannelConfig.getMailboxes(this.config);
+            if (mbs != null) {
+                mailboxes.addAll(mbs);
+            }
+        }
+
+        private void refreshMailboxList() {
+            mailboxCardsContainer.getChildren().clear();
+            if (mailboxes.isEmpty()) {
+                Label emptyLabel =
+                        new Label("No mailboxes configured. Click \"+ Add Mailbox\" to add one.");
+                emptyLabel.setStyle("-fx-text-fill: #9ca3af; -fx-padding: 10 0 10 0;");
+                mailboxCardsContainer.getChildren().add(emptyLabel);
+                return;
+            }
+
+            for (int i = 0; i < mailboxes.size(); i++) {
+                final int index = i;
+                MailboxAccountConfig mb = mailboxes.get(i);
+
+                VBox card = new VBox(10);
+                card.setStyle(
+                        "-fx-border-color: #e5e7eb; -fx-border-radius: 8; -fx-padding: 12;"
+                                + " -fx-background-color: #f9fafb;");
+
+                // Top row: name, email, agent
+                HBox topRow = new HBox(8);
+                topRow.setAlignment(Pos.CENTER_LEFT);
+
+                Label nameLabel = new Label(mb.name().isBlank() ? mb.emailAddress() : mb.name());
+                nameLabel.setStyle("-fx-font-weight: bold;");
+
+                Label emailLabel = new Label("(" + mb.emailAddress() + ")");
+                emailLabel.setStyle("-fx-text-fill: #6b7280;");
+
+                String displayAgentName = "Default";
+                if (!mb.targetAgentId().isBlank()) {
+                    displayAgentName = mb.targetAgentId();
+                    var service =
+                            ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getAgentService();
+                    if (service != null) {
+                        displayAgentName =
+                                service.list().stream()
+                                        .filter(a -> a.getId().equals(mb.targetAgentId()))
+                                        .map(a -> a.getName())
+                                        .findFirst()
+                                        .orElse(mb.targetAgentId());
+                    }
+                }
+
+                Label agentLabel = new Label("Agent: " + displayAgentName);
+                agentLabel.setStyle(
+                        "-fx-background-color: #e0e7ff; -fx-text-fill: #3730a3; -fx-padding: 2 6 2"
+                                + " 6; -fx-background-radius: 4; -fx-font-size: 11px;");
+
+                topRow.getChildren().addAll(nameLabel, emailLabel, agentLabel);
+
+                // Bottom row: toggle, spacer, edit, delete
+                HBox bottomRow = new HBox(12);
+                bottomRow.setAlignment(Pos.CENTER_LEFT);
+
+                SimpleToggleSwitch enabledToggle = new SimpleToggleSwitch();
+                enabledToggle.setSelected(mb.enabled());
+                enabledToggle.setOnToggle(
+                        sel -> {
+                            MailboxAccountConfig updated = mb.withEnabled(sel);
+                            mailboxes.set(index, updated);
+                        });
+
+                HBox spacer = new HBox();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                Button editBtn = new Button("Edit");
+                editBtn.setOnAction(e -> showAddOrEditDialog(mb));
+
+                Button deleteBtn = new Button("Delete");
+                deleteBtn.setStyle("-fx-text-fill: #dc2626;");
+                deleteBtn.setOnAction(
+                        e -> {
+                            mailboxes.remove(mb);
+                            refreshMailboxList();
+                        });
+
+                bottomRow.getChildren().addAll(enabledToggle, spacer, editBtn, deleteBtn);
+
+                card.getChildren().addAll(topRow, bottomRow);
+                mailboxCardsContainer.getChildren().add(card);
+            }
+        }
+
+        private void showAddOrEditDialog(MailboxAccountConfig existingConfig) {
+            Stage dialogStage = new Stage();
+            dialogStage.initModality(Modality.WINDOW_MODAL);
+            dialogStage.initOwner(this.getScene().getWindow());
+            dialogStage.setTitle(existingConfig == null ? "Add Mailbox" : "Edit Mailbox");
+
+            SingleMailboxConfigPane pane =
+                    new SingleMailboxConfigPane(
+                            existingConfig,
+                            updatedConfig -> {
+                                if (existingConfig != null) {
+                                    int idx = mailboxes.indexOf(existingConfig);
+                                    if (idx >= 0) {
+                                        mailboxes.set(idx, updatedConfig);
+                                    } else {
+                                        mailboxes.add(updatedConfig);
+                                    }
+                                } else {
+                                    // Check uniqueness
+                                    boolean duplicate =
+                                            mailboxes.stream()
+                                                    .anyMatch(
+                                                            m ->
+                                                                    m.emailAddress()
+                                                                            .equalsIgnoreCase(
+                                                                                    updatedConfig
+                                                                                            .emailAddress()));
+                                    if (duplicate) {
+                                        Alert a =
+                                                new Alert(
+                                                        Alert.AlertType.ERROR,
+                                                        "Email address must be unique!");
+                                        a.showAndWait();
+                                        return;
+                                    }
+                                    mailboxes.add(updatedConfig);
+                                }
+                                refreshMailboxList();
+                                dialogStage.close();
+                            },
+                            dialogStage::close);
+
+            Scene scene = new Scene(pane, 800, 600);
+            scene.getStylesheets().addAll(this.getScene().getStylesheets());
+            dialogStage.setScene(scene);
+            dialogStage.showAndWait();
+        }
+    }
+
+    /**
+     * The dialog content panel representing a single mailbox configuration.
+     * This is an exact reproduction of the original panel adapted for MailboxAccountConfig.
+     */
+    private static class SingleMailboxConfigPane extends VBox {
+        private static final String EMAILCLAW_CHANNEL_AGREEMENT =
+"""
+By using the Service, you acknowledge and agree to be bound by the following Emailclaw Channel Service Agreement:
+1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
+2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
+3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
+4. If a user registers for the Emailclaw Channel service provided by the system but does not use the service for more than 100 consecutive days, the Service Provider will delete the user's service.
+5. By using this service, you agree to comply with all applicable local and international laws and regulations.
+""";
+
+        private final MailboxAccountConfig initialConfig;
+        private final Consumer<MailboxAccountConfig> onSave;
+        private final Runnable onCancel;
+
+        private final TextField mailboxNameField = new TextField();
+        private final javafx.scene.control.ComboBox<AgentOption> targetAgentIdComboBox =
+                new javafx.scene.control.ComboBox<>();
 
         private final TextField emailAddressField = new TextField();
         private final PasswordField passwordField = new PasswordField();
@@ -123,52 +349,32 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                 new RadioButton("Use system provided Email account");
 
         private Button saveButton;
-        private SimpleToggleSwitch enableSwitch;
 
         private static final Pattern EMAIL_PATTERN =
                 Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
-        public EmailclawConfigPane(
-                Map<String, Object> initialConfig,
-                Consumer<Map<String, Object>> onSave,
+        public SingleMailboxConfigPane(
+                MailboxAccountConfig initialConfig,
+                Consumer<MailboxAccountConfig> onSave,
                 Runnable onCancel) {
-            this.config = new java.util.HashMap<>(initialConfig);
+            this.initialConfig = initialConfig;
             this.onSave = onSave;
             this.onCancel = onCancel;
             this.setPadding(new Insets(20));
 
-            ai.emailclaw.emailclaw.model.ChannelInfo proxyChannel =
-                    new ai.emailclaw.emailclaw.model.ChannelInfo(
-                            ai.emailclaw.emailclaw.channel.ChannelIds.EMAILCLAW,
-                            "Emailclaw",
-                            false,
-                            false);
-            proxyChannel.setPluginConfig(this.config);
-            proxyChannel.setEnabled((Boolean) this.config.getOrDefault("enabled", false));
-
-            enableSwitch = new SimpleToggleSwitch();
-            enableSwitch.setSelected(proxyChannel.isEnabled());
-            enableSwitch.setDisable(true);
-
-            HBox switchBox = new HBox(8, new Label("Enable Plugin"), enableSwitch);
-            switchBox.setAlignment(Pos.CENTER_LEFT);
-
-            this.getChildren().add(switchBox);
             Node content = buildContent();
             VBox.setVgrow(content, Priority.ALWAYS);
             this.getChildren().add(content);
 
-            saveButton = new Button("Update Configuration");
+            saveButton = new Button(initialConfig == null ? "Add Mailbox" : "Update Mailbox");
             saveButton.getStyleClass().add("btn-primary");
             saveButton.setOnAction(
                     e -> {
                         if (validateForm() == null) {
-                            if (saveValues(proxyChannel)) {
-                                this.config.put("enabled", proxyChannel.isEnabled());
-                                onSave.accept(this.config);
-                            }
+                            handleSave();
                         }
                     });
+
             Button cancelBtn = new Button("Cancel");
             cancelBtn.setOnAction(
                     e -> {
@@ -182,7 +388,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             btnBox.setPadding(new Insets(20, 0, 0, 0));
             this.getChildren().add(btnBox);
 
-            loadValues(proxyChannel);
+            loadValues(initialConfig);
             bindValidationListeners();
             refreshSaveState();
         }
@@ -196,9 +402,11 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             ownEmailRadio.setSelected(true);
             VBox modeBox = new VBox(6, ownEmailRadio, sysEmailRadio);
             modeBox.setPadding(new Insets(0, 0, 6, 0));
+
             Node ownPane = buildOwnEmailTab();
             Node sysPane = buildSystemEmailTab();
             StackPane contentPane = new StackPane(ownPane);
+
             modeGroup
                     .selectedToggleProperty()
                     .addListener(
@@ -210,13 +418,16 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                                 }
                                 refreshSaveState();
                             });
+
             ScrollPane scrollPane = new ScrollPane(contentPane);
             scrollPane.setFitToWidth(true);
             scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-            scrollPane.getStyleClass().add("pane-transparent");
+            scrollPane.setStyle("-fx-background-color: transparent;");
             VBox.setVgrow(scrollPane, Priority.ALWAYS);
-            validationHint.getStyleClass().add("text-red-12-sm");
+
+            validationHint.setStyle("-fx-text-fill: red; -fx-font-size: 12px;");
             validationHint.setWrapText(true);
+
             root.getChildren().addAll(modeBox, scrollPane, validationHint);
             return root;
         }
@@ -224,14 +435,32 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
         private Node buildOwnEmailTab() {
             VBox root = new VBox(10);
             root.setPadding(new Insets(16, 0, 0, 0));
+
+            mailboxNameField.setPromptText("E.g., Support Mailbox");
+            targetAgentIdComboBox.setPromptText("Select Target Agent");
+            targetAgentIdComboBox.setMaxWidth(Double.MAX_VALUE);
+
+            // Populate agents
+            targetAgentIdComboBox.getItems().add(new AgentOption("", "Default Agent"));
+            var agentService = ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getAgentService();
+            if (agentService != null) {
+                for (var agent : agentService.list()) {
+                    targetAgentIdComboBox
+                            .getItems()
+                            .add(new AgentOption(agent.getId(), agent.getName()));
+                }
+            }
+            targetAgentIdComboBox.getSelectionModel().selectFirst();
+
             emailAddressField.setPromptText("example@domain.com");
             passwordField.setPromptText("Email password or app password");
             imapHostField.setPromptText("imap.example.com");
             smtpHostField.setPromptText("smtp.example.com");
             allowSendersArea.setPromptText("One sender email per line");
             allowSendersArea.setPrefRowCount(6);
-            autoPresetHint.getStyleClass().add("text-blue-12");
+            autoPresetHint.setStyle("-fx-text-fill: #3b82f6; -fx-font-size: 12px;");
             autoPresetHint.setWrapText(true);
+
             imapSection =
                     section(
                             "Incoming Server (IMAP)",
@@ -246,8 +475,13 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                             field("SMTP Port", smtpPortSpinner),
                             smtpSslCheck,
                             smtpStartTlsCheck);
+
             root.getChildren()
                     .addAll(
+                            section(
+                                    "General Info",
+                                    field("Mailbox Name (Optional)", mailboxNameField),
+                                    field("Target Agent", targetAgentIdComboBox)),
                             section(
                                     "Mailbox Account",
                                     field("Email Address", emailAddressField),
@@ -272,9 +506,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             Button viewAgreementBtn = new Button("View");
             viewAgreementBtn.setOnAction(
                     e -> {
-                        javafx.scene.control.Alert alert =
-                                new javafx.scene.control.Alert(
-                                        javafx.scene.control.Alert.AlertType.INFORMATION);
+                        Alert alert = new Alert(Alert.AlertType.INFORMATION);
                         alert.setTitle("Service Agreement");
                         alert.setHeaderText("Emailclaw Channel Service Agreement");
 
@@ -284,9 +516,9 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                         textArea.setPrefColumnCount(50);
                         textArea.setPrefRowCount(12);
                         alert.getDialogPane().setContent(textArea);
-
                         alert.showAndWait();
                     });
+
             HBox agreementBox = new HBox(8, sysAgreementCheckBox, viewAgreementBtn);
             agreementBox.setAlignment(Pos.CENTER_LEFT);
 
@@ -299,7 +531,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             sysRegistrationEmailField.setPromptText("example@domain.com");
             autoPresetHintSystem.setText("Email to otp@emailclaw.email to get one-time password.");
-            autoPresetHintSystem.getStyleClass().add("text-blue-12");
+            autoPresetHintSystem.setStyle("-fx-text-fill: #3b82f6; -fx-font-size: 12px;");
             autoPresetHintSystem.setWrapText(true);
             sysOneTimePasswordField.setPromptText("One-time Password");
             sysAllowSendersArea.setPrefRowCount(6);
@@ -342,13 +574,13 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
         private VBox field(String name, Node control) {
             Label label = new Label(name);
-            label.getStyleClass().add("fw-600");
+            label.setStyle("-fx-font-weight: bold;");
             return new VBox(4, label, control);
         }
 
         private VBox section(String title, Node... children) {
             Label head = new Label(title);
-            head.getStyleClass().add("fw-700-14");
+            head.setStyle("-fx-font-weight: bold; -fx-font-size: 14px;");
             VBox box = new VBox(8);
             box.getChildren().add(head);
             box.getChildren().addAll(children);
@@ -357,49 +589,57 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             return box;
         }
 
-        private void loadValues(ai.emailclaw.emailclaw.model.ChannelInfo channel) {
-            emailAddressField.setText(nvl(EmailclawChannelConfig.getEmailAddress(channel)));
-            passwordField.setText(nvl(EmailclawChannelConfig.getEmailPassword(channel)));
-            imapHostField.setText(nvl(EmailclawChannelConfig.getImapHost(channel)));
-            int imapPort = EmailclawChannelConfig.getImapPort(channel);
-            imapPortSpinner.getValueFactory().setValue(imapPort <= 0 ? 993 : imapPort);
-            imapSslCheck.setSelected(EmailclawChannelConfig.isImapSsl(channel));
-            imapStartTlsCheck.setSelected(EmailclawChannelConfig.isImapStartTls(channel));
-            smtpHostField.setText(nvl(EmailclawChannelConfig.getSmtpHost(channel)));
-            int smtpPort = EmailclawChannelConfig.getSmtpPort(channel);
-            smtpPortSpinner.getValueFactory().setValue(smtpPort <= 0 ? 465 : smtpPort);
-            smtpSslCheck.setSelected(EmailclawChannelConfig.isSmtpSsl(channel));
-            smtpStartTlsCheck.setSelected(EmailclawChannelConfig.isSmtpStartTls(channel));
-            int pollSeconds = EmailclawChannelConfig.getEmailPollIntervalSeconds(channel);
-            pollSecondsSpinner.getValueFactory().setValue(pollSeconds <= 0 ? 30 : pollSeconds);
-            allowSendersArea.setText(
-                    String.join("\n", EmailclawChannelConfig.getEmailAllowlistSenders(channel)));
+        private void loadValues(MailboxAccountConfig config) {
+            if (config == null) return;
+            mailboxNameField.setText(nvl(config.name()));
+
+            String targetId = nvl(config.targetAgentId());
+            targetAgentIdComboBox.getItems().stream()
+                    .filter(opt -> opt.id().equals(targetId))
+                    .findFirst()
+                    .ifPresent(opt -> targetAgentIdComboBox.getSelectionModel().select(opt));
+
+            emailAddressField.setText(nvl(config.emailAddress()));
+            passwordField.setText(nvl(config.emailPassword()));
+            imapHostField.setText(nvl(config.imapHost()));
+            imapPortSpinner
+                    .getValueFactory()
+                    .setValue(config.imapPort() <= 0 ? 993 : config.imapPort());
+            imapSslCheck.setSelected(config.imapSsl());
+            imapStartTlsCheck.setSelected(config.imapStartTls());
+            smtpHostField.setText(nvl(config.smtpHost()));
+            smtpPortSpinner
+                    .getValueFactory()
+                    .setValue(config.smtpPort() <= 0 ? 465 : config.smtpPort());
+            smtpSslCheck.setSelected(config.smtpSsl());
+            smtpStartTlsCheck.setSelected(config.smtpStartTls());
+            pollSecondsSpinner
+                    .getValueFactory()
+                    .setValue(
+                            config.pollIntervalSeconds() <= 0 ? 30 : config.pollIntervalSeconds());
+            allowSendersArea.setText(String.join("\n", config.allowlistSenders()));
             applyPresetForEmail(emailAddressField.getText(), false);
-            sysRegistrationEmailField.setText(
-                    nvl(EmailclawChannelConfig.getRegistrantEmail(channel)));
-            sysOneTimePasswordField.setText(
-                    nvl(EmailclawChannelConfig.getOneTimePassword(channel)));
-            sysPollSecondsSpinner.getValueFactory().setValue(pollSeconds <= 0 ? 30 : pollSeconds);
-            sysAllowSendersArea.setText(sysRegistrationEmailField.getText());
 
-            String allocatedEmail = EmailclawChannelConfig.getEmailAddress(channel);
-            String allocatedPwd = EmailclawChannelConfig.getEmailPassword(channel);
-            sysAllocatedEmailField.setText(nvl(allocatedEmail));
-            sysAllocatedPasswordField.setText(nvl(allocatedPwd));
-            boolean hasEmail = allocatedEmail != null && !allocatedEmail.isBlank();
-            boolean hasPwd = allocatedPwd != null && !allocatedPwd.isBlank();
-            sysAllocatedEmailBox.setVisible(hasEmail);
-            sysAllocatedEmailBox.setManaged(hasEmail);
-            sysAllocatedPasswordBox.setVisible(hasPwd);
-            sysAllocatedPasswordBox.setManaged(hasPwd);
-            sysAllocatedAccountSection.setVisible(hasEmail || hasPwd);
-            sysAllocatedAccountSection.setManaged(hasEmail || hasPwd);
+            sysRegistrationEmailField.setText("");
+            sysOneTimePasswordField.setText("");
+            sysPollSecondsSpinner
+                    .getValueFactory()
+                    .setValue(
+                            config.pollIntervalSeconds() <= 0 ? 30 : config.pollIntervalSeconds());
 
-            if (EmailclawChannelConfig.isSysEmailMode(channel)) {
+            boolean isSystemEmail = config.emailAddress().endsWith("@emailclaw.email");
+            if (isSystemEmail) {
                 sysEmailRadio.setSelected(true);
+                sysAllocatedEmailField.setText(config.emailAddress());
+                sysAllocatedPasswordField.setText(config.emailPassword());
+                if (!config.allowlistSenders().isEmpty()) {
+                    sysRegistrationEmailField.setText(config.allowlistSenders().get(0));
+                    sysAllowSendersArea.setText(config.allowlistSenders().get(0));
+                }
             } else {
                 ownEmailRadio.setSelected(true);
             }
+            updateAllocatedAccountVisibility();
         }
 
         private void bindValidationListeners() {
@@ -447,11 +687,27 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             String error = validateForm();
             boolean valid = error == null;
             if (saveButton != null) saveButton.setDisable(!valid);
-            if (enableSwitch != null) {
-                enableSwitch.setDisable(!valid);
-                enableSwitch.setSelected(valid);
-            }
             validationHint.setText(valid ? "" : error);
+            updateAllocatedAccountVisibility();
+        }
+
+        private void updateAllocatedAccountVisibility() {
+            String allocatedEmail = sysAllocatedEmailField.getText();
+            String allocatedPwd = sysAllocatedPasswordField.getText();
+            boolean hasEmail = allocatedEmail != null && !allocatedEmail.isBlank();
+            boolean hasPwd = allocatedPwd != null && !allocatedPwd.isBlank();
+            if (sysAllocatedEmailBox != null) {
+                sysAllocatedEmailBox.setVisible(hasEmail);
+                sysAllocatedEmailBox.setManaged(hasEmail);
+            }
+            if (sysAllocatedPasswordBox != null) {
+                sysAllocatedPasswordBox.setVisible(hasPwd);
+                sysAllocatedPasswordBox.setManaged(hasPwd);
+            }
+            if (sysAllocatedAccountSection != null) {
+                sysAllocatedAccountSection.setVisible(hasEmail || hasPwd);
+                sysAllocatedAccountSection.setManaged(hasEmail || hasPwd);
+            }
         }
 
         private String validateForm() {
@@ -481,12 +737,14 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                 if (password.isBlank()) return "Please fill in One-time Password.";
                 return null;
             }
+
             String email =
                     emailAddressField.getText() == null ? "" : emailAddressField.getText().trim();
             if (email.isBlank()) return "Please fill in Email Address.";
             if (!isValidEmail(email)) return "Email Address format is invalid.";
             String password = passwordField.getText() == null ? "" : passwordField.getText().trim();
             if (password.isBlank()) return "Please fill in Email Password or App Password.";
+
             EmailMailPreset preset = EmailPresetRegistry.presetOf(email);
             if (preset == null) {
                 if (imapHostField.getText() == null || imapHostField.getText().trim().isBlank())
@@ -494,6 +752,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                 if (smtpHostField.getText() == null || smtpHostField.getText().trim().isBlank())
                     return "Please fill in SMTP Host.";
             }
+
             List<String> senders = normalizeSenders(allowSendersArea.getText());
             if (senders.isEmpty()) return "Allowed Senders require at least one email address.";
             for (String sender : senders) {
@@ -503,104 +762,150 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             return null;
         }
 
-        private boolean saveValues(ai.emailclaw.emailclaw.model.ChannelInfo channel) {
-            channel.setEnabled(enableSwitch.isSelected());
-            boolean sysMode = sysEmailRadio.isSelected();
-            EmailclawChannelConfig.setSysEmailMode(channel, sysMode);
-            if (sysMode) {
-                EmailclawChannelConfig.setRegistrantEmail(
-                        channel, sysRegistrationEmailField.getText().trim());
-                EmailclawChannelConfig.setOneTimePassword(
-                        channel, sysOneTimePasswordField.getText());
-                EmailclawChannelConfig.setEmailPollIntervalSeconds(
-                        channel, sysPollSecondsSpinner.getValue());
-                EmailclawChannelConfig.setEmailAllowlistSenders(
-                        channel, normalizeSenders(sysAllowSendersArea.getText()));
-
-                String registrantEmail = sysRegistrationEmailField.getText().trim();
-                String oneTimePassword = sysOneTimePasswordField.getText();
-
-                if (registrantEmail != null
-                        && !registrantEmail.isBlank()
-                        && oneTimePassword != null
-                        && !oneTimePassword.isBlank()) {
-                    String sysEmail =
-                            OneTimePasswordAuth.oneTimePasswordAuth(
-                                    channel, registrantEmail, oneTimePassword);
-                    if (sysEmail != null) {
-                        javafx.application.Platform.runLater(
-                                () -> {
-                                    javafx.scene.control.Alert alert =
-                                            new javafx.scene.control.Alert(
-                                                    javafx.scene.control.Alert.AlertType
-                                                            .INFORMATION);
-                                    alert.setTitle("Validation Successful");
-                                    alert.setHeaderText("Registration Completed");
-
-                                    VBox contentBox = new VBox(8);
-                                    contentBox
-                                            .getChildren()
-                                            .add(
-                                                    new Label(
-                                                            "Send a new subject email to the"
-                                                                    + " Agent's email address as"
-                                                                    + " below:"));
-                                    TextField emailField = new TextField(sysEmail.toUpperCase());
-                                    emailField.setEditable(false);
-                                    contentBox.getChildren().add(emailField);
-                                    alert.getDialogPane().setContent(contentBox);
-
-                                    alert.showAndWait();
-                                });
-                        return true;
-                    } else {
-                        javafx.application.Platform.runLater(
-                                () -> {
-                                    validationHint.setText(
-                                            "Validation failed, please check registrant email and"
-                                                    + " one-time password.");
-                                });
-                        return false;
-                    }
-                }
-            }
-            applyPresetForEmail(emailAddressField.getText(), false);
-            EmailclawChannelConfig.setEmailAddress(channel, emailAddressField.getText().trim());
-            EmailclawChannelConfig.setEmailPassword(channel, passwordField.getText());
-            if (EmailclawChannelConfig.isPresetEmail(channel)) {
-                EmailclawChannelConfig.normalizeEmailclawPluginConfig(channel);
-            } else {
-                EmailclawChannelConfig.setMailServerFromForm(
-                        channel,
-                        imapHostField.getText().trim(),
-                        imapPortSpinner.getValue(),
-                        imapSslCheck.isSelected(),
-                        imapStartTlsCheck.isSelected(),
-                        smtpHostField.getText().trim(),
-                        smtpPortSpinner.getValue(),
-                        smtpSslCheck.isSelected(),
-                        smtpStartTlsCheck.isSelected());
-            }
-            EmailclawChannelConfig.setEmailPollIntervalSeconds(
-                    channel, pollSecondsSpinner.getValue());
-            EmailclawChannelConfig.setEmailAllowlistSenders(
-                    channel, normalizeSenders(allowSendersArea.getText()));
-            return true;
+        private String getSelectedTargetAgentId() {
+            return targetAgentIdComboBox.getValue() != null
+                    ? targetAgentIdComboBox.getValue().id()
+                    : "";
         }
 
-        public record OneTimePasswordAndName(String name, String password) {}
+        private void handleSave() {
+            boolean sysMode = sysEmailRadio.isSelected();
+            if (sysMode) {
+                String registrantEmail = sysRegistrationEmailField.getText().trim();
+                String oneTimePassword = sysOneTimePasswordField.getText();
+                String allocatedEmail = sysAllocatedEmailField.getText();
 
-        /**
-         * Authentication result data
-         */
-        private record AuthResult(
-                boolean success,
-                String message,
-                String userId,
-                String username,
-                String role,
-                String accessToken,
-                String refreshToken) {}
+                // If not already allocated, perform registration
+                if (allocatedEmail == null || allocatedEmail.isBlank()) {
+                    if (registrantEmail != null
+                            && !registrantEmail.isBlank()
+                            && oneTimePassword != null
+                            && !oneTimePassword.isBlank()) {
+                        OneTimePasswordAuth.EmailAndPassword authRes =
+                                OneTimePasswordAuth.oneTimePasswordAuth(
+                                        registrantEmail, oneTimePassword);
+                        if (authRes != null) {
+                            Platform.runLater(
+                                    () -> {
+                                        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                                        alert.setTitle("Validation Successful");
+                                        alert.setHeaderText("Registration Completed");
+
+                                        VBox contentBox = new VBox(8);
+                                        contentBox
+                                                .getChildren()
+                                                .add(
+                                                        new Label(
+                                                                "Send a new subject email to the"
+                                                                    + " Agent's email address as"
+                                                                    + " below:"));
+                                        TextField emailField =
+                                                new TextField(authRes.email().toUpperCase());
+                                        emailField.setEditable(false);
+                                        contentBox.getChildren().add(emailField);
+                                        alert.getDialogPane().setContent(contentBox);
+                                        alert.showAndWait();
+
+                                        MailboxAccountConfig newConfig =
+                                                new MailboxAccountConfig(
+                                                        initialConfig != null
+                                                                ? initialConfig.id()
+                                                                : java.util
+                                                                        .UUID
+                                                                        .randomUUID()
+                                                                        .toString(),
+                                                        mailboxNameField.getText().trim(),
+                                                        initialConfig != null
+                                                                ? initialConfig.enabled()
+                                                                : true,
+                                                        authRes.email(),
+                                                        authRes.password(),
+                                                        "",
+                                                        993,
+                                                        true,
+                                                        false,
+                                                        "",
+                                                        465,
+                                                        true,
+                                                        false,
+                                                        getSelectedTargetAgentId(),
+                                                        normalizeSenders(
+                                                                sysAllowSendersArea.getText()),
+                                                        sysPollSecondsSpinner.getValue());
+                                        onSave.accept(newConfig);
+                                    });
+                        } else {
+                            Platform.runLater(
+                                    () ->
+                                            validationHint.setText(
+                                                    "Validation failed, please check registrant"
+                                                            + " email and one-time password."));
+                        }
+                    }
+                    return; // Wait for registration to complete
+                } else {
+                    // Already allocated (editing a sys mailbox)
+                    MailboxAccountConfig newConfig =
+                            new MailboxAccountConfig(
+                                    initialConfig != null
+                                            ? initialConfig.id()
+                                            : java.util.UUID.randomUUID().toString(),
+                                    mailboxNameField.getText().trim(),
+                                    initialConfig != null ? initialConfig.enabled() : true,
+                                    sysAllocatedEmailField.getText(),
+                                    sysAllocatedPasswordField.getText(),
+                                    "",
+                                    993,
+                                    true,
+                                    false,
+                                    "",
+                                    465,
+                                    true,
+                                    false,
+                                    getSelectedTargetAgentId(),
+                                    normalizeSenders(sysAllowSendersArea.getText()),
+                                    sysPollSecondsSpinner.getValue());
+                    onSave.accept(newConfig);
+                    return;
+                }
+            }
+
+            applyPresetForEmail(emailAddressField.getText(), false);
+            String email = emailAddressField.getText().trim();
+            EmailMailPreset preset = EmailPresetRegistry.presetOf(email);
+
+            String iHost = preset != null ? preset.imapHost() : imapHostField.getText().trim();
+            int iPort = preset != null ? preset.imapPort() : imapPortSpinner.getValue();
+            boolean iSsl = preset != null ? preset.imapSsl() : imapSslCheck.isSelected();
+            boolean iTls = preset != null ? preset.imapStartTls() : imapStartTlsCheck.isSelected();
+
+            String sHost = preset != null ? preset.smtpHost() : smtpHostField.getText().trim();
+            int sPort = preset != null ? preset.smtpPort() : smtpPortSpinner.getValue();
+            boolean sSsl = preset != null ? preset.smtpSsl() : smtpSslCheck.isSelected();
+            boolean sTls = preset != null ? preset.smtpStartTls() : smtpStartTlsCheck.isSelected();
+
+            MailboxAccountConfig newConfig =
+                    new MailboxAccountConfig(
+                            initialConfig != null
+                                    ? initialConfig.id()
+                                    : java.util.UUID.randomUUID().toString(),
+                            mailboxNameField.getText().trim(),
+                            initialConfig != null ? initialConfig.enabled() : true,
+                            email,
+                            passwordField.getText(),
+                            iHost,
+                            iPort,
+                            iSsl,
+                            iTls,
+                            sHost,
+                            sPort,
+                            sSsl,
+                            sTls,
+                            getSelectedTargetAgentId(),
+                            normalizeSenders(allowSendersArea.getText()),
+                            pollSecondsSpinner.getValue());
+            onSave.accept(newConfig);
+        }
 
         private List<String> normalizeSenders(String text) {
             if (text == null || text.isBlank()) return new ArrayList<>();
@@ -654,38 +959,55 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                 smtpSection.setVisible(visible);
             }
         }
+    }
 
-        private class SimpleToggleSwitch extends StackPane {
-            private final Rectangle back = new Rectangle(36, 20);
-            private final Circle thumb = new Circle(8);
-            private boolean selected = false;
+    private static class SimpleToggleSwitch extends StackPane {
+        private final Rectangle back = new Rectangle(36, 20);
+        private final Circle thumb = new Circle(8);
+        private boolean selected = false;
+        private Consumer<Boolean> onToggle;
 
-            public SimpleToggleSwitch() {
-                back.setArcWidth(20);
-                back.setArcHeight(20);
-                back.setFill(Color.web("#e5e7eb"));
-                thumb.setFill(Color.WHITE);
-                thumb.setEffect(new DropShadow(2, Color.gray(0, 0.3)));
-                StackPane.setAlignment(thumb, Pos.CENTER_LEFT);
-                StackPane.setMargin(thumb, new Insets(0, 2, 0, 2));
-                getChildren().addAll(back, thumb);
-                setOnMouseClicked(
-                        e -> {
-                            if (!isDisabled()) setSelected(!selected);
-                        });
-                setCursor(Cursor.HAND);
-                disableProperty().addListener((obs, oldV, newV) -> setOpacity(newV ? 0.5 : 1.0));
+        public SimpleToggleSwitch() {
+            back.setArcWidth(20);
+            back.setArcHeight(20);
+            back.setFill(Color.web("#e5e7eb"));
+            thumb.setFill(Color.WHITE);
+            thumb.setEffect(new DropShadow(2, Color.gray(0, 0.3)));
+            StackPane.setAlignment(thumb, Pos.CENTER_LEFT);
+            StackPane.setMargin(thumb, new Insets(0, 2, 0, 2));
+            getChildren().addAll(back, thumb);
+            setOnMouseClicked(
+                    e -> {
+                        if (!isDisabled()) setSelected(!selected);
+                    });
+            setCursor(Cursor.HAND);
+            disableProperty().addListener((obs, oldV, newV) -> setOpacity(newV ? 0.5 : 1.0));
+        }
+
+        public boolean isSelected() {
+            return selected;
+        }
+
+        public void setOnToggle(Consumer<Boolean> onToggle) {
+            this.onToggle = onToggle;
+        }
+
+        public void setSelected(boolean sel) {
+            boolean changed = this.selected != sel;
+            this.selected = sel;
+            back.setFill(sel ? Color.web("#4ade80") : Color.web("#e5e7eb"));
+            StackPane.setAlignment(thumb, sel ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+            if (changed && onToggle != null) {
+                onToggle.accept(sel);
             }
+        }
+    }
 
-            public boolean isSelected() {
-                return selected;
-            }
-
-            public void setSelected(boolean sel) {
-                this.selected = sel;
-                back.setFill(sel ? Color.web("#4ade80") : Color.web("#e5e7eb"));
-                StackPane.setAlignment(thumb, sel ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-            }
+    public record AgentOption(String id, String name) {
+        @Override
+        public String toString() {
+            if (id.isBlank()) return name;
+            return name + " (" + id + ")";
         }
     }
 }

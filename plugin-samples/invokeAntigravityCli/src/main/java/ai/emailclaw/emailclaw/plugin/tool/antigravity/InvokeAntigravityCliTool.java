@@ -119,6 +119,13 @@ public class InvokeAntigravityCliTool {
                                     "The task description or prompt to send to Antigravity CLI.")
                     String prompt,
             @ToolParam(
+                            name = "cli_path",
+                            description =
+                                    "Optional absolute path to the agy executable. If omitted,"
+                                            + " uses the default 'agy'.",
+                            required = false)
+                    String cliPath,
+            @ToolParam(
                             name = "working_directory",
                             description =
                                     "Optional working directory where the CLI should execute. If"
@@ -194,9 +201,11 @@ public class InvokeAntigravityCliTool {
                         + " skipPermissions={2}",
                 new Object[] {targetWorkingDir, effectiveTimeout, skipPermissions});
 
+        String actualCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath : defaultCliPath;
+
         AntigravityExecutionResult result =
                 processRunner.execute(
-                        defaultCliPath,
+                        actualCliPath,
                         effectivePrompt,
                         targetWorkingDir,
                         model,

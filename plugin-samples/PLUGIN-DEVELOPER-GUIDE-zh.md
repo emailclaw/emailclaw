@@ -283,13 +283,13 @@ mvn -q -DskipTests compile
 
 ## 9. 示例模块
 
-`plugin-samples/dingtalk` 是 Channel 插件样例模块，展示：
+`plugin-samples/invokeAntigravityCli` 是 Tool 插件样例模块，展示：
 
 - `plugin.json` 的 `entry_point` 配置。
-- `AbstractChannelPlugin` 的基本继承方式。
-- 通过 `ChannelService` 热读取配置。
-- 把外部会话映射为 `ChatSessionInfo`。
-- 使用 `ChatService.sendMessage(...)` 发送消息并携带 route。
+- `AbstractToolPlugin` 的基本继承方式。
+- 使用 `@Tool` 与 `@ToolParam` 定义大模型结构化工具。
+- 返回带有结构化 JSON 输出和元数据的 `ToolResultBlock`。
+- 使用 `AntigravityProcessRunner` 安全地执行后台进程。
 
 实现新的 Email、IM 或 Webhook Channel 时，可优先参考内置 `EmailclawPlugin`、`DingTalkPlugin` 以及对应 Runner 中的 ToolGuard 审批码处理流程。
 

@@ -207,7 +207,7 @@ mvn -B test
 
 ```text
 emailclaw/                 Java application source code and Maven build
-plugin-samples/            Plugin development guide & DingTalk channel sample
+plugin-samples/            Plugin development guide & InvokeAntigravityCli tool sample
 docs/                      Product features, architecture, and user manual
 .github/workflows/         GitHub Release build workflows
 ```
@@ -226,7 +226,7 @@ The default runtime data root directory is `~/emailclaw`, which can be modified 
 
 ## Extensions and Plugins
 
-Plugins can provide tools, model Providers, startup/shutdown hooks, MCP, UI, or channel capabilities. Please start with the [Plugin Developer Guide](./plugin-samples/PLUGIN-DEVELOPER-GUIDE.md) and [`plugin-samples/dingtalk`](./plugin-samples/dingtalk). Channel plugins are responsible for external session mapping, message forwarding, and (if needed) the secure delivery of approval requests.
+Plugins can provide tools, model Providers, startup/shutdown hooks, MCP, UI, or channel capabilities. Please start with the [Plugin Developer Guide](./plugin-samples/PLUGIN-DEVELOPER-GUIDE.md) and [`plugin-samples/invokeAntigravityCli`](./plugin-samples/invokeAntigravityCli). Channel plugins are responsible for external session mapping, message forwarding, and (if needed) the secure delivery of approval requests.
 
 ## Documentation
 

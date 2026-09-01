@@ -10,8 +10,6 @@
  */
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
-import ai.emailclaw.emailclaw.model.ChannelInfo;
-import java.util.List;
 import java.util.logging.Logger;
 
 // One-time Password Authentication
@@ -20,32 +18,7 @@ public class OneTimePasswordAuth {
     private static final String EMAILCLAW_EMAIL = "@emailclaw.email";
     private static final Logger LOG = Logger.getLogger(OneTimePasswordAuth.class.getName());
 
-    public static String oneTimePasswordAuth(
-            ChannelInfo channel, String registrantEmail, String oneTimePassword) {
-        EmailAndPassword emailAndPassword =
-                OneTimePasswordAuth.oneTimePasswordAuth(registrantEmail, oneTimePassword);
-        if (emailAndPassword != null) {
-            channel.setEnabled(true);
-            EmailclawChannelConfig.setEmailAddress(channel, emailAndPassword.email());
-            EmailclawChannelConfig.setEmailPassword(channel, emailAndPassword.password());
-            EmailclawChannelConfig.setEmailAllowlistSenders(channel, List.of(registrantEmail));
-            EmailclawChannelConfig.setOneTimePassword(channel, ""); // clear
-            EmailclawChannelConfig.setEmailPollIntervalSeconds(channel, 30);
-
-            LOG.info("authResult.success==true; EmailAddress==" + emailAndPassword.email());
-
-            return emailAndPassword.email();
-        } else {
-            LOG.info(
-                    registrantEmail
-                            + " authResult.success==false; oneTimePassword=="
-                            + oneTimePassword);
-
-            return null;
-        }
-    }
-
-    private static EmailAndPassword oneTimePasswordAuth(
+    public static EmailAndPassword oneTimePasswordAuth(
             String registrantEmail, String oneTimePassword) {
         try {
             tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();

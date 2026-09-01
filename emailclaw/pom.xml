@@ -8,7 +8,7 @@
   <version>26.8.31</version>
 
   <name>emailclaw</name>
-  <url>http://www.emailclaw.ai</url>
+  <url>http://www.emailclaw.email</url>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

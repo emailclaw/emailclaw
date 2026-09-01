@@ -81,7 +81,7 @@ public final class ProviderRequestOptions {
             headers.put("Authorization", "Bearer " + provider.getApiKey());
         }
         if ("openrouter".equals(provider.getId())) {
-            headers.putIfAbsent("HTTP-Referer", "https://emailclaw.ai/");
+            headers.putIfAbsent("HTTP-Referer", "https://emailclaw.email/");
             headers.putIfAbsent("X-Title", "Emailclaw");
         }
         return headers;

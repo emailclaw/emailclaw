@@ -320,6 +320,12 @@ public class MainWindow extends BorderPane {
         codeModeButton.getStyleClass().add("link-btn");
         codeModeButton.setOnAction(e -> toggleCodingMode(codeModeButton));
         top.getChildren().add(codeModeButton);
+
+        Label supportLabel = new Label("\u2709"); // Envelope icon
+        supportLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #6b7280; -fx-padding: 0 5 0 5;");
+        supportLabel.setTooltip(
+                new javafx.scene.control.Tooltip("Support Mailbox: MARK.YU.CLAW@GMAIL.COM"));
+        top.getChildren().add(supportLabel);
         //        top.getChildren().add(navLink("En", null));
         return top;
     }
@@ -545,11 +551,7 @@ public class MainWindow extends BorderPane {
                                     .findFirst()
                                     .orElse(null);
                     boolean isEnabled = targetChannel != null && targetChannel.isEnabled();
-                    Button btn =
-                            new Button(
-                                    plugin.displayName()
-                                            + " Settings      "
-                                            + (isEnabled ? "▶" : "⏸"));
+                    Button btn = new Button(channelButtonText(plugin.displayName(), isEnabled));
                     btn.getStyleClass().add("menu-btn");
                     btn.setMaxWidth(Double.MAX_VALUE);
 
@@ -570,11 +572,9 @@ public class MainWindow extends BorderPane {
                                                                 .orElse(null);
                                                 if (currentCh != null) {
                                                     btn.setText(
-                                                            plugin.displayName()
-                                                                    + " Settings      "
-                                                                    + (currentCh.isEnabled()
-                                                                            ? "▶"
-                                                                            : "⏸"));
+                                                            channelButtonText(
+                                                                    plugin.displayName(),
+                                                                    currentCh.isEnabled()));
                                                 }
                                             }));
                     timeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
@@ -607,7 +607,7 @@ public class MainWindow extends BorderPane {
                                 javafx.stage.Stage dialogStage = new javafx.stage.Stage();
                                 dialogStage.initOwner(owner);
                                 dialogStage.initModality(javafx.stage.Modality.WINDOW_MODAL);
-                                dialogStage.setTitle(plugin.displayName() + " Settings");
+                                dialogStage.setTitle(plugin.displayName() + " Channel Settings");
 
                                 final ai.emailclaw.emailclaw.model.ChannelInfo finalChannel =
                                         channel;
@@ -626,11 +626,9 @@ public class MainWindow extends BorderPane {
                                                     finalChannel.setPluginConfig(newConfig);
                                                     channelService.save();
                                                     btn.setText(
-                                                            plugin.displayName()
-                                                                    + " Settings "
-                                                                    + (finalChannel.isEnabled()
-                                                                            ? "✅"
-                                                                            : "❌"));
+                                                            channelButtonText(
+                                                                    plugin.displayName(),
+                                                                    finalChannel.isEnabled()));
                                                     dialogStage.close();
                                                 },
                                                 () -> {
@@ -652,6 +650,10 @@ public class MainWindow extends BorderPane {
                 }
             }
         }
+    }
+
+    private static String channelButtonText(String displayName, boolean isEnabled) {
+        return displayName + " Channel Settings " + (isEnabled ? "▶" : "⏸");
     }
 
     private void buildAgentManagementBox() {

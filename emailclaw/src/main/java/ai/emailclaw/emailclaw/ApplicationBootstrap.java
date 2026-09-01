@@ -187,6 +187,7 @@ public final class ApplicationBootstrap {
         LOGGER.fine("Loading service layer components...");
         ProviderService providerService = new ProviderService(repository);
         AgentService agentService = new AgentService(repository);
+        ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.setAgentService(agentService);
         ProjectService projectService = new ProjectService(repository);
         // Message bus and sub-agent registry (prerequisite dependencies for ToolRuntimeContext)
         MessageBusService messageBusService = new MessageBusService(projectService);
