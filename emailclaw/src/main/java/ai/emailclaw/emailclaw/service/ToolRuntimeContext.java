@@ -13,6 +13,7 @@ package ai.emailclaw.emailclaw.service;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.util.List;
@@ -119,12 +120,22 @@ public class ToolRuntimeContext {
             return true;
         }
 
-        // 2. Project scope
+        // 2. Application root (e.g. configDir, etc.) is writable for application managed state
+        if (repository != null && repository.paths() != null && repository.paths().root != null) {
+            if (normalized.startsWith(repository.paths().root.toAbsolutePath().normalize())) {
+                return true;
+            }
+        }
+
+        // 3. Project scope
         ProjectInfo project = currentProject();
         if (project != null) {
             // Base directory is always writable
             if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
-                Path base = Path.of(project.getBaseDirectory()).toAbsolutePath().normalize();
+                Path base =
+                        Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
+                                .toAbsolutePath()
+                                .normalize();
                 if (normalized.startsWith(base)) {
                     return true;
                 }
@@ -134,7 +145,10 @@ public class ToolRuntimeContext {
                 for (java.util.Map.Entry<String, Boolean> entry :
                         project.getAdditionalDirs().entrySet()) {
                     if (entry.getKey() != null && !entry.getKey().isBlank()) {
-                        Path additional = Path.of(entry.getKey()).toAbsolutePath().normalize();
+                        Path additional =
+                                Path.of(FileNameUtils.expandUserHome(entry.getKey()))
+                                        .toAbsolutePath()
+                                        .normalize();
                         if (normalized.startsWith(additional)) {
                             return Boolean.TRUE.equals(entry.getValue());
                         }

@@ -41,6 +41,7 @@ public final class EmailPresetDomains {
     /** All supported one-click preset email domains (lowercase). */
     public static final Set<String> ALL =
             Set.of(
+                    EMAILCLAW,
                     GMAIL,
                     OUTLOOK,
                     HOTMAIL,

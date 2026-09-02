@@ -17,6 +17,7 @@ import ai.emailclaw.emailclaw.model.SecuritySettings;
 import ai.emailclaw.emailclaw.model.SkillWhitelistEntry;
 import ai.emailclaw.emailclaw.model.ToolGuardSettings;
 import ai.emailclaw.emailclaw.service.SecurityService;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -625,7 +626,9 @@ public class SecurityView implements ViewPane {
 
     private void addFileGuardPath() {
         String path =
-                fileGuardPathField.getText() == null ? "" : fileGuardPathField.getText().trim();
+                fileGuardPathField.getText() == null
+                        ? ""
+                        : FileNameUtils.expandUserHome(fileGuardPathField.getText().trim());
         if (path.isBlank()) {
             return;
         }

@@ -412,7 +412,7 @@ public class ProjectsView implements ViewPane {
                     if (btn != saveType) {
                         return null;
                     }
-                    String baseDirStr = baseDirInput.getText().trim();
+                    String baseDirStr = FileNameUtils.expandUserHome(baseDirInput.getText().trim());
                     if (!baseDirStr.isBlank()) {
                         try {
                             Path basePath = Path.of(baseDirStr);
@@ -436,7 +436,11 @@ public class ProjectsView implements ViewPane {
                     p.setBaseDirectory(baseDirStr);
                     java.util.Map<String, Boolean> addDirsMap = new java.util.HashMap<>();
                     for (DirEntry d : additionalDirsList) {
-                        addDirsMap.put(d.path, d.writable);
+                        String addPath =
+                                FileNameUtils.expandUserHome(d.path != null ? d.path.trim() : "");
+                        if (!addPath.isBlank()) {
+                            addDirsMap.put(addPath, d.writable);
+                        }
                     }
                     p.setAdditionalDirs(addDirsMap);
                     if (!isEdit) {

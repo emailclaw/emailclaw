@@ -164,15 +164,15 @@ After obtaining the credentials, guide the user to choose one of the following m
 }
 ```
 
-Path: `~/emailclaw/.config.json`, under `channels.dingtalk`.
+Path: `~/emailclaw/.config/channels.json`, under `channels.dingtalk`.
 
 ### Credential Delivery Requirements (Mandatory)
 
 1. The agent is only responsible for guiding the user to the credentials page, obtaining and displaying the `Client ID` and the actual `Client Secret`.
-2. The agent must not proactively modify the `console` configuration or `~/emailclaw/.config.json`.
+2. The agent must not proactively modify the `console` configuration or `~/emailclaw/.config/channels.json`.
 3. You must instruct the user to fill in the credentials manually using one of the following two methods:
    - Console frontend: `Control -> Channels -> DingTalk`
-   - Configuration file: edit the `channels.dingtalk` field in `~/emailclaw/.config.json`
+   - Configuration file: edit the `channels.dingtalk` field in `~/emailclaw/.config/channels.json`
 
 ## Browser Tool Usage Pattern
 

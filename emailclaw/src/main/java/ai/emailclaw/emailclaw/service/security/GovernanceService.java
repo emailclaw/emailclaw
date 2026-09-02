@@ -188,7 +188,7 @@ public class GovernanceService {
 
             // 2. Read global configuration file (global-config.json) for rule merging and
             // overriding
-            Path globalConfigPath = appPaths.root.resolve("global-config.json");
+            Path globalConfigPath = appPaths.globalConfigFile;
             if (Files.exists(globalConfigPath)) {
                 JsonNode configNode = JSON.readTree(Files.readAllBytes(globalConfigPath));
                 JsonNode securityNode = configNode.get("security");

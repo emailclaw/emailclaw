@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
+import ai.emailclaw.emailclaw.model.AgentIds;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -68,7 +69,10 @@ public record MailboxAccountConfig(
         imapPort = imapPort <= 0 ? 993 : imapPort;
         smtpHost = smtpHost == null ? "" : smtpHost.trim();
         smtpPort = smtpPort <= 0 ? 465 : smtpPort;
-        targetAgentId = targetAgentId == null ? "" : targetAgentId.trim();
+        targetAgentId =
+                targetAgentId == null || targetAgentId.isBlank()
+                        ? AgentIds.DEFAULT
+                        : targetAgentId.trim();
         allowlistSenders = allowlistSenders == null ? List.of() : List.copyOf(allowlistSenders);
         pollIntervalSeconds = pollIntervalSeconds < 5 ? 30 : pollIntervalSeconds;
     }
@@ -90,14 +94,14 @@ public record MailboxAccountConfig(
                     true,
                     normalizedEmail,
                     "",
-                    preset.imapHost(),
-                    preset.imapPort(),
-                    preset.imapSsl(),
-                    preset.imapStartTls(),
-                    preset.smtpHost(),
-                    preset.smtpPort(),
-                    preset.smtpSsl(),
-                    preset.smtpStartTls(),
+                    "",
+                    993,
+                    true,
+                    false,
+                    "",
+                    465,
+                    true,
+                    false,
                     "",
                     List.of(),
                     30);

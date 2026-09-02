@@ -243,4 +243,28 @@ public final class FileNameUtils {
         }
         return sanitizeEnglishPathName(fileName);
     }
+
+    /**
+     * Expands a leading tilde ({@code ~}, {@code ~/}, or {@code ~\}) to the user's home directory.
+     *
+     * @param path The path string to expand
+     * @return The expanded path string, or unchanged if null, blank, or does not start with tilde
+     */
+    public static String expandUserHome(String path) {
+        if (path == null || path.isBlank()) {
+            return path;
+        }
+        String trimmed = path.trim();
+        String userHome = System.getProperty("user.home");
+        if (userHome == null || userHome.isBlank()) {
+            return trimmed;
+        }
+        if ("~".equals(trimmed)) {
+            return userHome;
+        }
+        if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+            return userHome + trimmed.substring(1);
+        }
+        return trimmed;
+    }
 }

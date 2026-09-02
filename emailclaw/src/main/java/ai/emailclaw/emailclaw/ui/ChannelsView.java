@@ -102,84 +102,89 @@ public class ChannelsView implements ViewPane {
                 e -> {
                     Window owner =
                             configure.getScene() != null ? configure.getScene().getWindow() : null;
-                    if (owner == null) {
-                        return;
-                    }
-                    ai.emailclaw.emailclaw.plugin.EmailclawPlugin plugin =
-                            channelService.getPluginInstance(ch.getId());
-                    if (plugin != null) {
-                        var providerOpt =
-                                ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getProvider(
-                                        plugin.id());
-                        if (providerOpt.isPresent()) {
-                            ai.emailclaw.emailclaw.ui.plugin.CustomConfigViewProvider provider =
-                                    providerOpt.get();
-                            ai.emailclaw.emailclaw.model.ChannelInfo channel =
-                                    channelService.list().stream()
-                                            .filter(c -> c.getId().equals(plugin.id()))
-                                            .findFirst()
-                                            .orElse(null);
-                            if (channel == null) {
-                                channel =
-                                        new ai.emailclaw.emailclaw.model.ChannelInfo(
-                                                plugin.id(), plugin.displayName(), true, false);
-                            }
-                            java.util.Map<String, Object> initialConfig =
-                                    channel.getPluginConfig() != null
-                                            ? new java.util.HashMap<>(channel.getPluginConfig())
-                                            : new java.util.HashMap<>();
-                            initialConfig.put("enabled", channel.isEnabled());
-                            initialConfig.put("botPrefix", channel.getBotPrefix());
-
-                            javafx.stage.Stage dialogStage = new javafx.stage.Stage();
-                            dialogStage.initOwner(owner);
-                            dialogStage.initModality(javafx.stage.Modality.WINDOW_MODAL);
-                            dialogStage.setTitle(plugin.displayName() + " Channel Settings");
-
-                            // Because lambdas require effectively final variables
-                            final ai.emailclaw.emailclaw.model.ChannelInfo finalChannel = channel;
-                            javafx.scene.Node viewNode =
-                                    provider.buildView(
-                                            initialConfig,
-                                            newConfig -> {
-                                                finalChannel.setEnabled(
-                                                        (Boolean)
-                                                                newConfig.getOrDefault(
-                                                                        "enabled", false));
-                                                finalChannel.setBotPrefix(
-                                                        (String)
-                                                                newConfig.getOrDefault(
-                                                                        "botPrefix", ""));
-                                                finalChannel.setPluginConfig(newConfig);
-                                                channelService.save();
-                                                dialogStage.close();
-                                                renderGrid();
-                                            },
-                                            () -> {
-                                                dialogStage.close();
-                                            });
-
-                            javafx.scene.Scene scene =
-                                    new javafx.scene.Scene(
-                                            (javafx.scene.Parent) viewNode, 500, 700);
-                            if (owner.getScene() != null) {
-                                scene.getStylesheets().addAll(owner.getScene().getStylesheets());
-                            }
-                            dialogStage.setScene(scene);
-                            dialogStage.setResizable(false);
-                            dialogStage.showAndWait();
-                        } else {
-                            LOGGER.warning(
-                                    "Configuration panel not supported for this channel yet: "
-                                            + ch.getId());
-                        }
-                    }
+                    openChannelConfigDialog(owner, channelService, ch.getId(), this::renderGrid);
                 });
         actions.getChildren().addAll(toggle, configure);
 
         card.getChildren().addAll(header, id, status);
         card.getChildren().add(actions);
         return card;
+    }
+
+    /**
+     * Opens the channel configuration modal dialog if a provider is available.
+     *
+     * @param owner Parent window
+     * @param channelService Channel service
+     * @param channelId Target channel identifier
+     * @param onAfterSave Optional callback to invoke after saving configuration
+     */
+    public static void openChannelConfigDialog(
+            Window owner, ChannelService channelService, String channelId, Runnable onAfterSave) {
+        if (owner == null || channelService == null || channelId == null) {
+            return;
+        }
+        ai.emailclaw.emailclaw.plugin.EmailclawPlugin plugin =
+                channelService.getPluginInstance(channelId);
+        if (plugin == null) {
+            LOGGER.warning("Plugin instance not found for channel: " + channelId);
+            return;
+        }
+        var providerOpt = ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getProvider(plugin.id());
+        if (providerOpt.isEmpty()) {
+            LOGGER.warning("Configuration panel not supported for channel: " + channelId);
+            return;
+        }
+
+        ai.emailclaw.emailclaw.ui.plugin.CustomConfigViewProvider provider = providerOpt.get();
+        ChannelInfo channel =
+                channelService.list().stream()
+                        .filter(c -> c.getId().equals(plugin.id()))
+                        .findFirst()
+                        .orElse(null);
+        if (channel == null) {
+            channel = new ChannelInfo(plugin.id(), plugin.displayName(), true, false);
+        }
+
+        java.util.Map<String, Object> initialConfig =
+                channel.getPluginConfig() != null
+                        ? new java.util.HashMap<>(channel.getPluginConfig())
+                        : new java.util.HashMap<>();
+        initialConfig.put("enabled", channel.isEnabled());
+        initialConfig.put("botPrefix", channel.getBotPrefix());
+
+        javafx.stage.Stage dialogStage = new javafx.stage.Stage();
+        dialogStage.initOwner(owner);
+        dialogStage.initModality(javafx.stage.Modality.WINDOW_MODAL);
+        dialogStage.setTitle(plugin.displayName() + " Channel Settings");
+
+        final ChannelInfo finalChannel = channel;
+        Node viewNode =
+                provider.buildView(
+                        initialConfig,
+                        newConfig -> {
+                            finalChannel.setEnabled(
+                                    (Boolean) newConfig.getOrDefault("enabled", false));
+                            finalChannel.setBotPrefix(
+                                    (String) newConfig.getOrDefault("botPrefix", ""));
+                            finalChannel.setPluginConfig(newConfig);
+                            channelService.save();
+                            dialogStage.close();
+                            if (onAfterSave != null) {
+                                onAfterSave.run();
+                            }
+                        },
+                        () -> {
+                            dialogStage.close();
+                        });
+
+        javafx.scene.Scene scene = new javafx.scene.Scene((javafx.scene.Parent) viewNode, 500, 700);
+        if (owner.getScene() != null) {
+            scene.getStylesheets().addAll(owner.getScene().getStylesheets());
+        }
+        dialogStage.setScene(scene);
+        dialogStage.setResizable(false);
+        dialogStage.showAndWait();
     }
 
     @Override

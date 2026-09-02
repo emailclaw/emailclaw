@@ -97,7 +97,8 @@ public class SkillService {
                     if (path == null || path.isBlank()) {
                         continue;
                     }
-                    Path extra = Paths.get(path.trim());
+                    String expanded = FileNameUtils.expandUserHome(path.trim());
+                    Path extra = Paths.get(expanded);
                     if (!extra.isAbsolute()) {
                         extra = repository.paths().root.resolve(extra).normalize();
                     }

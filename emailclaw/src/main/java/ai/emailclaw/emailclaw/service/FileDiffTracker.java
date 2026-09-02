@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.model.FileDiffRecord;
 import ai.emailclaw.emailclaw.util.FileDiffUtils;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -137,7 +138,9 @@ final class FileDiffTracker {
                     toolCallId);
             return;
         }
-        Path absPath = workspace.resolve(filePath).normalize();
+        String expanded = FileNameUtils.expandUserHome(filePath.trim());
+        Path p = Path.of(expanded);
+        Path absPath = p.isAbsolute() ? p.normalize() : workspace.resolve(expanded).normalize();
         diffFilePaths.put(toolCallId, absPath.toString());
         try {
             if (Files.exists(absPath)) {

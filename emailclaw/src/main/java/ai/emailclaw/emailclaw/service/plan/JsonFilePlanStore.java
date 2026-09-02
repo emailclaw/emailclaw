@@ -11,6 +11,8 @@
 package ai.emailclaw.emailclaw.service.plan;
 
 import ai.emailclaw.emailclaw.model.plan.Plan;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -49,10 +51,14 @@ public class JsonFilePlanStore implements PlanStore {
         String pId = (projectId == null || projectId.isBlank()) ? "default" : projectId;
         String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
         ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(pId);
-        return Path.of(project.getBaseDirectory())
-                .resolve(ai.emailclaw.emailclaw.storage.AppHomeConstants.AGENT_WORKSPACE_DIR)
-                .resolve(aId)
-                .resolve(PLANS_DIR);
+        String baseDir = project != null ? project.getBaseDirectory() : null;
+        Path base =
+                (baseDir != null && !baseDir.isBlank())
+                        ? Path.of(FileNameUtils.expandUserHome(baseDir))
+                        : AppHomeConstants.HOME_RESOLVED
+                                .resolve(AppHomeConstants.PROJECTS_DIR)
+                                .resolve(pId);
+        return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR).resolve(aId).resolve(PLANS_DIR);
     }
 
     /** Get the JSON file path for the specified plan. */
@@ -142,11 +148,13 @@ public class JsonFilePlanStore implements PlanStore {
     public List<Plan> listAll() {
         List<Plan> result = new ArrayList<>();
         for (ai.emailclaw.emailclaw.model.ProjectInfo project : projectService.list()) {
+            String baseDir = project != null ? project.getBaseDirectory() : null;
+            if (baseDir == null || baseDir.isBlank()) {
+                continue;
+            }
             Path workspaceDir =
-                    Path.of(project.getBaseDirectory())
-                            .resolve(
-                                    ai.emailclaw.emailclaw.storage.AppHomeConstants
-                                            .AGENT_WORKSPACE_DIR);
+                    Path.of(FileNameUtils.expandUserHome(baseDir))
+                            .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
             if (Files.isDirectory(workspaceDir)) {
                 try (Stream<Path> agentDirs = Files.list(workspaceDir)) {
                     List<Path> aDirs = agentDirs.filter(Files::isDirectory).toList();

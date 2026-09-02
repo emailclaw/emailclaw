@@ -24,6 +24,7 @@ import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
@@ -229,7 +230,13 @@ public class AgentRuntimeDispatcher {
             for (SkillInfo skill : enabledSkills) {
                 try {
                     skillsPrompt.append("### Skill: ").append(skill.name()).append("\n");
-                    skillsPrompt.append(skill.content()).append("\n\n");
+                    String content = skill.content();
+                    if (content != null && repository != null && repository.paths() != null) {
+                        String rootPath =
+                                repository.paths().root.toAbsolutePath().normalize().toString();
+                        content = content.replace("~/emailclaw", rootPath);
+                    }
+                    skillsPrompt.append(content).append("\n\n");
                 } catch (Exception e) {
                     LOGGER.log(Level.WARNING, "Failed to read skill: " + skill.name(), e);
                 }
@@ -248,7 +255,10 @@ public class AgentRuntimeDispatcher {
         if (project != null
                 && project.getBaseDirectory() != null
                 && !project.getBaseDirectory().isBlank()) {
-            Path baseDir = Path.of(project.getBaseDirectory()).toAbsolutePath().normalize();
+            Path baseDir =
+                    Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
+                            .toAbsolutePath()
+                            .normalize();
             if (Files.isDirectory(baseDir)) {
                 projectRoot = baseDir;
                 LOGGER.log(Level.INFO, "Mapped project directory to: {0}", projectRoot);
@@ -256,11 +266,44 @@ public class AgentRuntimeDispatcher {
         }
 
         java.util.List<Path> additionalRoots = new java.util.ArrayList<>();
+        if (repository != null && repository.paths() != null) {
+            if (repository.paths().root != null) {
+                Path appRoot = repository.paths().root.toAbsolutePath().normalize();
+                if (!additionalRoots.contains(appRoot)) {
+                    additionalRoots.add(appRoot);
+                }
+            }
+            if (repository.paths().configDir != null) {
+                Path configDir = repository.paths().configDir.toAbsolutePath().normalize();
+                if (!additionalRoots.contains(configDir)) {
+                    additionalRoots.add(configDir);
+                }
+            }
+            if (repository.paths().workspaceRoot != null) {
+                Path wsRoot = repository.paths().workspaceRoot.toAbsolutePath().normalize();
+                if (!additionalRoots.contains(wsRoot)) {
+                    additionalRoots.add(wsRoot);
+                }
+            }
+            if (repository.paths().skillsPoolRoot != null) {
+                Path skillsPool = repository.paths().skillsPoolRoot.toAbsolutePath().normalize();
+                if (!additionalRoots.contains(skillsPool)) {
+                    additionalRoots.add(skillsPool);
+                }
+            }
+            if (repository.paths().projectsRoot != null) {
+                Path projectsRoot = repository.paths().projectsRoot.toAbsolutePath().normalize();
+                if (!additionalRoots.contains(projectsRoot)) {
+                    additionalRoots.add(projectsRoot);
+                }
+            }
+        }
         if (project != null && project.getAdditionalDirs() != null) {
             for (String dir : project.getAdditionalDirs().keySet()) {
                 if (dir != null && !dir.isBlank()) {
-                    Path p = Path.of(dir).toAbsolutePath().normalize();
-                    if (Files.isDirectory(p)) {
+                    Path p =
+                            Path.of(FileNameUtils.expandUserHome(dir)).toAbsolutePath().normalize();
+                    if (Files.isDirectory(p) && !additionalRoots.contains(p)) {
                         additionalRoots.add(p);
                     }
                 }

@@ -183,10 +183,11 @@ public class ProjectService {
         defaultProject.setName("Default");
         defaultProject.setBaseDirectory(
                 AppHomeConstants.HOME_RESOLVED
-                                .resolve(AppHomeConstants.PROJECTS_DIR)
-                                .toAbsolutePath()
-                        + "/"
-                        + defaultProject.getId());
+                        .resolve(AppHomeConstants.PROJECTS_DIR)
+                        .resolve(defaultProject.getId())
+                        .toAbsolutePath()
+                        .normalize()
+                        .toString());
         try {
             Files.createDirectories(Path.of(defaultProject.getBaseDirectory()));
             LOGGER.log(

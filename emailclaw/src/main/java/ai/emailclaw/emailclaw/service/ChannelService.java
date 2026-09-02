@@ -226,10 +226,6 @@ public class ChannelService {
             if (ch.getPluginConfig() == null) {
                 ch.setPluginConfig(new LinkedHashMap<>());
             }
-            EmailclawPlugin plugin = pluginRegistry.getPluginInstance(ch.getId());
-            if (plugin != null) {
-                plugin.normalizeConfig(ch.getPluginConfig());
-            }
         }
     }
 
@@ -248,12 +244,6 @@ public class ChannelService {
                 ch.setPluginConfig(new LinkedHashMap<>());
                 changed = true;
             }
-            EmailclawPlugin plugin = pluginRegistry.getPluginInstance(ch.getId());
-            if (plugin != null) {
-                if (plugin.normalizeConfig(ch.getPluginConfig())) {
-                    changed = true;
-                }
-            }
         }
         return changed;
     }
@@ -266,5 +256,12 @@ public class ChannelService {
      */
     public EmailclawPlugin getPluginInstance(String channelId) {
         return pluginRegistry.getPluginInstance(channelId);
+    }
+
+    public ChannelInfo findChannelById(String channelId) {
+        return this.list().stream()
+                .filter(c -> c.getId().equals(channelId))
+                .findFirst()
+                .orElse(null);
     }
 }

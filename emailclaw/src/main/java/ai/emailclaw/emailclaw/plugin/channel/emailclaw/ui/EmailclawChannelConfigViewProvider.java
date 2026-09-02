@@ -124,9 +124,10 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
             saveButton.getStyleClass().add("btn-primary");
             saveButton.setOnAction(
                     e -> {
-                        this.config.put("enabled", enableSwitch.isSelected());
-                        EmailclawChannelConfig.setMailboxes(this.config, this.mailboxes);
-                        onSave.accept(this.config);
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("enabled", enableSwitch.isSelected());
+                        EmailclawChannelConfig.setMailboxes(result, this.mailboxes);
+                        onSave.accept(result);
                     });
 
             Button cancelBtn = new Button("Cancel");
@@ -360,7 +361,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             this.initialConfig = initialConfig;
             this.onSave = onSave;
             this.onCancel = onCancel;
-            this.setPadding(new Insets(20));
+            this.setPadding(new Insets(12, 16, 16, 16));
 
             Node content = buildContent();
             VBox.setVgrow(content, Priority.ALWAYS);
@@ -385,7 +386,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             HBox btnBox = new HBox(8, cancelBtn, saveButton);
             btnBox.setAlignment(Pos.BOTTOM_RIGHT);
-            btnBox.setPadding(new Insets(20, 0, 0, 0));
+            btnBox.setPadding(new Insets(12, 0, 0, 0));
             this.getChildren().add(btnBox);
 
             loadValues(initialConfig);
@@ -394,14 +395,38 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
         }
 
         private Node buildContent() {
-            VBox root = new VBox(2);
-            root.setPadding(new Insets(16, 0, 0, 0));
+            VBox root = new VBox(8);
+            root.setPadding(Insets.EMPTY);
+
+            mailboxNameField.setPromptText("E.g., Support Mailbox");
+            targetAgentIdComboBox.setPromptText("Select Target Agent");
+            targetAgentIdComboBox.setMaxWidth(Double.MAX_VALUE);
+
+            // Populate agents
+            targetAgentIdComboBox.getItems().clear();
+            targetAgentIdComboBox.getItems().add(new AgentOption("", "Default Agent"));
+            var agentService = ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getAgentService();
+            if (agentService != null) {
+                for (var agent : agentService.list()) {
+                    targetAgentIdComboBox
+                            .getItems()
+                            .add(new AgentOption(agent.getId(), agent.getName()));
+                }
+            }
+            targetAgentIdComboBox.getSelectionModel().selectFirst();
+
+            Node generalInfoSection =
+                    section(
+                            "General Info",
+                            field("Mailbox Name (Optional)", mailboxNameField),
+                            field("Target Agent", targetAgentIdComboBox));
+
             ToggleGroup modeGroup = new ToggleGroup();
             ownEmailRadio.setToggleGroup(modeGroup);
             sysEmailRadio.setToggleGroup(modeGroup);
             ownEmailRadio.setSelected(true);
             VBox modeBox = new VBox(6, ownEmailRadio, sysEmailRadio);
-            modeBox.setPadding(new Insets(0, 0, 6, 0));
+            modeBox.setPadding(new Insets(10, 0, 6, 0));
 
             Node ownPane = buildOwnEmailTab();
             Node sysPane = buildSystemEmailTab();
@@ -428,29 +453,13 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             validationHint.setStyle("-fx-text-fill: red; -fx-font-size: 12px;");
             validationHint.setWrapText(true);
 
-            root.getChildren().addAll(modeBox, scrollPane, validationHint);
+            root.getChildren().addAll(generalInfoSection, modeBox, scrollPane, validationHint);
             return root;
         }
 
         private Node buildOwnEmailTab() {
             VBox root = new VBox(10);
             root.setPadding(new Insets(16, 0, 0, 0));
-
-            mailboxNameField.setPromptText("E.g., Support Mailbox");
-            targetAgentIdComboBox.setPromptText("Select Target Agent");
-            targetAgentIdComboBox.setMaxWidth(Double.MAX_VALUE);
-
-            // Populate agents
-            targetAgentIdComboBox.getItems().add(new AgentOption("", "Default Agent"));
-            var agentService = ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getAgentService();
-            if (agentService != null) {
-                for (var agent : agentService.list()) {
-                    targetAgentIdComboBox
-                            .getItems()
-                            .add(new AgentOption(agent.getId(), agent.getName()));
-                }
-            }
-            targetAgentIdComboBox.getSelectionModel().selectFirst();
 
             emailAddressField.setPromptText("example@domain.com");
             passwordField.setPromptText("Email password or app password");
@@ -478,10 +487,6 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             root.getChildren()
                     .addAll(
-                            section(
-                                    "General Info",
-                                    field("Mailbox Name (Optional)", mailboxNameField),
-                                    field("Target Agent", targetAgentIdComboBox)),
                             section(
                                     "Mailbox Account",
                                     field("Email Address", emailAddressField),
@@ -601,18 +606,18 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             emailAddressField.setText(nvl(config.emailAddress()));
             passwordField.setText(nvl(config.emailPassword()));
-            imapHostField.setText(nvl(config.imapHost()));
+            imapHostField.setText(nvl(config.effectiveImapHost()));
             imapPortSpinner
                     .getValueFactory()
-                    .setValue(config.imapPort() <= 0 ? 993 : config.imapPort());
-            imapSslCheck.setSelected(config.imapSsl());
-            imapStartTlsCheck.setSelected(config.imapStartTls());
-            smtpHostField.setText(nvl(config.smtpHost()));
+                    .setValue(config.effectiveImapPort() <= 0 ? 993 : config.effectiveImapPort());
+            imapSslCheck.setSelected(config.effectiveImapSsl());
+            imapStartTlsCheck.setSelected(config.effectiveImapStartTls());
+            smtpHostField.setText(nvl(config.effectiveSmtpHost()));
             smtpPortSpinner
                     .getValueFactory()
-                    .setValue(config.smtpPort() <= 0 ? 465 : config.smtpPort());
-            smtpSslCheck.setSelected(config.smtpSsl());
-            smtpStartTlsCheck.setSelected(config.smtpStartTls());
+                    .setValue(config.effectiveSmtpPort() <= 0 ? 465 : config.effectiveSmtpPort());
+            smtpSslCheck.setSelected(config.effectiveSmtpSsl());
+            smtpStartTlsCheck.setSelected(config.effectiveSmtpStartTls());
             pollSecondsSpinner
                     .getValueFactory()
                     .setValue(
@@ -874,15 +879,15 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             String email = emailAddressField.getText().trim();
             EmailMailPreset preset = EmailPresetRegistry.presetOf(email);
 
-            String iHost = preset != null ? preset.imapHost() : imapHostField.getText().trim();
-            int iPort = preset != null ? preset.imapPort() : imapPortSpinner.getValue();
-            boolean iSsl = preset != null ? preset.imapSsl() : imapSslCheck.isSelected();
-            boolean iTls = preset != null ? preset.imapStartTls() : imapStartTlsCheck.isSelected();
+            String iHost = preset != null ? "" : imapHostField.getText().trim();
+            int iPort = preset != null ? 993 : imapPortSpinner.getValue();
+            boolean iSsl = preset != null || imapSslCheck.isSelected();
+            boolean iTls = preset == null && imapStartTlsCheck.isSelected();
 
-            String sHost = preset != null ? preset.smtpHost() : smtpHostField.getText().trim();
-            int sPort = preset != null ? preset.smtpPort() : smtpPortSpinner.getValue();
-            boolean sSsl = preset != null ? preset.smtpSsl() : smtpSslCheck.isSelected();
-            boolean sTls = preset != null ? preset.smtpStartTls() : smtpStartTlsCheck.isSelected();
+            String sHost = preset != null ? "" : smtpHostField.getText().trim();
+            int sPort = preset != null ? 465 : smtpPortSpinner.getValue();
+            boolean sSsl = preset != null || smtpSslCheck.isSelected();
+            boolean sTls = preset == null && smtpStartTlsCheck.isSelected();
 
             MailboxAccountConfig newConfig =
                     new MailboxAccountConfig(

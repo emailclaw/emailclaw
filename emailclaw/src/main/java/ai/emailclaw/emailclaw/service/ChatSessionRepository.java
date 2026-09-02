@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -49,8 +50,14 @@ public class ChatSessionRepository {
     public Path sessionPath(String projectId, String agentId) {
         String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
         ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-        return Path.of(project.getBaseDirectory())
-                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+        String baseDir = project != null ? project.getBaseDirectory() : null;
+        Path base =
+                (baseDir != null && !baseDir.isBlank())
+                        ? Path.of(FileNameUtils.expandUserHome(baseDir))
+                        : AppHomeConstants.HOME_RESOLVED
+                                .resolve(AppHomeConstants.PROJECTS_DIR)
+                                .resolve(projectId != null ? projectId : "default");
+        return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
                 .resolve(aId)
                 .resolve(AppHomeConstants.SESSIONS_DIR);
     }

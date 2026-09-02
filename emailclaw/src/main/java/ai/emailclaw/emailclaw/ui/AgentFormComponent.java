@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.SkillInfo;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.SkillService;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.util.ArrayList;
 import java.util.List;
 import javafx.beans.binding.Bindings;
@@ -218,7 +219,7 @@ public class AgentFormComponent extends VBox {
         }
         agent.setName(nameField.getText().trim());
         agent.setDescription(descField.getText());
-        agent.setWorkspacePath(workspaceField.getText().trim());
+        agent.setWorkspacePath(FileNameUtils.expandUserHome(workspaceField.getText().trim()));
         agent.setEnabled(enableSwitch.isSelected());
 
         agent.setProviderId(this.primaryProviderId == null ? "" : this.primaryProviderId);

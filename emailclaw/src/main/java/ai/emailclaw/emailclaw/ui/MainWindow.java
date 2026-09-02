@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.ui;
 
 import ai.emailclaw.emailclaw.model.AgentInfo;
+import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.plugin.PluginManager;
@@ -299,7 +300,7 @@ public class MainWindow extends BorderPane {
         top.setSpacing(18);
         Label brand = new Label("Emailclaw");
         brand.getStyleClass().add("brand");
-        Label version = new Label("v26.9.1");
+        Label version = new Label("v26.9.2");
         version.getStyleClass().add("muted");
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -560,16 +561,8 @@ public class MainWindow extends BorderPane {
                                     new javafx.animation.KeyFrame(
                                             javafx.util.Duration.millis(500),
                                             event -> {
-                                                ai.emailclaw.emailclaw.model.ChannelInfo currentCh =
-                                                        channelService.list().stream()
-                                                                .filter(
-                                                                        c ->
-                                                                                c.getId()
-                                                                                        .equals(
-                                                                                                plugin
-                                                                                                        .id()))
-                                                                .findFirst()
-                                                                .orElse(null);
+                                                ChannelInfo currentCh =
+                                                        channelService.findChannelById(plugin.id());
                                                 if (currentCh != null) {
                                                     btn.setText(
                                                             channelButtonText(
@@ -584,67 +577,28 @@ public class MainWindow extends BorderPane {
                             e -> {
                                 javafx.stage.Window owner =
                                         getScene() != null ? getScene().getWindow() : null;
-                                if (owner == null) return;
-                                ai.emailclaw.emailclaw.ui.plugin.CustomConfigViewProvider provider =
-                                        providerOpt.get();
-                                ai.emailclaw.emailclaw.model.ChannelInfo channel =
-                                        channelService.list().stream()
-                                                .filter(c -> c.getId().equals(plugin.id()))
-                                                .findFirst()
-                                                .orElse(null);
-                                if (channel == null) {
-                                    channel =
-                                            new ai.emailclaw.emailclaw.model.ChannelInfo(
-                                                    plugin.id(), plugin.displayName(), true, false);
-                                }
-                                java.util.Map<String, Object> initialConfig =
-                                        channel.getPluginConfig() != null
-                                                ? new java.util.HashMap<>(channel.getPluginConfig())
-                                                : new java.util.HashMap<>();
-                                initialConfig.put("enabled", channel.isEnabled());
-                                initialConfig.put("botPrefix", channel.getBotPrefix());
-
-                                javafx.stage.Stage dialogStage = new javafx.stage.Stage();
-                                dialogStage.initOwner(owner);
-                                dialogStage.initModality(javafx.stage.Modality.WINDOW_MODAL);
-                                dialogStage.setTitle(plugin.displayName() + " Channel Settings");
-
-                                final ai.emailclaw.emailclaw.model.ChannelInfo finalChannel =
-                                        channel;
-                                javafx.scene.Node viewNode =
-                                        provider.buildView(
-                                                initialConfig,
-                                                newConfig -> {
-                                                    finalChannel.setEnabled(
-                                                            (Boolean)
-                                                                    newConfig.getOrDefault(
-                                                                            "enabled", false));
-                                                    finalChannel.setBotPrefix(
-                                                            (String)
-                                                                    newConfig.getOrDefault(
-                                                                            "botPrefix", ""));
-                                                    finalChannel.setPluginConfig(newConfig);
-                                                    channelService.save();
-                                                    btn.setText(
-                                                            channelButtonText(
-                                                                    plugin.displayName(),
-                                                                    finalChannel.isEnabled()));
-                                                    dialogStage.close();
-                                                },
-                                                () -> {
-                                                    dialogStage.close();
-                                                });
-
-                                javafx.scene.Scene scene =
-                                        new javafx.scene.Scene(
-                                                (javafx.scene.Parent) viewNode, 500, 700);
-                                if (owner.getScene() != null) {
-                                    scene.getStylesheets()
-                                            .addAll(owner.getScene().getStylesheets());
-                                }
-                                dialogStage.setScene(scene);
-                                dialogStage.setResizable(false);
-                                dialogStage.showAndWait();
+                                ChannelsView.openChannelConfigDialog(
+                                        owner,
+                                        channelService,
+                                        plugin.id(),
+                                        () -> {
+                                            ChannelInfo currentCh =
+                                                    channelService.list().stream()
+                                                            .filter(
+                                                                    c ->
+                                                                            c.getId()
+                                                                                    .equals(
+                                                                                            plugin
+                                                                                                    .id()))
+                                                            .findFirst()
+                                                            .orElse(null);
+                                            if (currentCh != null) {
+                                                btn.setText(
+                                                        channelButtonText(
+                                                                plugin.displayName(),
+                                                                currentCh.isEnabled()));
+                                            }
+                                        });
                             });
                     currentProjectBox.getChildren().add(btn);
                 }
