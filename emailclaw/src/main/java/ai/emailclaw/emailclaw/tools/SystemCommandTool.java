@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.tools;
 
 import ai.emailclaw.emailclaw.model.TokenUsageRecord;
 import ai.emailclaw.emailclaw.service.ToolService;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -283,9 +284,10 @@ public class SystemCommandTool extends BaseEmailclawTool {
         if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("Path cannot be empty");
         }
+        String expanded = FileNameUtils.expandUserHome(input.trim());
         Path workspace = context.currentWorkspace().toAbsolutePath().normalize();
-        Path p = Paths.get(input);
-        Path resolved = p.isAbsolute() ? p.normalize() : workspace.resolve(input).normalize();
+        Path p = Paths.get(expanded);
+        Path resolved = p.isAbsolute() ? p.normalize() : workspace.resolve(expanded).normalize();
 
         boolean inScope = false;
 
@@ -294,11 +296,24 @@ public class SystemCommandTool extends BaseEmailclawTool {
             inScope = true;
         }
 
-        // 2. Check project scope
+        // 2. Check application home root (e.g. ~/.emailclaw or ~/emailclaw)
+        if (!inScope && context.repository != null && context.repository.paths() != null) {
+            if (context.repository.paths().root != null) {
+                Path appRoot = context.repository.paths().root.toAbsolutePath().normalize();
+                if (resolved.startsWith(appRoot)) {
+                    inScope = true;
+                }
+            }
+        }
+
+        // 3. Check project scope
         if (!inScope && context.currentProject() != null) {
             ai.emailclaw.emailclaw.model.ProjectInfo proj = context.currentProject();
             if (proj.getBaseDirectory() != null && !proj.getBaseDirectory().isBlank()) {
-                Path base = Path.of(proj.getBaseDirectory()).toAbsolutePath().normalize();
+                Path base =
+                        Path.of(FileNameUtils.expandUserHome(proj.getBaseDirectory()))
+                                .toAbsolutePath()
+                                .normalize();
                 if (resolved.startsWith(base)) {
                     inScope = true;
                 }
@@ -306,7 +321,10 @@ public class SystemCommandTool extends BaseEmailclawTool {
             if (!inScope && proj.getAdditionalDirs() != null) {
                 for (String dir : proj.getAdditionalDirs().keySet()) {
                     if (dir != null && !dir.isBlank()) {
-                        Path extra = Path.of(dir).toAbsolutePath().normalize();
+                        Path extra =
+                                Path.of(FileNameUtils.expandUserHome(dir))
+                                        .toAbsolutePath()
+                                        .normalize();
                         if (resolved.startsWith(extra)) {
                             inScope = true;
                             break;
@@ -318,7 +336,7 @@ public class SystemCommandTool extends BaseEmailclawTool {
 
         if (!inScope) {
             throw new SecurityException(
-                    "Path is outside allowed scope (workspace or project): " + input);
+                    "Path is outside allowed scope (workspace, project, or app home): " + input);
         }
         if (isSensitivePath(resolved)) {
             throw new SecurityException("Sensitive file access is blocked: " + input);

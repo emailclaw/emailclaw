@@ -4,6 +4,8 @@
  */
 package ai.emailclaw.emailclaw.service;
 
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -36,9 +38,14 @@ public class SpawnRegistryService {
 
     private Path registryFile(String projectId) {
         ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-        return Path.of(project.getBaseDirectory())
-                .resolve(ai.emailclaw.emailclaw.storage.AppHomeConstants.AGENT_WORKSPACE_DIR)
-                .resolve("spawn-registry.json");
+        String baseDirStr = project != null ? project.getBaseDirectory() : null;
+        Path base =
+                (baseDirStr != null && !baseDirStr.isBlank())
+                        ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
+                        : AppHomeConstants.HOME_RESOLVED
+                                .resolve(AppHomeConstants.PROJECTS_DIR)
+                                .resolve(projectId != null ? projectId : "default");
+        return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR).resolve("spawn-registry.json");
     }
 
     private ConcurrentHashMap<String, SpawnEntry> getRegistry(String projectId) {

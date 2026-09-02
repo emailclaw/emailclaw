@@ -24,7 +24,7 @@ import java.util.Locale;
  * <br>3) {@code language}: language code (reserved for future multi-language switching).
  */
 public class GlobalConfig {
-    private String appVersion = "26.9.1";
+    private String appVersion = "26.9.2";
 
     /** Currently selected Agent ID. If empty, it means not explicitly selected yet. */
     private String currentAgentId = "";

@@ -99,7 +99,7 @@ Cron jobs are stored in `cron-jobs.json` with the following format:
 
 ### Editing Steps (Hot Reload Supported)
 
-1. Edit `~/emailclaw/.config/cron-jobs.json` directly
+1. Edit the `cron-jobs.json` file directly (located at `~/emailclaw/.config/cron-jobs.json` or its full absolute path) using file tools (`write_file` or `edit_file`)
 2. Add, modify, or remove entries in the `jobs` array as needed
 3. **No restart required** — changes take effect immediately via hot reload
 

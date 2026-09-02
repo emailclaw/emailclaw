@@ -10,6 +10,8 @@
  */
 package ai.emailclaw.emailclaw.service;
 
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.harness.agent.bus.AsyncToolRecord;
 import io.agentscope.harness.agent.bus.AsyncToolRegistry;
 import io.agentscope.harness.agent.bus.BusEntry;
@@ -56,11 +58,14 @@ public class MessageBusService {
                 projectId,
                 id -> {
                     ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(id);
-                    Path baseDir =
-                            Path.of(project.getBaseDirectory())
-                                    .resolve(
-                                            ai.emailclaw.emailclaw.storage.AppHomeConstants
-                                                    .AGENT_WORKSPACE_DIR);
+                    String baseDirStr = project != null ? project.getBaseDirectory() : null;
+                    Path base =
+                            (baseDirStr != null && !baseDirStr.isBlank())
+                                    ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
+                                    : AppHomeConstants.HOME_RESOLVED
+                                            .resolve(AppHomeConstants.PROJECTS_DIR)
+                                            .resolve(id != null ? id : "default");
+                    Path baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
                     LocalFilesystem filesystem = new LocalFilesystem(baseDir);
                     return new WorkspaceMessageBus(filesystem, "message-bus");
                 });
@@ -71,11 +76,14 @@ public class MessageBusService {
                 projectId,
                 id -> {
                     ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(id);
-                    Path baseDir =
-                            Path.of(project.getBaseDirectory())
-                                    .resolve(
-                                            ai.emailclaw.emailclaw.storage.AppHomeConstants
-                                                    .AGENT_WORKSPACE_DIR);
+                    String baseDirStr = project != null ? project.getBaseDirectory() : null;
+                    Path base =
+                            (baseDirStr != null && !baseDirStr.isBlank())
+                                    ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
+                                    : AppHomeConstants.HOME_RESOLVED
+                                            .resolve(AppHomeConstants.PROJECTS_DIR)
+                                            .resolve(id != null ? id : "default");
+                    Path baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
                     LocalFilesystem filesystem = new LocalFilesystem(baseDir);
                     return new WorkspaceAsyncToolRegistry(filesystem, "async-tools");
                 });

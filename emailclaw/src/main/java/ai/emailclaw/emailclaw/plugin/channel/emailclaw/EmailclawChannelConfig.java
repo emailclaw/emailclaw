@@ -313,12 +313,21 @@ public final class EmailclawChannelConfig {
      */
     public static boolean normalizeEmailclawPluginConfig(Map<String, Object> pluginConfig) {
         if (pluginConfig == null) return false;
-        List<MailboxAccountConfig> mailboxes = getMailboxes(pluginConfig);
-        if (mailboxes.isEmpty()) {
-            return false;
+        boolean changed = false;
+        if (pluginConfig.containsKey("enabled")) {
+            pluginConfig.remove("enabled");
+            changed = true;
+        }
+        if (pluginConfig.containsKey("botPrefix")) {
+            pluginConfig.remove("botPrefix");
+            changed = true;
         }
 
-        boolean changed = false;
+        List<MailboxAccountConfig> mailboxes = getMailboxes(pluginConfig);
+        if (mailboxes.isEmpty()) {
+            return changed;
+        }
+
         Set<String> seenEmails = new HashSet<>();
         List<MailboxAccountConfig> deduplicated = new ArrayList<>();
 
@@ -329,6 +338,29 @@ public final class EmailclawChannelConfig {
                 continue;
             }
             if (seenEmails.add(email)) {
+                if (EmailPresetRegistry.presetOf(email) != null) {
+                    if (!mb.imapHost().isEmpty() || !mb.smtpHost().isEmpty()) {
+                        mb =
+                                new MailboxAccountConfig(
+                                        mb.id(),
+                                        mb.name(),
+                                        mb.enabled(),
+                                        mb.emailAddress(),
+                                        mb.emailPassword(),
+                                        "",
+                                        993,
+                                        true,
+                                        false,
+                                        "",
+                                        465,
+                                        true,
+                                        false,
+                                        mb.targetAgentId(),
+                                        mb.allowlistSenders(),
+                                        mb.pollIntervalSeconds());
+                        changed = true;
+                    }
+                }
                 deduplicated.add(mb);
             } else {
                 changed = true;
@@ -349,17 +381,28 @@ public final class EmailclawChannelConfig {
         map.put("enabled", config.enabled());
         map.put("emailAddress", config.emailAddress());
         map.put("emailPassword", config.emailPassword());
-        map.put("imapHost", config.imapHost());
-        map.put("imapPort", config.imapPort());
-        map.put("imapSsl", config.imapSsl());
-        map.put("imapStartTls", config.imapStartTls());
-        map.put("smtpHost", config.smtpHost());
-        map.put("smtpPort", config.smtpPort());
-        map.put("smtpSsl", config.smtpSsl());
-        map.put("smtpStartTls", config.smtpStartTls());
-        map.put("targetAgentId", config.targetAgentId());
-        map.put("allowlistSenders", config.allowlistSenders());
-        map.put("pollIntervalSeconds", config.pollIntervalSeconds());
+
+        boolean isPreset = EmailPresetRegistry.presetOf(config.emailAddress()) != null;
+        if (!isPreset) {
+            map.put("imapHost", config.imapHost());
+            map.put("imapPort", config.imapPort());
+            map.put("imapSsl", config.imapSsl());
+            map.put("imapStartTls", config.imapStartTls());
+            map.put("smtpHost", config.smtpHost());
+            map.put("smtpPort", config.smtpPort());
+            map.put("smtpSsl", config.smtpSsl());
+            map.put("smtpStartTls", config.smtpStartTls());
+        }
+
+        if (config.targetAgentId() != null && !config.targetAgentId().isBlank()) {
+            map.put("targetAgentId", config.targetAgentId());
+        }
+        if (config.allowlistSenders() != null && !config.allowlistSenders().isEmpty()) {
+            map.put("allowlistSenders", config.allowlistSenders());
+        }
+        if (config.pollIntervalSeconds() != 30) {
+            map.put("pollIntervalSeconds", config.pollIntervalSeconds());
+        }
         return map;
     }
 

@@ -972,13 +972,17 @@ public class EmailclawChannelRunner {
                 String pathStr = matcher.group(1).trim();
                 if (!pathStr.isEmpty()) {
                     try {
-                        Path file = Path.of(pathStr);
+                        String expandedPath = FileNameUtils.expandUserHome(pathStr);
+                        Path file = Path.of(expandedPath);
                         if (!file.isAbsolute()) {
                             Path baseDir;
                             ai.emailclaw.emailclaw.model.ProjectInfo project =
                                     findSessionProject(session);
                             if (project != null && notBlank(project.getBaseDirectory())) {
-                                baseDir = Path.of(project.getBaseDirectory());
+                                baseDir =
+                                        Path.of(
+                                                FileNameUtils.expandUserHome(
+                                                        project.getBaseDirectory()));
                             } else {
                                 baseDir =
                                         (agent.getWorkspacePath() == null
@@ -988,7 +992,9 @@ public class EmailclawChannelRunner {
                                                                 AppHomeConstants
                                                                         .AGENT_WORKSPACE_DIR)
                                                         .resolve(agent.getId())
-                                                : Path.of(agent.getWorkspacePath())
+                                                : Path.of(
+                                                                FileNameUtils.expandUserHome(
+                                                                        agent.getWorkspacePath()))
                                                         .toAbsolutePath()
                                                         .normalize();
                             }

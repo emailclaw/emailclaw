@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.model.FileDiffRecord;
 import ai.emailclaw.emailclaw.util.FileDiffUtils;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -274,25 +275,41 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
      * Normalize path to overlay expected format: forward slashes, no leading slash.
      */
     private String normalizePath(String path) {
-        return path.replace('\\', '/').replaceFirst("^/", "");
+        if (path == null) {
+            return null;
+        }
+        String expanded = FileNameUtils.expandUserHome(path.trim());
+        Path p = Path.of(expanded);
+        if (p.isAbsolute()) {
+            return p.normalize().toString();
+        }
+        return expanded.replace('\\', '/').replaceFirst("^/", "");
     }
 
     /**
-     * Resolve relative path to absolute path (for display and diff calculation).
+     * Resolve path to absolute path (for display and diff calculation).
      * Do not check if file exists, because file may be in overlay and not on disk.
      */
-    private String resolveToAbsolutePath(Agent agent, String relativePath) {
+    private String resolveToAbsolutePath(Agent agent, String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return rawPath;
+        }
+        String expanded = FileNameUtils.expandUserHome(rawPath.trim());
+        Path p = Path.of(expanded);
+        if (p.isAbsolute()) {
+            return p.normalize().toString();
+        }
         if (agent instanceof HarnessAgent ha) {
             WorkspaceManager wm = ha.getWorkspaceManager();
             if (wm != null) {
                 Path workspace = wm.getWorkspace();
                 if (workspace != null) {
-                    return workspace.resolve(relativePath).normalize().toString();
+                    return workspace.resolve(expanded).normalize().toString();
                 }
             }
         }
-        // Fallback: return relative path
-        return relativePath;
+        // Fallback: return expanded path
+        return expanded;
     }
 
     /**

@@ -100,7 +100,7 @@ metadata:
 
 ### 修改步骤（支持热加载）
 
-1. 直接编辑 `~/emailclaw/.config/cron-jobs.json`
+1. 直接使用文件工具（`write_file` 或 `edit_file`）编辑 `cron-jobs.json` 配置文件（位于 `~/emailclaw/.config/cron-jobs.json` 或其完整绝对路径）
 2. 按需添加、修改或删除 `jobs` 数组中的任务
 3. **无需重启** — 修改保存后立即生效（热加载）
 

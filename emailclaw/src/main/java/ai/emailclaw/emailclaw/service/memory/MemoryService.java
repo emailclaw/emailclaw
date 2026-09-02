@@ -11,7 +11,9 @@
 package ai.emailclaw.emailclaw.service.memory;
 
 import ai.emailclaw.emailclaw.service.ProjectService;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,11 +46,14 @@ public class MemoryService {
             baseDir = globalWorkspaceRoot;
         } else {
             ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-            baseDir =
-                    Path.of(project.getBaseDirectory())
-                            .resolve(
-                                    ai.emailclaw.emailclaw.storage.AppHomeConstants
-                                            .AGENT_WORKSPACE_DIR);
+            String baseDirStr = project != null ? project.getBaseDirectory() : null;
+            Path base =
+                    (baseDirStr != null && !baseDirStr.isBlank())
+                            ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
+                            : AppHomeConstants.HOME_RESOLVED
+                                    .resolve(AppHomeConstants.PROJECTS_DIR)
+                                    .resolve(projectId != null ? projectId : "default");
+            baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
         }
         return baseDir.resolve(agentId).resolve(WorkspacePaths.MEMORY_DIR);
     }
