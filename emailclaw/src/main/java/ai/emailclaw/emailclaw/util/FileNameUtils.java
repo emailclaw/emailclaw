@@ -10,7 +10,10 @@
  */
 package ai.emailclaw.emailclaw.util;
 
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.logging.Logger;
 
 /**
@@ -255,7 +258,10 @@ public final class FileNameUtils {
             return path;
         }
         String trimmed = path.trim();
-        String userHome = System.getProperty("user.home");
+        String userHome =
+                AppHomeConstants.HOME_RESOLVED != null
+                        ? AppHomeConstants.HOME_RESOLVED.toString()
+                        : System.getProperty("user.home");
         if (userHome == null || userHome.isBlank()) {
             return trimmed;
         }
@@ -263,7 +269,47 @@ public final class FileNameUtils {
             return userHome;
         }
         if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-            return userHome + trimmed.substring(1);
+            if (trimmed.startsWith("~/emailclaw/") || "~/emailclaw".equals(trimmed)) {
+                String sub = trimmed.substring("~/emailclaw".length());
+                return userHome + sub;
+            }
+            String sub = trimmed.substring(1);
+            Path direct = Path.of(userHome + sub);
+            if (Files.exists(direct)) {
+                return direct.toString();
+            }
+            if (AppHomeConstants.HOME_RESOLVED != null
+                    && AppHomeConstants.HOME_RESOLVED.getParent() != null) {
+                Path parentCandidate =
+                        AppHomeConstants.HOME_RESOLVED.getParent().resolve(trimmed.substring(2));
+                if (Files.exists(parentCandidate)) {
+                    return parentCandidate.toString();
+                }
+            }
+            return userHome + sub;
+        }
+        // Self-healing: If an agent erroneously generated /root/... while running under a non-root
+        // user (e.g. /home/ai), check if the corresponding path exists under userHome.
+        if (!"/root".equals(userHome) && trimmed.startsWith("/root/")) {
+            String sub = trimmed.substring("/root".length());
+            String candidate = userHome + sub;
+            try {
+                if (Files.exists(Path.of(candidate))) {
+                    return candidate;
+                }
+                if (AppHomeConstants.HOME_RESOLVED != null
+                        && AppHomeConstants.HOME_RESOLVED.getParent() != null) {
+                    Path parentCandidate =
+                            AppHomeConstants.HOME_RESOLVED
+                                    .getParent()
+                                    .resolve(trimmed.substring("/root/".length()));
+                    if (Files.exists(parentCandidate)) {
+                        return parentCandidate.toString();
+                    }
+                }
+            } catch (Exception ignored) {
+                // Ignore invalid path syntax
+            }
         }
         return trimmed;
     }

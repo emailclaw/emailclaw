@@ -58,15 +58,9 @@ public class MessageBusService {
                 projectId,
                 id -> {
                     ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(id);
-                    String baseDirStr = project != null ? project.getBaseDirectory() : null;
-                    Path base =
-                            (baseDirStr != null && !baseDirStr.isBlank())
-                                    ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
-                                    : AppHomeConstants.HOME_RESOLVED
-                                            .resolve(AppHomeConstants.PROJECTS_DIR)
-                                            .resolve(id != null ? id : "default");
-                    Path baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
-                    LocalFilesystem filesystem = new LocalFilesystem(baseDir);
+                    Path base = Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()));
+                    Path agentDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
+                    LocalFilesystem filesystem = new LocalFilesystem(agentDir);
                     return new WorkspaceMessageBus(filesystem, "message-bus");
                 });
     }
@@ -76,15 +70,9 @@ public class MessageBusService {
                 projectId,
                 id -> {
                     ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(id);
-                    String baseDirStr = project != null ? project.getBaseDirectory() : null;
-                    Path base =
-                            (baseDirStr != null && !baseDirStr.isBlank())
-                                    ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
-                                    : AppHomeConstants.HOME_RESOLVED
-                                            .resolve(AppHomeConstants.PROJECTS_DIR)
-                                            .resolve(id != null ? id : "default");
-                    Path baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
-                    LocalFilesystem filesystem = new LocalFilesystem(baseDir);
+                    Path base = Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()));
+                    Path agentDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
+                    LocalFilesystem filesystem = new LocalFilesystem(agentDir);
                     return new WorkspaceAsyncToolRegistry(filesystem, "async-tools");
                 });
     }

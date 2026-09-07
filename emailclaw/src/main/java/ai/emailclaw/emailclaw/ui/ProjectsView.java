@@ -13,7 +13,6 @@ package ai.emailclaw.emailclaw.ui;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import ai.emailclaw.emailclaw.util.UuidUtils;
@@ -215,13 +214,7 @@ public class ProjectsView implements ViewPane {
             initialBaseDir = existingProject.getBaseDirectory();
         } else {
             initialBaseDir =
-                    AppHomeConstants.HOME_RESOLVED
-                                    .resolve(AppHomeConstants.PROJECTS_DIR)
-                                    .toAbsolutePath()
-                            + "/"
-                            + FileNameUtils.sanitizePathName(nameInput.getText(), "Project")
-                            + " "
-                            + generatedId;
+                    ProjectService.generateBaseDirPath(generatedId, nameInput.getText()).toString();
         }
         TextField baseDirInput = new TextField(initialBaseDir);
         baseDirInput.setMaxWidth(Double.MAX_VALUE);
@@ -262,14 +255,9 @@ public class ProjectsView implements ViewPane {
                                 return;
                             }
                             String expected =
-                                    AppHomeConstants.HOME_RESOLVED
-                                                    .resolve(AppHomeConstants.PROJECTS_DIR)
-                                                    .toAbsolutePath()
-                                            + "/"
-                                            + FileNameUtils.sanitizePathName(
-                                                    nameInput.getText(), "Project")
-                                            + " "
-                                            + generatedId;
+                                    ProjectService.generateBaseDirPath(
+                                                    generatedId, nameInput.getText())
+                                            .toString();
                             if (!newV.equals(expected)) {
                                 isCustomBaseDir[0] = true;
                             }
@@ -280,13 +268,8 @@ public class ProjectsView implements ViewPane {
                         (obs, oldV, newV) -> {
                             if (!isCustomBaseDir[0]) {
                                 baseDirInput.setText(
-                                        AppHomeConstants.HOME_RESOLVED
-                                                        .resolve(AppHomeConstants.PROJECTS_DIR)
-                                                        .toAbsolutePath()
-                                                + "/"
-                                                + FileNameUtils.sanitizePathName(newV, "Project")
-                                                + " "
-                                                + generatedId);
+                                        ProjectService.generateBaseDirPath(generatedId, newV)
+                                                .toString());
                             }
                         });
         HBox baseDirBox = new HBox(6, baseDirInput, browseBtn);

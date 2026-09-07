@@ -15,6 +15,7 @@ import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -182,12 +183,7 @@ public class ProjectService {
         defaultProject.setId(ProjectService.PROJECT_ID_DEFAULT);
         defaultProject.setName("Default");
         defaultProject.setBaseDirectory(
-                AppHomeConstants.HOME_RESOLVED
-                        .resolve(AppHomeConstants.PROJECTS_DIR)
-                        .resolve(defaultProject.getId())
-                        .toAbsolutePath()
-                        .normalize()
-                        .toString());
+                generateBaseDirPath(defaultProject.getId(), defaultProject.getName()).toString());
         try {
             Files.createDirectories(Path.of(defaultProject.getBaseDirectory()));
             LOGGER.log(
@@ -203,5 +199,16 @@ public class ProjectService {
         }
 
         return defaultProject;
+    }
+
+    public static Path generateBaseDirPath(String projectId, String projecctName) {
+        return AppHomeConstants.HOME_RESOLVED
+                .resolve(AppHomeConstants.PROJECTS_DIR)
+                .resolve(generateBaseDirName(projectId, projecctName))
+                .toAbsolutePath();
+    }
+
+    public static String generateBaseDirName(String projectId, String projecctName) {
+        return projectId + "-" + FileNameUtils.sanitizePathName(projecctName, "Project");
     }
 }

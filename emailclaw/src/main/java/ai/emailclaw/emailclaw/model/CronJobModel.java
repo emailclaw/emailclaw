@@ -187,21 +187,21 @@ public final class CronJobModel {
      * @param type    Dispatch type: fixed "channel"
      * @param channel Channel name
      * @param target  Dispatch target
-     * @param mode    Dispatch mode: "stream" or "final"
+     * @param mode    Delivery mode: FINAL or STREAM
      * @param meta    Additional metadata
      */
     public record DispatchSpec(
             String type,
             String channel,
             DispatchTarget target,
-            String mode,
+            DeliveryMode mode,
             Map<String, Object> meta) {
 
         public DispatchSpec {
             if (type == null) type = "channel";
             if (channel == null || channel.isBlank()) channel = DEFAULT_CHANNEL;
             if (target == null) target = new DispatchTarget("", "");
-            if (mode == null) mode = "final";
+            if (mode == null) mode = DeliveryMode.FINAL;
             if (meta == null) meta = Collections.emptyMap();
         }
     }
@@ -302,7 +302,7 @@ public final class CronJobModel {
                                 "channel",
                                 DEFAULT_CHANNEL,
                                 new DispatchTarget("", ""),
-                                "final",
+                                DeliveryMode.FINAL,
                                 Collections.emptyMap());
             }
             if (runtime == null) runtime = JobRuntimeSpec.defaults();
@@ -425,7 +425,7 @@ public final class CronJobModel {
                             "channel",
                             DEFAULT_CHANNEL,
                             new DispatchTarget("", ""),
-                            "final",
+                            DeliveryMode.FINAL,
                             Collections.emptyMap()), // saveResultToInbox
                     true,
                     JobRuntimeSpec.defaults(),

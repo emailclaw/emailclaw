@@ -300,7 +300,7 @@ public class MainWindow extends BorderPane {
         top.setSpacing(18);
         Label brand = new Label("Emailclaw");
         brand.getStyleClass().add("brand");
-        Label version = new Label("v26.9.2");
+        Label version = new Label("v26.9.7");
         version.getStyleClass().add("muted");
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);

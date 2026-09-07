@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.channel.ChannelPluginConfigAccess;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.util.CommonUtils;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -225,66 +226,7 @@ public final class EmailclawChannelConfig {
                 }
             }
         }
-        List<String> globalSenders = getEmailAllowlistSenders(channel);
-        for (String sender : globalSenders) {
-            if (CommonUtils.notBlank(sender)) {
-                return sender.trim();
-            }
-        }
         return null;
-    }
-
-    /**
-     * Global allowlist senders accessor.
-     */
-    public static List<String> getEmailAllowlistSenders(ChannelInfo channel) {
-        return ChannelPluginConfigAccess.strList(
-                channel, EmailclawChannelConfigKeys.EMAIL_ALLOWLIST_SENDERS);
-    }
-
-    public static void setEmailAllowlistSenders(ChannelInfo channel, List<String> senders) {
-        ChannelPluginConfigAccess.putStrList(
-                channel, EmailclawChannelConfigKeys.EMAIL_ALLOWLIST_SENDERS, senders);
-    }
-
-    public static int getEmailPollIntervalSeconds(ChannelInfo channel) {
-        return ChannelPluginConfigAccess.intVal(
-                channel, EmailclawChannelConfigKeys.EMAIL_POLL_INTERVAL_SECONDS, 30);
-    }
-
-    public static void setEmailPollIntervalSeconds(ChannelInfo channel, int seconds) {
-        ChannelPluginConfigAccess.putInt(
-                channel, EmailclawChannelConfigKeys.EMAIL_POLL_INTERVAL_SECONDS, seconds);
-    }
-
-    public static boolean isSysEmailMode(ChannelInfo channel) {
-        return ChannelPluginConfigAccess.bool(
-                channel, EmailclawChannelConfigKeys.SYS_EMAIL_MODE, false);
-    }
-
-    public static void setSysEmailMode(ChannelInfo channel, boolean value) {
-        ChannelPluginConfigAccess.putBool(
-                channel, EmailclawChannelConfigKeys.SYS_EMAIL_MODE, value);
-    }
-
-    public static String getRegistrantEmail(ChannelInfo channel) {
-        return ChannelPluginConfigAccess.str(
-                channel, EmailclawChannelConfigKeys.RESGISTRANT_EMAIL, "");
-    }
-
-    public static void setRegistrantEmail(ChannelInfo channel, String email) {
-        ChannelPluginConfigAccess.putStr(
-                channel, EmailclawChannelConfigKeys.RESGISTRANT_EMAIL, email);
-    }
-
-    public static String getOneTimePassword(ChannelInfo channel) {
-        return ChannelPluginConfigAccess.str(
-                channel, EmailclawChannelConfigKeys.ONE_TIME_PASSWORD, "");
-    }
-
-    public static void setOneTimePassword(ChannelInfo channel, String password) {
-        ChannelPluginConfigAccess.putStr(
-                channel, EmailclawChannelConfigKeys.ONE_TIME_PASSWORD, password);
     }
 
     /** Deep copy the current plugin configuration for background task snapshots. */
@@ -357,7 +299,8 @@ public final class EmailclawChannelConfig {
                                         false,
                                         mb.targetAgentId(),
                                         mb.allowlistSenders(),
-                                        mb.pollIntervalSeconds());
+                                        mb.pollIntervalSeconds(),
+                                        mb.deliveryMode());
                         changed = true;
                     }
                 }
@@ -403,6 +346,9 @@ public final class EmailclawChannelConfig {
         if (config.pollIntervalSeconds() != 30) {
             map.put("pollIntervalSeconds", config.pollIntervalSeconds());
         }
+        if (config.deliveryMode() != null && config.deliveryMode() != DeliveryMode.FINAL) {
+            map.put("deliveryMode", config.deliveryMode().getValue());
+        }
         return map;
     }
 
@@ -432,6 +378,7 @@ public final class EmailclawChannelConfig {
             }
         }
         int pollIntervalSeconds = toInt(map.get("pollIntervalSeconds"), 30);
+        DeliveryMode deliveryMode = DeliveryMode.fromValue((String) map.get("deliveryMode"));
 
         return new MailboxAccountConfig(
                 id,
@@ -449,7 +396,8 @@ public final class EmailclawChannelConfig {
                 smtpStartTls,
                 targetAgentId,
                 allowlistSenders,
-                pollIntervalSeconds);
+                pollIntervalSeconds,
+                deliveryMode);
     }
 
     private static int toInt(Object value, int defaultVal) {

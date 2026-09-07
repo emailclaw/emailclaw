@@ -48,16 +48,10 @@ public class JsonFilePlanStore implements PlanStore {
 
     /** Get the directory where plan files for the specified agent are stored. */
     private Path plansDir(String projectId, String agentId) {
-        String pId = (projectId == null || projectId.isBlank()) ? "default" : projectId;
         String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
-        ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(pId);
-        String baseDir = project != null ? project.getBaseDirectory() : null;
-        Path base =
-                (baseDir != null && !baseDir.isBlank())
-                        ? Path.of(FileNameUtils.expandUserHome(baseDir))
-                        : AppHomeConstants.HOME_RESOLVED
-                                .resolve(AppHomeConstants.PROJECTS_DIR)
-                                .resolve(pId);
+        ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
+        String baseDir = project.getBaseDirectory();
+        Path base = Path.of(FileNameUtils.expandUserHome(baseDir));
         return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR).resolve(aId).resolve(PLANS_DIR);
     }
 

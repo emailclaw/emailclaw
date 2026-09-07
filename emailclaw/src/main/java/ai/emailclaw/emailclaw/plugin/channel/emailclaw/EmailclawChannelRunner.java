@@ -17,6 +17,7 @@ import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRecord;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.security.PendingApproval;
 import ai.emailclaw.emailclaw.service.AgentService;
@@ -58,6 +59,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyStore;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
+import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -77,6 +83,11 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * Emailclaw background multi-mailbox polling and dispatch executor.
@@ -201,13 +212,15 @@ public class EmailclawChannelRunner {
                         try {
                             ChannelInfo channel = findEmailChannel();
                             if (channel != null && channel.isEnabled()) {
-                                sleepSeconds =
-                                        Math.max(
-                                                5,
-                                                EmailclawChannelConfig.getEmailPollIntervalSeconds(
-                                                        channel));
                                 List<MailboxAccountConfig> mailboxes =
                                         EmailclawChannelConfig.getMailboxes(channel);
+                                int minInterval =
+                                        mailboxes.stream()
+                                                .filter(MailboxAccountConfig::enabled)
+                                                .mapToInt(MailboxAccountConfig::pollIntervalSeconds)
+                                                .min()
+                                                .orElse(30);
+                                sleepSeconds = Math.max(5, minInterval);
                                 for (MailboxAccountConfig mailbox : mailboxes) {
                                     if (mailbox.isRunnable()) {
                                         pollMailboxInbox(channel, mailbox);
@@ -429,6 +442,10 @@ public class EmailclawChannelRunner {
         final ChatSessionInfo effectiveSession = session;
         final MailboxAccountConfig outboundMailbox = mailbox;
         final String replySender = sender;
+        final DeliveryMode deliveryMode =
+                outboundMailbox.deliveryMode() != null
+                        ? outboundMailbox.deliveryMode()
+                        : DeliveryMode.FINAL;
 
         chatService.sendMessage(
                 effectiveAgent,
@@ -444,7 +461,24 @@ public class EmailclawChannelRunner {
                         mailbox.id()),
                 new StreamCallback() {
                     @Override
-                    public void onPart(ChatMessagePart part, boolean startsNew) {}
+                    public void onPart(ChatMessagePart part, boolean startsNew) {
+                        if (deliveryMode == DeliveryMode.STREAM) {
+                            if (part != null
+                                    && part.getText() != null
+                                    && !part.getText().isEmpty()) {
+                                LOGGER.log(
+                                        Level.FINE,
+                                        "Emailclaw inbound session {0} (mailbox {1}) stream part:"
+                                                + " deltaLength={2}, startsNew={3}",
+                                        new Object[] {
+                                            effectiveSession.getId(),
+                                            outboundMailbox.emailAddress(),
+                                            part.getText().length(),
+                                            startsNew
+                                        });
+                            }
+                        }
+                    }
 
                     @Override
                     public void onCompleted(Msg message) {
@@ -476,6 +510,16 @@ public class EmailclawChannelRunner {
                             } else {
                                 String replyText =
                                         ChatMessageRecord.textOfParts(chatService.partsOf(message));
+                                if (deliveryMode == DeliveryMode.STREAM) {
+                                    LOGGER.log(
+                                            Level.INFO,
+                                            "Emailclaw inbound session {0} (mailbox {1}) stream"
+                                                    + " completed, dispatching reply email",
+                                            new Object[] {
+                                                effectiveSession.getId(),
+                                                outboundMailbox.emailAddress()
+                                            });
+                                }
                                 sendReply(
                                         outboundMailbox,
                                         mail,
@@ -621,10 +665,6 @@ public class EmailclawChannelRunner {
                     .map(this::normalizeSender)
                     .anyMatch(normalized::equals);
         }
-        List<String> globalAllowlist = EmailclawChannelConfig.getEmailAllowlistSenders(channel);
-        if (!globalAllowlist.isEmpty()) {
-            return globalAllowlist.stream().map(this::normalizeSender).anyMatch(normalized::equals);
-        }
         return false;
     }
 
@@ -644,15 +684,9 @@ public class EmailclawChannelRunner {
                     new ai.emailclaw.emailclaw.model.ProjectInfo();
             project.setId(session.getId());
             project.setName(session.getName());
-            String safeName = FileNameUtils.sanitizePathName(project.getName(), "Task");
             project.setBaseDirectory(
-                    AppHomeConstants.HOME_RESOLVED
-                                    .resolve(AppHomeConstants.PROJECTS_DIR)
-                                    .toAbsolutePath()
-                            + "/"
-                            + safeName
-                            + "-"
-                            + project.getId());
+                    ProjectService.generateBaseDirPath(project.getId(), project.getName())
+                            .toString());
             project.setCreatedAt(LocalDateTime.now().toString());
 
             try {
@@ -936,13 +970,14 @@ public class EmailclawChannelRunner {
     }
 
     private ai.emailclaw.emailclaw.model.ProjectInfo findSessionProject(ChatSessionInfo session) {
-        if (session == null || this.configManager == null || session.getId() == null) {
-            return null;
+        if (session == null) {
+            return ProjectService.PROJECT_DEFAULT;
         }
-        return this.configManager.getProjects().stream()
-                .filter(p -> session.getId().equals(p.getId()))
-                .findFirst()
-                .orElse(null);
+        String targetProjectId =
+                session.getProjectId() != null && !session.getProjectId().isBlank()
+                        ? session.getProjectId()
+                        : session.getId();
+        return this.projectService.findById(targetProjectId);
     }
 
     // ======================== Send Reply Email ========================
@@ -968,6 +1003,19 @@ public class EmailclawChannelRunner {
         if (content != null && !content.isBlank()) {
             Matcher matcher = ATTACHMENT_TAG_PATTERN.matcher(content);
             StringBuffer cleanText = new StringBuffer();
+            ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
+            Path projectBaseDir = Path.of(project.getBaseDirectory());
+            Path workspaceBaseDir =
+                    (agent.getWorkspacePath() == null || agent.getWorkspacePath().isBlank())
+                            ? AppHomeConstants.HOME_RESOLVED
+                                    .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+                                    .resolve(agent.getId())
+                                    .toAbsolutePath()
+                                    .normalize()
+                            : Path.of(FileNameUtils.expandUserHome(agent.getWorkspacePath()))
+                                    .toAbsolutePath()
+                                    .normalize();
+
             while (matcher.find()) {
                 String pathStr = matcher.group(1).trim();
                 if (!pathStr.isEmpty()) {
@@ -975,30 +1023,70 @@ public class EmailclawChannelRunner {
                         String expandedPath = FileNameUtils.expandUserHome(pathStr);
                         Path file = Path.of(expandedPath);
                         if (!file.isAbsolute()) {
-                            Path baseDir;
-                            ai.emailclaw.emailclaw.model.ProjectInfo project =
-                                    findSessionProject(session);
-                            if (project != null && notBlank(project.getBaseDirectory())) {
-                                baseDir =
-                                        Path.of(
-                                                FileNameUtils.expandUserHome(
-                                                        project.getBaseDirectory()));
+                            // Relative path: prioritize project directory, fallback to workspace
+                            Path projectCandidate =
+                                    projectBaseDir != null
+                                            ? projectBaseDir.resolve(file).normalize()
+                                            : null;
+                            if (projectCandidate != null
+                                    && Files.exists(projectCandidate)
+                                    && Files.isRegularFile(projectCandidate)) {
+                                file = projectCandidate;
                             } else {
-                                baseDir =
-                                        (agent.getWorkspacePath() == null
-                                                        || agent.getWorkspacePath().isBlank())
-                                                ? AppHomeConstants.HOME_RESOLVED
-                                                        .resolve(
-                                                                AppHomeConstants
-                                                                        .AGENT_WORKSPACE_DIR)
-                                                        .resolve(agent.getId())
-                                                : Path.of(
-                                                                FileNameUtils.expandUserHome(
-                                                                        agent.getWorkspacePath()))
-                                                        .toAbsolutePath()
-                                                        .normalize();
+                                Path wsCandidate = workspaceBaseDir.resolve(file).normalize();
+                                if (Files.exists(wsCandidate) && Files.isRegularFile(wsCandidate)) {
+                                    file = wsCandidate;
+                                } else if (projectCandidate != null) {
+                                    file = projectCandidate;
+                                } else {
+                                    file = wsCandidate;
+                                }
                             }
-                            file = baseDir.resolve(file).normalize();
+                        } else {
+                            // Absolute path: check if it directly exists
+                            file = file.normalize();
+                            if (!Files.exists(file) || !Files.isRegularFile(file)) {
+                                // Self-healing 1: If path erroneously starts with agent workspace
+                                // prefix, strip it and check in projectBaseDir
+                                if (projectBaseDir != null) {
+                                    String fileStr = file.toString().replace('\\', '/');
+                                    String wsStr = workspaceBaseDir.toString().replace('\\', '/');
+                                    if (fileStr.startsWith(wsStr)) {
+                                        String subPath =
+                                                fileStr.substring(wsStr.length())
+                                                        .replaceFirst("^/", "");
+                                        Path projectCandidate =
+                                                projectBaseDir.resolve(subPath).normalize();
+                                        if (Files.exists(projectCandidate)
+                                                && Files.isRegularFile(projectCandidate)) {
+                                            LOGGER.log(
+                                                    Level.INFO,
+                                                    "Self-healed attachment path from workspace to"
+                                                            + " project: {0} -> {1}",
+                                                    new Object[] {file, projectCandidate});
+                                            file = projectCandidate;
+                                        }
+                                    }
+                                    // Self-healing 2: If still not found, check if filename exists
+                                    // directly under projectBaseDir
+                                    if ((!Files.exists(file) || !Files.isRegularFile(file))
+                                            && file.getFileName() != null) {
+                                        Path nameCandidate =
+                                                projectBaseDir
+                                                        .resolve(file.getFileName().toString())
+                                                        .normalize();
+                                        if (Files.exists(nameCandidate)
+                                                && Files.isRegularFile(nameCandidate)) {
+                                            LOGGER.log(
+                                                    Level.INFO,
+                                                    "Self-healed attachment path by filename in"
+                                                            + " project: {0} -> {1}",
+                                                    new Object[] {file, nameCandidate});
+                                            file = nameCandidate;
+                                        }
+                                    }
+                                }
+                            }
                         }
                         if (Files.exists(file) && Files.isRegularFile(file)) {
                             sendAttachments.add(file);
@@ -1062,6 +1150,13 @@ public class EmailclawChannelRunner {
         if (mailbox.effectiveSmtpStartTls()) {
             props.put("mail.smtp.starttls.enable", "true");
         }
+        SSLSocketFactory resilientSocketFactory = getResilientSslSocketFactory();
+        if (resilientSocketFactory != null) {
+            props.put("mail.smtp.ssl.socketFactory", resilientSocketFactory);
+        }
+        // Trust all SSL certificates (including expired or self-signed) to ensure reliable
+        // delivery.
+        props.put("mail.smtp.ssl.trust", "*");
         String user = mailbox.emailAddress();
         String password = mailbox.emailPassword();
         Session session =
@@ -1289,7 +1384,139 @@ public class EmailclawChannelRunner {
         if (mailbox.effectiveImapStartTls()) {
             props.put("mail.imap.starttls.enable", "true");
         }
+        SSLSocketFactory resilientSocketFactory = getResilientSslSocketFactory();
+        if (resilientSocketFactory != null) {
+            props.put("mail.imap.ssl.socketFactory", resilientSocketFactory);
+        }
+        // Trust all SSL certificates (including expired or self-signed) to ensure reliable mailbox
+        // polling.
+        props.put("mail.imap.ssl.trust", "*");
         return Session.getInstance(props);
+    }
+
+    /** Cached resilient SSLSocketFactory instance for mail connections. */
+    private static volatile SSLSocketFactory resilientSslSocketFactory;
+
+    /**
+     * Returns a resilient SSLSocketFactory that performs non-blocking validation checks
+     * on server certificates. If a certificate is expired, not yet valid, or untrusted,
+     * it logs a detailed warning with subject and expiration details while allowing the TLS connection
+     * to proceed with full encryption.
+     *
+     * @return Initialized SSLSocketFactory, or null if initialization fails
+     */
+    private static SSLSocketFactory getResilientSslSocketFactory() {
+        if (resilientSslSocketFactory == null) {
+            synchronized (EmailclawChannelRunner.class) {
+                if (resilientSslSocketFactory == null) {
+                    resilientSslSocketFactory = createResilientSslSocketFactory();
+                }
+            }
+        }
+        return resilientSslSocketFactory;
+    }
+
+    private static SSLSocketFactory createResilientSslSocketFactory() {
+        try {
+            TrustManagerFactory tmf =
+                    TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init((KeyStore) null);
+            X509TrustManager defaultTm = null;
+            for (TrustManager tm : tmf.getTrustManagers()) {
+                if (tm instanceof X509TrustManager x509Tm) {
+                    defaultTm = x509Tm;
+                    break;
+                }
+            }
+            final X509TrustManager finalDefaultTm = defaultTm;
+
+            X509TrustManager resilientTm =
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] chain, String authType)
+                                throws CertificateException {
+                            if (finalDefaultTm != null) {
+                                finalDefaultTm.checkClientTrusted(chain, authType);
+                            }
+                        }
+
+                        @Override
+                        public void checkServerTrusted(X509Certificate[] chain, String authType)
+                                throws CertificateException {
+                            try {
+                                if (finalDefaultTm != null) {
+                                    finalDefaultTm.checkServerTrusted(chain, authType);
+                                }
+                            } catch (CertificateException e) {
+                                if (chain != null && chain.length > 0) {
+                                    X509Certificate cert = chain[0];
+                                    String subject = cert.getSubjectX500Principal().getName();
+                                    String issuer = cert.getIssuerX500Principal().getName();
+                                    try {
+                                        cert.checkValidity();
+                                        LOGGER.warning(
+                                                () ->
+                                                        String.format(
+                                                                "Mail server SSL certificate is"
+                                                                    + " untrusted (self-signed or"
+                                                                    + " untrusted CA):"
+                                                                    + " subject=[%s], issuer=[%s],"
+                                                                    + " cause=[%s]. Connection"
+                                                                    + " proceeds because resilient"
+                                                                    + " SSL policy is active.",
+                                                                subject, issuer, e.getMessage()));
+                                    } catch (CertificateExpiredException expiredEx) {
+                                        LOGGER.warning(
+                                                () ->
+                                                        String.format(
+                                                                "Mail server SSL certificate is"
+                                                                    + " EXPIRED: subject=[%s],"
+                                                                    + " issuer=[%s],"
+                                                                    + " expiredAt=[%s]. Connection"
+                                                                    + " proceeds because resilient"
+                                                                    + " SSL policy is active.",
+                                                                subject,
+                                                                issuer,
+                                                                cert.getNotAfter()));
+                                    } catch (CertificateNotYetValidException notYetEx) {
+                                        LOGGER.warning(
+                                                () ->
+                                                        String.format(
+                                                                "Mail server SSL certificate is NOT"
+                                                                    + " YET VALID: subject=[%s],"
+                                                                    + " issuer=[%s],"
+                                                                    + " validFrom=[%s]. Connection"
+                                                                    + " proceeds because resilient"
+                                                                    + " SSL policy is active.",
+                                                                subject,
+                                                                issuer,
+                                                                cert.getNotBefore()));
+                                    }
+                                } else {
+                                    LOGGER.warning(
+                                            () ->
+                                                    "Mail server presented an empty SSL certificate"
+                                                            + " chain. Connection proceeds because"
+                                                            + " resilient SSL policy is active.");
+                                }
+                            }
+                        }
+
+                        @Override
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return finalDefaultTm != null
+                                    ? finalDefaultTm.getAcceptedIssuers()
+                                    : new X509Certificate[0];
+                        }
+                    };
+
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, new TrustManager[] {resilientTm}, null);
+            return sslContext.getSocketFactory();
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to initialize resilient SSLSocketFactory", e);
+            return null;
+        }
     }
 
     private void closeFolder(Folder folder) {

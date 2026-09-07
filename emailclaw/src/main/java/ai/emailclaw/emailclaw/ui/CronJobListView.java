@@ -22,6 +22,7 @@ import ai.emailclaw.emailclaw.model.CronJobModel.DispatchTarget;
 import ai.emailclaw.emailclaw.model.CronJobModel.JobRuntimeSpec;
 import ai.emailclaw.emailclaw.model.CronJobModel.ScheduleSpec;
 import ai.emailclaw.emailclaw.model.CronJobStatus;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.service.CronJobService;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -63,6 +64,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
+import javafx.util.StringConverter;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -528,12 +530,26 @@ public class CronJobListView implements ViewPane {
                 sessionBox.setValue(match.getId() + " (" + match.getName() + ")");
             }
         }
-        ComboBox<String> modeBox = new ComboBox<>();
-        modeBox.getItems().addAll("stream", "final");
+        ComboBox<DeliveryMode> modeBox = new ComboBox<>();
+        modeBox.getItems().addAll(DeliveryMode.FINAL, DeliveryMode.STREAM);
+        modeBox.setConverter(
+                new StringConverter<>() {
+                    @Override
+                    public String toString(DeliveryMode object) {
+                        return object != null ? object.getValue() : "";
+                    }
+
+                    @Override
+                    public DeliveryMode fromString(String string) {
+                        return DeliveryMode.fromValue(string);
+                    }
+                });
         modeBox.setValue(
-                existing != null && existing.dispatch() != null
+                existing != null
+                                && existing.dispatch() != null
+                                && existing.dispatch().mode() != null
                         ? existing.dispatch().mode()
-                        : "final");
+                        : DeliveryMode.FINAL);
         // Runtime fields
         TextField concurrencyField =
                 new TextField(
@@ -681,7 +697,9 @@ public class CronJobListView implements ViewPane {
                                     "channel",
                                     channelBox.getValue(),
                                     new DispatchTarget("", selectedSessionId),
-                                    modeBox.getValue(),
+                                    modeBox.getValue() != null
+                                            ? modeBox.getValue()
+                                            : DeliveryMode.FINAL,
                                     Collections.emptyMap());
                     JobRuntimeSpec runtime =
                             new JobRuntimeSpec(
@@ -1036,7 +1054,7 @@ public class CronJobListView implements ViewPane {
                         "channel",
                         t.channel(),
                         new DispatchTarget("", "default"),
-                        "final",
+                        DeliveryMode.FINAL,
                         Collections.emptyMap()),
                 !("cron".equals(t.scheduleType())),
                 JobRuntimeSpec.defaults(),

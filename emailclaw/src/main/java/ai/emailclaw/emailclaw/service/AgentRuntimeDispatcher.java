@@ -23,6 +23,7 @@ import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.model.GenerateOptions;
@@ -67,11 +68,14 @@ public class AgentRuntimeDispatcher {
                     + "This conversation runs on a messaging channel (email). When the user asks"
                     + " you to send, attach, or deliver any file, report, or document, the ONLY"
                     + " supported delivery method is to write the file path inside "
-                    + MessageMarkupTags.ATTACHMENT_VALUE
+                    + MessageMarkupTags.ATTACHMENT_PATH_TAG
                     + " tags on ONE single line (no newline characters inside the tag pair,"
                     + " not wrapped in code fences) in your final response. The system"
                     + " automatically attaches those files to the message sent to the user."
-                    + " Paths may be absolute or relative to your workspace.\n"
+                    + " Paths may be relative to the Project Directory (recommended, e.g."
+                    + " report.md, output/result.pdf) or the full absolute path of the file in the"
+                    + " Project Directory. (Note: Project files, generated code, and reports are"
+                    + " located in the Project Directory, NOT in agent-workspace).\n"
                     + "STRICTLY FORBIDDEN: do NOT attempt to deliver files or send messages"
                     + " yourself. Never use email CLI tools (such as himalaya, mutt, sendmail),"
                     + " never write shell/Python scripts that call SMTP or mail APIs, and never"
@@ -85,9 +89,10 @@ public class AgentRuntimeDispatcher {
     private static final String NON_CONSOLE_CHANNEL_ATTACHMENT_REMINDER =
             "\n\nREMINDER: You are on a messaging channel. Deliver files to the user ONLY by"
                     + " writing "
-                    + MessageMarkupTags.ATTACHMENT_VALUE
-                    + " on a single line in your reply. NEVER send emails or messages yourself"
-                    + " (no himalaya, no SMTP/mail scripts).";
+                    + MessageMarkupTags.ATTACHMENT_PATH_TAG
+                    + " (using a relative path or full project path) on a single line in your"
+                    + " reply. NEVER send emails or messages yourself (no himalaya, no SMTP/mail"
+                    + " scripts).";
 
     private final AppContext repository;
 
@@ -180,6 +185,29 @@ public class AgentRuntimeDispatcher {
         }
         String sysPrompt = DEFAULT_SYSTEM_PROMPT;
 
+        // Must use absolute path, for HarnessAgent's WorkspacePathNormalizer to correctly strip the
+        // workspace prefix.
+        Path agentWorkspace = repository.workspaceFor(agent.getId()).toAbsolutePath().normalize();
+
+        ai.emailclaw.emailclaw.model.ProjectInfo project =
+                resolveSessionProject(sessionId, toolRuntimeContext);
+        toolRuntimeContext.activeProject = project;
+        Path projectRoot = agentWorkspace;
+        boolean projectWritable = true;
+
+        if (project != null
+                && project.getBaseDirectory() != null
+                && !project.getBaseDirectory().isBlank()) {
+            Path baseDir =
+                    Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
+                            .toAbsolutePath()
+                            .normalize();
+            if (Files.isDirectory(baseDir)) {
+                projectRoot = baseDir;
+                LOGGER.log(Level.INFO, "Mapped project directory to: {0}", projectRoot);
+            }
+        }
+
         ai.emailclaw.emailclaw.model.ChatSessionInfo currentSession = null;
         if (this.repository != null && sessionId != null) {
             currentSession =
@@ -192,16 +220,39 @@ public class AgentRuntimeDispatcher {
                 (currentSession != null && currentSession.getUserId() != null)
                         ? currentSession.getUserId()
                         : "";
+        String projectIdStr = project != null ? project.getId() : "default";
+        String projectNameStr = project != null ? project.getName() : "Default";
+        String osUser = System.getProperty("user.name", "unknown");
+        String userHome =
+                AppHomeConstants.HOME_RESOLVED != null
+                        ? AppHomeConstants.HOME_RESOLVED.toString()
+                        : System.getProperty("user.home", "");
+
         sysPrompt +=
                 String.format(
                         "\n\n"
                                 + "# Context Information\n"
                                 + "- Current Channel: %s\n"
                                 + "- Current User ID: %s\n"
-                                + "- Current Session ID: %s\n",
+                                + "- Current Session ID: %s\n"
+                                + "- Operating System User: %s\n"
+                                + "- User Home Directory (~): %s (Tilde ~ expands to this"
+                                + " directory, NOT /root)\n"
+                                + "- Current Project ID: %s\n"
+                                + "- Current Project Name: %s\n"
+                                + "- Project Base Directory: %s (Working directory for all project"
+                                + " files, generated documents, code, and attachments)\n"
+                                + "- Agent Workspace Directory: %s (Internal storage for agent"
+                                + " memory and configuration only)\n",
                         channel == null ? "unknown" : channel,
                         userId,
-                        sessionId == null ? "unknown" : sessionId);
+                        sessionId == null ? "unknown" : sessionId,
+                        osUser,
+                        userHome,
+                        projectIdStr,
+                        projectNameStr,
+                        projectRoot,
+                        agentWorkspace);
 
         // notConsole whether it is a non-console channel session
         boolean notConsole = channel != null && !ChannelIds.CONSOLE.equals(channel);
@@ -211,9 +262,6 @@ public class AgentRuntimeDispatcher {
             sysPrompt += NON_CONSOLE_CHANNEL_ATTACHMENT_INSTRUCTION;
             toolkit.removeTool(BuiltInToolNames.SEND_FILE_TO_USER);
         }
-        // Must use absolute path, for HarnessAgent's WorkspacePathNormalizer to correctly strip the
-        // workspace prefix.
-        Path agentWorkspace = repository.workspaceFor(agent.getId()).toAbsolutePath().normalize();
         // Load skills and append to sysPrompt
         List<SkillInfo> enabledSkills =
                 skillService.listWorkspaceSkills(agent.getId()).stream()
@@ -245,24 +293,6 @@ public class AgentRuntimeDispatcher {
         }
         if (notConsole) {
             sysPrompt += NON_CONSOLE_CHANNEL_ATTACHMENT_REMINDER;
-        }
-        ai.emailclaw.emailclaw.model.ProjectInfo project =
-                resolveSessionProject(sessionId, toolRuntimeContext);
-        toolRuntimeContext.activeProject = project;
-        Path projectRoot = agentWorkspace;
-        boolean projectWritable = true;
-
-        if (project != null
-                && project.getBaseDirectory() != null
-                && !project.getBaseDirectory().isBlank()) {
-            Path baseDir =
-                    Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
-                            .toAbsolutePath()
-                            .normalize();
-            if (Files.isDirectory(baseDir)) {
-                projectRoot = baseDir;
-                LOGGER.log(Level.INFO, "Mapped project directory to: {0}", projectRoot);
-            }
         }
 
         java.util.List<Path> additionalRoots = new java.util.ArrayList<>();

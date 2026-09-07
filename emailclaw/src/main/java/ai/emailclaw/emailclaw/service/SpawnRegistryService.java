@@ -38,13 +38,8 @@ public class SpawnRegistryService {
 
     private Path registryFile(String projectId) {
         ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-        String baseDirStr = project != null ? project.getBaseDirectory() : null;
-        Path base =
-                (baseDirStr != null && !baseDirStr.isBlank())
-                        ? Path.of(FileNameUtils.expandUserHome(baseDirStr))
-                        : AppHomeConstants.HOME_RESOLVED
-                                .resolve(AppHomeConstants.PROJECTS_DIR)
-                                .resolve(projectId != null ? projectId : "default");
+        String baseDirStr = project.getBaseDirectory();
+        Path base = Path.of(FileNameUtils.expandUserHome(baseDirStr));
         return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR).resolve("spawn-registry.json");
     }
 

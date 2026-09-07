@@ -16,13 +16,6 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 public final class EmailclawChannelConfigKeys {
 
     public static final String MAILBOXES = "mailboxes";
-    public static final String EMAIL_ALLOWLIST_SENDERS = "emailAllowlistSenders";
-    public static final String EMAIL_POLL_INTERVAL_SECONDS = "emailPollIntervalSeconds";
-    public static final String SYS_EMAIL_MODE = "sysEmailMode";
-    public static final String RESGISTRANT_EMAIL = "registrantEmail";
-    public static final String ONE_TIME_PASSWORD = "oneTimePassword";
-    public static final String ACCESS_TOKEN = "accessToken";
-    public static final String REFRESH_TOKEN = "refreshToken";
 
     private EmailclawChannelConfigKeys() {}
 }

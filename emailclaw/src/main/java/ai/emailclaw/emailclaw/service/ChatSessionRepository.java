@@ -50,14 +50,9 @@ public class ChatSessionRepository {
     public Path sessionPath(String projectId, String agentId) {
         String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
         ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-        String baseDir = project != null ? project.getBaseDirectory() : null;
-        Path base =
-                (baseDir != null && !baseDir.isBlank())
-                        ? Path.of(FileNameUtils.expandUserHome(baseDir))
-                        : AppHomeConstants.HOME_RESOLVED
-                                .resolve(AppHomeConstants.PROJECTS_DIR)
-                                .resolve(projectId != null ? projectId : "default");
-        return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+        String baseDir = project.getBaseDirectory();
+        return Path.of(FileNameUtils.expandUserHome(baseDir))
+                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
                 .resolve(aId)
                 .resolve(AppHomeConstants.SESSIONS_DIR);
     }

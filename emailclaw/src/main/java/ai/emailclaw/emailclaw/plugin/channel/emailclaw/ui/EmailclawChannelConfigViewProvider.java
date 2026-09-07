@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw.ui;
 
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailMailPreset;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailPresetRegistry;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailclawChannelConfig;
@@ -35,6 +36,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.RadioButton;
@@ -47,6 +49,7 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -54,6 +57,7 @@ import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.util.StringConverter;
 
 /**
  * Emailclaw configuration view provider supporting Multi-Agent Mailboxes.
@@ -83,7 +87,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
         private final Map<String, Object> config;
         private final Consumer<Map<String, Object>> onSave;
         private final Runnable onCancel;
-        private final SimpleToggleSwitch enableSwitch = new SimpleToggleSwitch();
+        private final SimpleToggleSwitch enablePluginSwitch = new SimpleToggleSwitch();
         private final VBox mailboxCardsContainer = new VBox(8);
         private final Button saveButton = new Button("Save Global Configuration");
 
@@ -102,7 +106,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
 
             loadValues();
 
-            HBox switchBox = new HBox(8, new Label("Enable Plugin"), enableSwitch);
+            HBox switchBox = new HBox(8, new Label("Enable Plugin"), enablePluginSwitch);
             switchBox.setAlignment(Pos.CENTER_LEFT);
 
             Button addBtn = new Button("+ Add Mailbox");
@@ -125,7 +129,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
             saveButton.setOnAction(
                     e -> {
                         Map<String, Object> result = new HashMap<>();
-                        result.put("enabled", enableSwitch.isSelected());
+                        result.put("enabled", enablePluginSwitch.isSelected());
                         EmailclawChannelConfig.setMailboxes(result, this.mailboxes);
                         onSave.accept(result);
                     });
@@ -146,7 +150,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
 
         private void loadValues() {
             boolean isEnabled = (Boolean) this.config.getOrDefault("enabled", false);
-            enableSwitch.setSelected(isEnabled);
+            enablePluginSwitch.setSelected(isEnabled);
             List<MailboxAccountConfig> mbs = EmailclawChannelConfig.getMailboxes(this.config);
             if (mbs != null) {
                 mailboxes.addAll(mbs);
@@ -208,12 +212,15 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
                 HBox bottomRow = new HBox(12);
                 bottomRow.setAlignment(Pos.CENTER_LEFT);
 
-                SimpleToggleSwitch enabledToggle = new SimpleToggleSwitch();
-                enabledToggle.setSelected(mb.enabled());
-                enabledToggle.setOnToggle(
+                SimpleToggleSwitch enableMailboxToggle = new SimpleToggleSwitch();
+                enableMailboxToggle.setSelected(mb.enabled());
+                enableMailboxToggle.setOnToggle(
                         sel -> {
                             MailboxAccountConfig updated = mb.withEnabled(sel);
                             mailboxes.set(index, updated);
+                            if (sel) {
+                                enablePluginSwitch.setSelected(true);
+                            }
                         });
 
                 HBox spacer = new HBox();
@@ -230,7 +237,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
                             refreshMailboxList();
                         });
 
-                bottomRow.getChildren().addAll(enabledToggle, spacer, editBtn, deleteBtn);
+                bottomRow.getChildren().addAll(enableMailboxToggle, spacer, editBtn, deleteBtn);
 
                 card.getChildren().addAll(topRow, bottomRow);
                 mailboxCardsContainer.getChildren().add(card);
@@ -274,6 +281,9 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
                                     }
                                     mailboxes.add(updatedConfig);
                                 }
+                                if (updatedConfig.enabled()) {
+                                    enablePluginSwitch.setSelected(true);
+                                }
                                 refreshMailboxList();
                                 dialogStage.close();
                             },
@@ -306,8 +316,8 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
         private final Runnable onCancel;
 
         private final TextField mailboxNameField = new TextField();
-        private final javafx.scene.control.ComboBox<AgentOption> targetAgentIdComboBox =
-                new javafx.scene.control.ComboBox<>();
+        private final ComboBox<AgentOption> targetAgentIdComboBox = new ComboBox<>();
+        private final ComboBox<DeliveryMode> deliveryModeComboBox = new ComboBox<>();
 
         private final TextField emailAddressField = new TextField();
         private final PasswordField passwordField = new PasswordField();
@@ -333,16 +343,14 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
         private final TextField sysRegistrationEmailField = new TextField();
         private final PasswordField sysOneTimePasswordField = new PasswordField();
-        private final Spinner<Integer> sysPollSecondsSpinner =
-                new Spinner<>(new SpinnerValueFactory.IntegerSpinnerValueFactory(5, 3600, 30));
         private final TextArea sysAllowSendersArea = new TextArea();
         private final Label autoPresetHintSystem = new Label();
         private final CheckBox sysAgreementCheckBox = new CheckBox("Agree to Service Agreement");
 
         private final TextField sysAllocatedEmailField = new TextField();
         private final PasswordField sysAllocatedPasswordField = new PasswordField();
-        private VBox sysAllocatedEmailBox;
-        private VBox sysAllocatedPasswordBox;
+        private HBox sysAllocatedEmailBox;
+        private HBox sysAllocatedPasswordBox;
         private VBox sysAllocatedAccountSection;
 
         private final RadioButton ownEmailRadio = new RadioButton("Bring my own Email account");
@@ -415,11 +423,29 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             }
             targetAgentIdComboBox.getSelectionModel().selectFirst();
 
+            deliveryModeComboBox.getItems().setAll(DeliveryMode.FINAL, DeliveryMode.STREAM);
+            deliveryModeComboBox.setValue(DeliveryMode.FINAL);
+            deliveryModeComboBox.setMaxWidth(Double.MAX_VALUE);
+            deliveryModeComboBox.setConverter(
+                    new StringConverter<>() {
+                        @Override
+                        public String toString(DeliveryMode mode) {
+                            return mode != null ? mode.getValue() : "";
+                        }
+
+                        @Override
+                        public DeliveryMode fromString(String string) {
+                            return DeliveryMode.fromValue(string);
+                        }
+                    });
+
             Node generalInfoSection =
                     section(
                             "General Info",
                             field("Mailbox Name (Optional)", mailboxNameField),
-                            field("Target Agent", targetAgentIdComboBox));
+                            field("Target Agent", targetAgentIdComboBox),
+                            field("Delivery Mode", deliveryModeComboBox),
+                            field("Poll Interval (seconds)", pollSecondsSpinner));
 
             ToggleGroup modeGroup = new ToggleGroup();
             ownEmailRadio.setToggleGroup(modeGroup);
@@ -453,7 +479,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             validationHint.setStyle("-fx-text-fill: red; -fx-font-size: 12px;");
             validationHint.setWrapText(true);
 
-            root.getChildren().addAll(generalInfoSection, modeBox, scrollPane, validationHint);
+            root.getChildren().addAll(modeBox, scrollPane, generalInfoSection, validationHint);
             return root;
         }
 
@@ -495,11 +521,8 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                             imapSection,
                             smtpSection,
                             section(
-                                    "Polling",
-                                    field("Poll Interval (seconds)", pollSecondsSpinner)),
-                            section(
-                                    "Allowed Senders",
-                                    new Label("Only emails from these senders will be processed."),
+                                    "Allowed Senders: ONLY emails from these senders will be"
+                                            + " processed.",
                                     allowSendersArea));
             return root;
         }
@@ -568,19 +591,28 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                                     field("One-time Password", sysOneTimePasswordField)),
                             sysAllocatedAccountSection,
                             section(
-                                    "Polling",
-                                    field("Poll Interval (seconds)", sysPollSecondsSpinner)),
-                            section(
-                                    "Allowed Senders",
-                                    new Label("Only emails from these senders will be processed."),
+                                    "Allowed Senders: ONLY emails from these senders will be"
+                                            + " processed.",
                                     sysAllowSendersArea));
             return root;
         }
 
-        private VBox field(String name, Node control) {
+        private HBox field(String name, Node control) {
             Label label = new Label(name);
             label.setStyle("-fx-font-weight: bold;");
-            return new VBox(4, label, control);
+            label.setMinWidth(180);
+            label.setPrefWidth(180);
+            label.setAlignment(Pos.CENTER_LEFT);
+
+            HBox row = new HBox(8, label, control);
+            row.setAlignment(Pos.CENTER_LEFT);
+            if (control != null) {
+                HBox.setHgrow(control, Priority.ALWAYS);
+                if (control instanceof Region region) {
+                    region.setMaxWidth(Double.MAX_VALUE);
+                }
+            }
+            return row;
         }
 
         private VBox section(String title, Node... children) {
@@ -603,6 +635,9 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                     .filter(opt -> opt.id().equals(targetId))
                     .findFirst()
                     .ifPresent(opt -> targetAgentIdComboBox.getSelectionModel().select(opt));
+
+            deliveryModeComboBox.setValue(
+                    config.deliveryMode() != null ? config.deliveryMode() : DeliveryMode.FINAL);
 
             emailAddressField.setText(nvl(config.emailAddress()));
             passwordField.setText(nvl(config.emailPassword()));
@@ -627,10 +662,6 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             sysRegistrationEmailField.setText("");
             sysOneTimePasswordField.setText("");
-            sysPollSecondsSpinner
-                    .getValueFactory()
-                    .setValue(
-                            config.pollIntervalSeconds() <= 0 ? 30 : config.pollIntervalSeconds());
 
             boolean isSystemEmail = config.emailAddress().endsWith("@emailclaw.email");
             if (isSystemEmail) {
@@ -679,9 +710,6 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                             });
             sysOneTimePasswordField
                     .textProperty()
-                    .addListener((obs, oldVal, newVal) -> refreshSaveState());
-            sysPollSecondsSpinner
-                    .valueProperty()
                     .addListener((obs, oldVal, newVal) -> refreshSaveState());
             sysAgreementCheckBox
                     .selectedProperty()
@@ -773,6 +801,11 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                     : "";
         }
 
+        private DeliveryMode getSelectedDeliveryMode() {
+            DeliveryMode mode = deliveryModeComboBox.getValue();
+            return mode != null ? mode : DeliveryMode.FINAL;
+        }
+
         private void handleSave() {
             boolean sysMode = sysEmailRadio.isSelected();
             if (sysMode) {
@@ -836,7 +869,8 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                                                         getSelectedTargetAgentId(),
                                                         normalizeSenders(
                                                                 sysAllowSendersArea.getText()),
-                                                        sysPollSecondsSpinner.getValue());
+                                                        pollSecondsSpinner.getValue(),
+                                                        getSelectedDeliveryMode());
                                         onSave.accept(newConfig);
                                     });
                         } else {
@@ -869,7 +903,8 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                                     false,
                                     getSelectedTargetAgentId(),
                                     normalizeSenders(sysAllowSendersArea.getText()),
-                                    sysPollSecondsSpinner.getValue());
+                                    pollSecondsSpinner.getValue(),
+                                    getSelectedDeliveryMode());
                     onSave.accept(newConfig);
                     return;
                 }
@@ -908,7 +943,8 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                             sTls,
                             getSelectedTargetAgentId(),
                             normalizeSenders(allowSendersArea.getText()),
-                            pollSecondsSpinner.getValue());
+                            pollSecondsSpinner.getValue(),
+                            getSelectedDeliveryMode());
             onSave.accept(newConfig);
         }
 

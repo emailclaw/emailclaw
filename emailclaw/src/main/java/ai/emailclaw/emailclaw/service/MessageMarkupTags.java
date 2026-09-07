@@ -17,14 +17,15 @@ package ai.emailclaw.emailclaw.service;
  * Channel runners (such as Emailclaw) also reference the attachment tag pattern when parsing attachment paths.
  */
 public final class MessageMarkupTags {
-    public static final String ATTACHMENT_OPEN = "<attachment_to_channel>";
-    public static final String ATTACHMENT_CLOSE = "</attachment_to_channel>";
+    public static final String ATTACHMENT_TAG_OPEN = "<attachment_to_channel>";
+    public static final String ATTACHMENT_TAG_CLOSE = "</attachment_to_channel>";
 
     /** Tag pair for attachment return channel (regex capture group is used to extract the path). */
-    public static final String ATTACHMENT_PATTERN = ATTACHMENT_OPEN + "(.*?)" + ATTACHMENT_CLOSE;
+    public static final String ATTACHMENT_PATTERN =
+            ATTACHMENT_TAG_OPEN + "(.*?)" + ATTACHMENT_TAG_CLOSE;
 
-    public static final String ATTACHMENT_VALUE =
-            ATTACHMENT_OPEN + "/path/to/your/file" + ATTACHMENT_CLOSE;
+    public static final String ATTACHMENT_PATH_TAG =
+            ATTACHMENT_TAG_OPEN + "/path/to/your/file" + ATTACHMENT_TAG_CLOSE;
 
     public static final String TOOL_CALL_OPEN = "<tool_call>";
     public static final String TOOL_CALL_CLOSE = "</tool_call>";

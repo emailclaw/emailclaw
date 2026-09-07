@@ -12,12 +12,15 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.channel.ChannelIds;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
+import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.model.SessionDefaults;
 import ai.emailclaw.emailclaw.plugin.AbstractChannelPlugin;
 import ai.emailclaw.emailclaw.plugin.PluginStatus;
 import ai.emailclaw.emailclaw.service.ChatService;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,6 +32,7 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
 
     private static final Logger LOGGER = Logger.getLogger(EmailclawChannelPlugin.class.getName());
 
+    private final Map<String, StringBuilder> streamBuffers = new ConcurrentHashMap<>();
     private EmailclawChannelRunner runner;
     private volatile PluginStatus currentStatus = PluginStatus.registered();
 
@@ -44,6 +48,9 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
 
     @Override
     public void replyToSession(String sessionId, String content) {
+        if (sessionId != null) {
+            streamBuffers.remove(sessionId);
+        }
         if (runner == null || context == null) {
             LOGGER.log(
                     Level.WARNING,
@@ -111,6 +118,56 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
             LOGGER.log(
                     Level.WARNING, "EmailclawPlugin failed to reply to session: " + sessionId, e);
         }
+    }
+
+    @Override
+    public boolean supportsStreaming() {
+        if (context == null) {
+            return false;
+        }
+        ChannelInfo channel = context.getChannelInfo(id());
+        if (channel == null || !channel.isEnabled()) {
+            return false;
+        }
+        MailboxAccountConfig mailbox =
+                EmailclawChannelConfig.resolveOutboundMailbox(channel, null).orElse(null);
+        return mailbox != null && mailbox.deliveryMode() == DeliveryMode.STREAM;
+    }
+
+    @Override
+    public void streamPartToSession(String sessionId, ChatMessagePart part, boolean startsNew) {
+        if (sessionId == null || part == null) {
+            return;
+        }
+        String delta = part.getText();
+        if (delta == null || delta.isEmpty()) {
+            return;
+        }
+        StringBuilder buffer = streamBuffers.computeIfAbsent(sessionId, k -> new StringBuilder());
+        synchronized (buffer) {
+            buffer.append(delta);
+        }
+        LOGGER.log(
+                Level.FINE,
+                "EmailclawPlugin buffered stream chunk for sessionId={0}, deltaLength={1}",
+                new Object[] {sessionId, delta.length()});
+    }
+
+    @Override
+    public void onStreamCompleted(String sessionId, String fullContent) {
+        if (sessionId == null) {
+            return;
+        }
+        StringBuilder buffer = streamBuffers.remove(sessionId);
+        String contentToSend =
+                (fullContent != null && !fullContent.isBlank())
+                        ? fullContent
+                        : (buffer != null ? buffer.toString() : "");
+        LOGGER.log(
+                Level.INFO,
+                "EmailclawPlugin onStreamCompleted for sessionId={0}, dispatching final content",
+                sessionId);
+        replyToSession(sessionId, contentToSend);
     }
 
     /**

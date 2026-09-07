@@ -23,6 +23,7 @@ import ai.emailclaw.emailclaw.model.CronJobModel.DispatchTarget;
 import ai.emailclaw.emailclaw.model.CronJobModel.ScheduleSpec;
 import ai.emailclaw.emailclaw.model.CronJobStatus;
 import ai.emailclaw.emailclaw.model.CronJobTrigger;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.SessionDefaults;
 import ai.emailclaw.emailclaw.plugin.PluginManager;
@@ -272,7 +273,9 @@ public class CronJobService implements AutoCloseable {
                         oldDispatch != null ? oldDispatch.type() : "channel",
                         oldDispatch != null ? oldDispatch.channel() : channel,
                         new DispatchTarget(oldTarget.userId(), task.getId()),
-                        oldDispatch != null ? oldDispatch.mode() : "final",
+                        oldDispatch != null && oldDispatch.mode() != null
+                                ? oldDispatch.mode()
+                                : DeliveryMode.FINAL,
                         oldDispatch != null ? oldDispatch.meta() : Collections.emptyMap());
         return new CronJobSpec(
                 spec.id(),
@@ -679,6 +682,14 @@ public class CronJobService implements AutoCloseable {
                     appContext
                             .loadAgentConfig(agent.getId())
                             .effectiveTaskExecutionTimeoutSeconds();
+            DeliveryMode mode =
+                    spec.dispatch() != null && spec.dispatch().mode() != null
+                            ? spec.dispatch().mode()
+                            : DeliveryMode.FINAL;
+            LOGGER.log(
+                    Level.INFO,
+                    "Starting scheduled task execution: id={0}, mode={1}, channel={2}",
+                    new Object[] {jobId, mode, session.getChannel()});
             CountDownLatch latch = new CountDownLatch(1);
             final Msg[] capturedMsg = new Msg[1];
             chatService.sendMessage(
@@ -690,7 +701,11 @@ public class CronJobService implements AutoCloseable {
                     new ai.emailclaw.emailclaw.service.StreamCallback() {
 
                         @Override
-                        public void onPart(ChatMessagePart part, boolean startsNew) {}
+                        public void onPart(ChatMessagePart part, boolean startsNew) {
+                            if (mode == DeliveryMode.STREAM) {
+                                deliverStreamChunk(session, part, startsNew);
+                            }
+                        }
 
                         @Override
                         public void onCompleted(Msg message) {
@@ -727,17 +742,13 @@ public class CronJobService implements AutoCloseable {
                     Level.INFO,
                     "Scheduled task execution complete: id={0}, status={1}",
                     new Object[] {jobId, status});
-            // Send Agent reply to channel (if the channel plugin implements replyToSession, it will
-            // be delivered to the user as needed)
+            // Deliver Agent reply to channel based on DeliveryMode and channel capabilities
             if (capturedMsg[0] != null
                     && session.getChannel() != null
                     && !SessionDefaults.DEFAULT_CHANNEL.equals(session.getChannel())) {
                 String text = capturedMsg[0].getTextContent();
                 if (text != null && !text.isBlank()) {
-                    PluginRecord record = pluginManager.getPlugin(session.getChannel());
-                    if (record != null && record.instance != null) {
-                        record.instance.replyToSession(session.getId(), text);
-                    }
+                    deliverFinalReply(session, text, mode);
                 }
             }
         } catch (Exception e) {
@@ -824,6 +835,65 @@ public class CronJobService implements AutoCloseable {
                 jobHistory.put(jobId, records);
             }
             saveHistory(jobId, records);
+        }
+    }
+
+    /**
+     * Streams an incremental chunk/part to the target channel plugin.
+     *
+     * @param session   Target chat session
+     * @param part      Incremental content part
+     * @param startsNew Whether this part starts a new block
+     */
+    private void deliverStreamChunk(
+            ChatSessionInfo session, ChatMessagePart part, boolean startsNew) {
+        if (session == null || part == null) {
+            return;
+        }
+        String channel = session.getChannel();
+        if (channel == null
+                || channel.isBlank()
+                || SessionDefaults.DEFAULT_CHANNEL.equals(channel)) {
+            return;
+        }
+        PluginRecord record = pluginManager.getPlugin(channel);
+        if (record != null && record.instance != null) {
+            try {
+                record.instance.streamPartToSession(session.getId(), part, startsNew);
+            } catch (Exception e) {
+                LOGGER.log(
+                        Level.WARNING,
+                        "Failed to deliver stream chunk to channel: channel={0}, sessionId={1}",
+                        new Object[] {channel, session.getId()});
+            }
+        }
+    }
+
+    /**
+     * Delivers the final reply or finalizes streaming delivery on the target channel plugin.
+     *
+     * @param session Target chat session
+     * @param text    Consolidated reply text content
+     * @param mode    Configured delivery mode
+     */
+    private void deliverFinalReply(ChatSessionInfo session, String text, DeliveryMode mode) {
+        String channel = session.getChannel();
+        PluginRecord record = pluginManager.getPlugin(channel);
+        if (record == null || record.instance == null) {
+            return;
+        }
+        if (mode == DeliveryMode.STREAM && record.instance.supportsStreaming()) {
+            LOGGER.log(
+                    Level.INFO,
+                    "Stream delivery completed for scheduled task: channel={0}, sessionId={1}",
+                    new Object[] {channel, session.getId()});
+            record.instance.onStreamCompleted(session.getId(), text);
+        } else {
+            LOGGER.log(
+                    Level.INFO,
+                    "Dispatching final reply to channel: channel={0}, sessionId={1}, mode={2}",
+                    new Object[] {channel, session.getId(), mode});
+            record.instance.replyToSession(session.getId(), text);
         }
     }
 

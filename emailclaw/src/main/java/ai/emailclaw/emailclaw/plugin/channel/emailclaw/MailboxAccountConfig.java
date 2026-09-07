@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.model.AgentIds;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -35,6 +36,7 @@ import java.util.UUID;
  * @param targetAgentId       Bound Agent ID to route new unassigned inbound emails (blank means default agent)
  * @param allowlistSenders    Allowed sender whitelist for this mailbox (empty means allow all)
  * @param pollIntervalSeconds Polling interval in seconds (minimum 5, default 30)
+ * @param deliveryMode        Delivery mode for responses dispatched by this mailbox account
  */
 public record MailboxAccountConfig(
         String id,
@@ -52,7 +54,8 @@ public record MailboxAccountConfig(
         boolean smtpStartTls,
         String targetAgentId,
         List<String> allowlistSenders,
-        int pollIntervalSeconds) {
+        int pollIntervalSeconds,
+        DeliveryMode deliveryMode) {
 
     /**
      * Compact constructor with normalization and defaults.
@@ -75,6 +78,47 @@ public record MailboxAccountConfig(
                         : targetAgentId.trim();
         allowlistSenders = allowlistSenders == null ? List.of() : List.copyOf(allowlistSenders);
         pollIntervalSeconds = pollIntervalSeconds < 5 ? 30 : pollIntervalSeconds;
+        deliveryMode = deliveryMode == null ? DeliveryMode.FINAL : deliveryMode;
+    }
+
+    /**
+     * Backward-compatible constructor defaulting {@link DeliveryMode} to {@link DeliveryMode#FINAL}.
+     */
+    public MailboxAccountConfig(
+            String id,
+            String name,
+            boolean enabled,
+            String emailAddress,
+            String emailPassword,
+            String imapHost,
+            int imapPort,
+            boolean imapSsl,
+            boolean imapStartTls,
+            String smtpHost,
+            int smtpPort,
+            boolean smtpSsl,
+            boolean smtpStartTls,
+            String targetAgentId,
+            List<String> allowlistSenders,
+            int pollIntervalSeconds) {
+        this(
+                id,
+                name,
+                enabled,
+                emailAddress,
+                emailPassword,
+                imapHost,
+                imapPort,
+                imapSsl,
+                imapStartTls,
+                smtpHost,
+                smtpPort,
+                smtpSsl,
+                smtpStartTls,
+                targetAgentId,
+                allowlistSenders,
+                pollIntervalSeconds,
+                DeliveryMode.FINAL);
     }
 
     /**
@@ -104,7 +148,8 @@ public record MailboxAccountConfig(
                     false,
                     "",
                     List.of(),
-                    30);
+                    30,
+                    DeliveryMode.FINAL);
         }
         return new MailboxAccountConfig(
                 UUID.randomUUID().toString(),
@@ -122,7 +167,8 @@ public record MailboxAccountConfig(
                 false,
                 "",
                 List.of(),
-                30);
+                30,
+                DeliveryMode.FINAL);
     }
 
     /**
@@ -265,6 +311,34 @@ public record MailboxAccountConfig(
                 this.smtpStartTls,
                 this.targetAgentId,
                 this.allowlistSenders,
-                this.pollIntervalSeconds);
+                this.pollIntervalSeconds,
+                this.deliveryMode);
+    }
+
+    /**
+     * Returns a copy of this configuration with the specified delivery mode.
+     *
+     * @param newDeliveryMode the new delivery mode
+     * @return a new MailboxAccountConfig instance
+     */
+    public MailboxAccountConfig withDeliveryMode(DeliveryMode newDeliveryMode) {
+        return new MailboxAccountConfig(
+                this.id,
+                this.name,
+                this.enabled,
+                this.emailAddress,
+                this.emailPassword,
+                this.imapHost,
+                this.imapPort,
+                this.imapSsl,
+                this.imapStartTls,
+                this.smtpHost,
+                this.smtpPort,
+                this.smtpSsl,
+                this.smtpStartTls,
+                this.targetAgentId,
+                this.allowlistSenders,
+                this.pollIntervalSeconds,
+                newDeliveryMode);
     }
 }

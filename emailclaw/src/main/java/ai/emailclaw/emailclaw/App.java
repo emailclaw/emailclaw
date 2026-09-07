@@ -106,7 +106,7 @@ public class App extends Application {
         String cssPath =
                 getClass().getResource("/ai/emailclaw/emailclaw/css/app.css").toExternalForm();
         scene.getStylesheets().add(cssPath);
-        stage.setTitle("Emailclaw Desktop - Personal Agent Management Terminal");
+        stage.setTitle("Emailclaw Desktop - The Ultimate AI Agent for Email Lovers");
         try {
             java.net.URL logoUrl =
                     getClass().getResource("/ai/emailclaw/emailclaw/images/logo.jpg");

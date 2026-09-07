@@ -17,6 +17,7 @@ import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRecord;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
@@ -634,35 +635,12 @@ public class ChatService {
         repository.saveSessions(sessions);
     }
 
-    /**
-     * Build PermissionContextState based on PermissionMode.
-     *
-     * <p>Directly uses PermissionMode from agentscope-java, no longer defining execution_level manually:
-     * <ul>
-     *   <li>bypass → allow all tools directly</li>
-     *   <li>default → add askRules for guarded_tools</li>
-     *   <li>accept_edits → automatically handled by PermissionEngine (read-only allowed, edits within workspace allowed)</li>
-     *   <li>explore → automatically handled by PermissionEngine (read-only allowed, modifications denied)</li>
-     *   <li>dont_ask → add askRules for guarded_tools (ASK downgraded to DENY)</li>
-     * </ul>
-     *
-     * @param config Agent configuration
-     * @param agentId Agent ID
-     * @return Built PermissionContextState
-     */
     public Path sessionPath(String projectId, String agentId) {
-        String pId = (projectId == null || projectId.isBlank()) ? "default" : projectId;
         String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
-        ai.emailclaw.emailclaw.model.ProjectInfo project =
-                toolRuntimeContext.projectService.findById(pId);
-        String baseDir = project != null ? project.getBaseDirectory() : null;
-        Path base =
-                (baseDir != null && !baseDir.isBlank())
-                        ? Path.of(FileNameUtils.expandUserHome(baseDir))
-                        : AppHomeConstants.HOME_RESOLVED
-                                .resolve(AppHomeConstants.PROJECTS_DIR)
-                                .resolve(pId);
-        return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+        ProjectInfo project = toolRuntimeContext.projectService.findById(projectId);
+        String baseDir = project.getBaseDirectory();
+        return Path.of(baseDir)
+                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
                 .resolve(aId)
                 .resolve(WorkspacePaths.SESSIONS_DIR);
     }
@@ -1052,9 +1030,7 @@ public class ChatService {
                         toolRuntimeContext.projectService.findById(pId);
                 Path workspace =
                         Path.of(project.getBaseDirectory())
-                                .resolve(
-                                        ai.emailclaw.emailclaw.storage.AppHomeConstants
-                                                .AGENT_WORKSPACE_DIR)
+                                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
                                 .resolve(agent.getId());
                 String relative = workspace.relativize(dest).toString().replace('\\', '/');
                 staged.add(new StagedAttachment(dest, relative, originalName));

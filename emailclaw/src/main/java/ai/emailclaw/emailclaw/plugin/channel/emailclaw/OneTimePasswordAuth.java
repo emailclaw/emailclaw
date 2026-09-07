@@ -36,9 +36,25 @@ public class OneTimePasswordAuth {
             java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
             java.net.http.HttpResponse<String> response =
                     client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
-            LOG.info("response===" + response.body());
+            int statusCode = response.statusCode();
+            String responseBody = response.body();
+            LOG.info("response status=" + statusCode + ", body=" + responseBody);
 
-            AuthResult authResult = mapper.readValue(response.body(), AuthResult.class);
+            if (statusCode < 200 || statusCode >= 300) {
+                LOG.warning(
+                        "System mode registration HTTP request failed: status="
+                                + statusCode
+                                + ", body="
+                                + responseBody);
+                return null;
+            }
+
+            if (responseBody == null || responseBody.isBlank()) {
+                LOG.warning("System mode registration received empty response body");
+                return null;
+            }
+
+            AuthResult authResult = mapper.readValue(responseBody, AuthResult.class);
             if (authResult.success()) {
                 String emailAddress = authResult.username() + EMAILCLAW_EMAIL;
 
