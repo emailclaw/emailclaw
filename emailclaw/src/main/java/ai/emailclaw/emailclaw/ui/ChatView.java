@@ -1078,15 +1078,32 @@ public class ChatView implements ViewPane {
         updateAttachmentTooltip();
     }
 
+    private boolean sessionMatchesProject(ChatSessionInfo session, ProjectInfo project) {
+        if (session == null) {
+            return false;
+        }
+        String sProj =
+                session.getProjectId() == null || session.getProjectId().isBlank()
+                        ? "default"
+                        : session.getProjectId();
+        String currentProj =
+                project == null || project.getId() == null || project.getId().isBlank()
+                        ? "default"
+                        : project.getId();
+        return currentProj.equals(sProj);
+    }
+
     private void ensureSession() {
         if (currentSession != null
                 && currentAgent != null
-                && currentAgent.getId().equals(currentSession.getAgentId())) {
+                && currentAgent.getId().equals(currentSession.getAgentId())
+                && sessionMatchesProject(currentSession, currentProject)) {
             return;
         }
         List<ChatSessionInfo> sessions =
                 chatService.sessions(currentAgent.getId()).stream()
                         .filter(s -> sessionKind.equals(s.getKind()))
+                        .filter(s -> sessionMatchesProject(s, currentProject))
                         .toList();
         if (sessions.isEmpty()) {
             currentSession = chatService.newSession(currentAgent.getId());
@@ -1098,7 +1115,7 @@ public class ChatView implements ViewPane {
                     ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
                             ? "New Task"
                             : "New Chat");
-            chatService.touchSession(currentSession);
+            chatService.updateSession(currentSession);
         } else {
             currentSession = sessions.getFirst();
         }
@@ -1616,6 +1633,10 @@ public class ChatView implements ViewPane {
                 html.append("<div class='msg msg-").append(safeRole).append("'>");
                 if (ChatMessageRoles.APPROVAL.equals(safeRole)) {
                     renderApprovalMessage(html, m.effectiveContent());
+                } else if (ChatMessageRoles.SYSTEM.equals(safeRole)) {
+                    html.append("<div class='content content-system'>")
+                            .append(escape(m.effectiveContent()))
+                            .append("</div>");
                 } else if (!ChatMessageRoles.ASSISTANT.equals(safeRole)) {
                     html.append("<div class='role role-")
                             .append(safeRole)
@@ -2037,21 +2058,34 @@ public class ChatView implements ViewPane {
         if (codingModePane != null) {
             codingModePane.onProjectChanged(project);
         }
+        if (currentSession != null && !sessionMatchesProject(currentSession, project)) {
+            currentSession = null;
+            ensureSession();
+            refresh();
+        }
     }
 
     @Override
     public void refresh() {
+        if (currentSession == null
+                || currentAgent == null
+                || !currentAgent.getId().equals(currentSession.getAgentId())
+                || !sessionMatchesProject(currentSession, currentProject)) {
+            ensureSession();
+        }
         // Verify if currentSession still exists when displaying ChatView (to prevent inconsistency
         // after deletion)
         if (currentAgent != null && currentSession != null) {
             ChatSessionInfo validatedSession = validateSessionExists(currentSession.getId());
             if (validatedSession == null) {
-                // Session has been deleted, creating new session
+                // Session has been deleted or invalid, creating new session
                 LOGGER.log(
                         Level.WARNING,
-                        "Current session has been deleted (id={0}), creating new session",
+                        "Current session has been deleted or invalid (id={0}), creating/switching"
+                                + " session",
                         currentSession.getId());
-                currentSession = chatService.newSession(currentAgent.getId());
+                currentSession = null;
+                ensureSession();
             } else {
                 // Use the latest session object queried from the database to ensure reference and
                 // data are up-to-date
@@ -2136,9 +2170,18 @@ public class ChatView implements ViewPane {
                     ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
                             ? "New Task"
                             : "New Chat");
-            chatService.touchSession(currentSession);
+            chatService.updateSession(currentSession);
             refresh();
             return;
+        }
+        if (session.getProjectId() != null && !session.getProjectId().isBlank()) {
+            if (currentProject == null || !currentProject.getId().equals(session.getProjectId())) {
+                this.currentProject = new ProjectInfo();
+                this.currentProject.setId(session.getProjectId());
+                if (codingModePane != null) {
+                    codingModePane.onProjectChanged(this.currentProject);
+                }
+            }
         }
         // Verify if session still exists in the database
         ChatSessionInfo validatedSession = validateSessionExists(session.getId());
@@ -2148,6 +2191,15 @@ public class ChatView implements ViewPane {
                     "Session has been deleted (sessionId={0}), creating new session",
                     session.getId());
             currentSession = chatService.newSession(currentAgent.getId());
+            currentSession.setKind(this.sessionKind);
+            if (currentProject != null) {
+                currentSession.setProjectId(currentProject.getId());
+            }
+            currentSession.setName(
+                    ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
+                            ? "New Task"
+                            : "New Chat");
+            chatService.updateSession(currentSession);
         } else {
             // Use the session object queried from the database to ensure data is up-to-date
             currentSession = validatedSession;
@@ -2166,7 +2218,11 @@ public class ChatView implements ViewPane {
             return null;
         }
         List<ChatSessionInfo> sessions = chatService.sessions(currentAgent.getId());
-        return sessions.stream().filter(s -> s.getId().equals(sessionId)).findFirst().orElse(null);
+        return sessions.stream()
+                .filter(s -> s.getId().equals(sessionId))
+                .filter(s -> sessionMatchesProject(s, currentProject))
+                .findFirst()
+                .orElse(null);
     }
 
     private void showChatHistoryDialog() {
@@ -2187,6 +2243,16 @@ public class ChatView implements ViewPane {
                     @Override
                     public ChatSessionInfo createNewSession() {
                         ChatSessionInfo newSession = chatService.newSession(currentAgent.getId());
+                        newSession.setKind(sessionKind);
+                        if (currentProject != null) {
+                            newSession.setProjectId(currentProject.getId());
+                        }
+                        newSession.setName(
+                                ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(
+                                                sessionKind)
+                                        ? "New Task"
+                                        : "New Chat");
+                        chatService.updateSession(newSession);
                         currentSession = newSession;
                         title.setText(currentSession.getName());
                         messages.clear();

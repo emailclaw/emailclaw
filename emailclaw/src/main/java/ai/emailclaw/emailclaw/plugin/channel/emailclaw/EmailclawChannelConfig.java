@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.channel.ChannelPluginConfigAccess;
+import ai.emailclaw.emailclaw.model.AgentIds;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.util.CommonUtils;
@@ -337,8 +338,10 @@ public final class EmailclawChannelConfig {
             map.put("smtpStartTls", config.smtpStartTls());
         }
 
-        if (config.targetAgentId() != null && !config.targetAgentId().isBlank()) {
-            map.put("targetAgentId", config.targetAgentId());
+        if (config.targetAgentId() != null
+                && !config.targetAgentId().isBlank()
+                && !AgentIds.DEFAULT.equalsIgnoreCase(config.targetAgentId().trim())) {
+            map.put("targetAgentId", config.targetAgentId().trim());
         }
         if (config.allowlistSenders() != null && !config.allowlistSenders().isEmpty()) {
             map.put("allowlistSenders", config.allowlistSenders());
@@ -367,7 +370,10 @@ public final class EmailclawChannelConfig {
         int smtpPort = toInt(map.get("smtpPort"), 465);
         boolean smtpSsl = toBool(map.get("smtpSsl"), true);
         boolean smtpStartTls = toBool(map.get("smtpStartTls"), false);
-        String targetAgentId = (String) map.getOrDefault("targetAgentId", "");
+        String targetAgentId = (String) map.getOrDefault("targetAgentId", AgentIds.DEFAULT);
+        if (targetAgentId == null || targetAgentId.isBlank()) {
+            targetAgentId = AgentIds.DEFAULT;
+        }
         List<String> allowlistSenders = new ArrayList<>();
         Object allowlistObj = map.get("allowlistSenders");
         if (allowlistObj instanceof List<?> list) {

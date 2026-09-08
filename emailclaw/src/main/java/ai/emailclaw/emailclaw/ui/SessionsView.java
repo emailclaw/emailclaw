@@ -13,6 +13,7 @@ package ai.emailclaw.emailclaw.ui;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
 import java.time.LocalDateTime;
@@ -97,6 +98,8 @@ public class SessionsView implements ViewPane {
     private final Map<String, BooleanProperty> selectionById = new HashMap<>();
 
     private final String kind;
+
+    private ProjectInfo currentProject;
 
     public SessionsView(
             ChatService chatService,
@@ -302,6 +305,21 @@ public class SessionsView implements ViewPane {
     /**
      * Refresh channel dropdown options: all Channel configurations within the project.
      */
+    private static boolean sessionMatchesProject(ChatSessionInfo session, ProjectInfo project) {
+        if (session == null) {
+            return false;
+        }
+        String sProj =
+                session.getProjectId() == null || session.getProjectId().isBlank()
+                        ? "default"
+                        : session.getProjectId();
+        String currentProj =
+                project == null || project.getId() == null || project.getId().isBlank()
+                        ? "default"
+                        : project.getId();
+        return currentProj.equals(sProj);
+    }
+
     private void refreshChannelOptions() {
         Set<String> channels = new LinkedHashSet<>();
         for (ChannelInfo channel : channelService.list()) {
@@ -312,7 +330,9 @@ public class SessionsView implements ViewPane {
         // Supplement values that have appeared in sessions but are not in the channel configuration
         // to avoid historical data not being filterable.
         for (ChatSessionInfo session : chatService.sessions(agent.getId())) {
-            if (session.getChannel() != null && !session.getChannel().isBlank()) {
+            if (sessionMatchesProject(session, currentProject)
+                    && session.getChannel() != null
+                    && !session.getChannel().isBlank()) {
                 channels.add(session.getChannel());
             }
         }
@@ -335,6 +355,7 @@ public class SessionsView implements ViewPane {
         items.setAll(
                 chatService.sessions(agent.getId()).stream()
                         .filter(s -> kind == null || kind.equals(s.getKind()))
+                        .filter(s -> sessionMatchesProject(s, currentProject))
                         .filter(
                                 s ->
                                         title.isBlank()
@@ -524,6 +545,14 @@ public class SessionsView implements ViewPane {
     public void onAgentChanged(AgentInfo agent) {
         this.agent = agent;
         refresh();
+    }
+
+    @Override
+    public void onProjectChanged(ProjectInfo project) {
+        this.currentProject = project;
+        if (root.getScene() != null) {
+            refresh();
+        }
     }
 
     @Override

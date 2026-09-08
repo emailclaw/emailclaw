@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw.ui;
 
+import ai.emailclaw.emailclaw.model.AgentIds;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailMailPreset;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailPresetRegistry;
@@ -412,13 +413,17 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             // Populate agents
             targetAgentIdComboBox.getItems().clear();
-            targetAgentIdComboBox.getItems().add(new AgentOption("", "Default Agent"));
+            targetAgentIdComboBox
+                    .getItems()
+                    .add(new AgentOption(AgentIds.DEFAULT, "Default Agent"));
             var agentService = ai.emailclaw.emailclaw.ui.plugin.PluginUIFactory.getAgentService();
             if (agentService != null) {
                 for (var agent : agentService.list()) {
-                    targetAgentIdComboBox
-                            .getItems()
-                            .add(new AgentOption(agent.getId(), agent.getName()));
+                    if (!AgentIds.DEFAULT.equalsIgnoreCase(agent.getId())) {
+                        targetAgentIdComboBox
+                                .getItems()
+                                .add(new AgentOption(agent.getId(), agent.getName()));
+                    }
                 }
             }
             targetAgentIdComboBox.getSelectionModel().selectFirst();
@@ -631,8 +636,12 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             mailboxNameField.setText(nvl(config.name()));
 
             String targetId = nvl(config.targetAgentId());
+            if (targetId.isBlank()) {
+                targetId = AgentIds.DEFAULT;
+            }
+            final String matchId = targetId;
             targetAgentIdComboBox.getItems().stream()
-                    .filter(opt -> opt.id().equals(targetId))
+                    .filter(opt -> opt.id().equalsIgnoreCase(matchId))
                     .findFirst()
                     .ifPresent(opt -> targetAgentIdComboBox.getSelectionModel().select(opt));
 
@@ -797,8 +806,9 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
         private String getSelectedTargetAgentId() {
             return targetAgentIdComboBox.getValue() != null
+                            && !targetAgentIdComboBox.getValue().id().isBlank()
                     ? targetAgentIdComboBox.getValue().id()
-                    : "";
+                    : AgentIds.DEFAULT;
         }
 
         private DeliveryMode getSelectedDeliveryMode() {

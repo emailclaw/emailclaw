@@ -118,19 +118,38 @@ class ChatHistoryDialog {
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
         Runnable refreshList =
                 () -> {
-                    sessionList.getChildren().clear();
+                    String curProjId =
+                            (currentSession != null
+                                            && currentSession.getProjectId() != null
+                                            && !currentSession.getProjectId().isBlank())
+                                    ? currentSession.getProjectId()
+                                    : "default";
                     List<ChatSessionInfo> sessions =
                             chatService.sessions(agentId).stream()
                                     .filter(
-                                            s ->
-                                                    (currentSession.getKind() != null
-                                                                    ? currentSession.getKind()
-                                                                    : ChatSessionInfo.KIND_CHAT)
-                                                            .equals(
-                                                                    s.getKind() != null
-                                                                            ? s.getKind()
-                                                                            : ChatSessionInfo
-                                                                                    .KIND_CHAT))
+                                            s -> {
+                                                String expectedKind =
+                                                        (currentSession != null
+                                                                        && currentSession.getKind()
+                                                                                != null)
+                                                                ? currentSession.getKind()
+                                                                : ChatSessionInfo.KIND_CHAT;
+                                                String actualKind =
+                                                        s.getKind() != null
+                                                                ? s.getKind()
+                                                                : ChatSessionInfo.KIND_CHAT;
+                                                return expectedKind.equals(actualKind);
+                                            })
+                                    .filter(
+                                            s -> {
+                                                String sProjId =
+                                                        (s.getProjectId() == null
+                                                                        || s.getProjectId()
+                                                                                .isBlank())
+                                                                ? "default"
+                                                                : s.getProjectId();
+                                                return curProjId.equals(sProjId);
+                                            })
                                     .toList();
                     for (ChatSessionInfo s : sessions) {
                         VBox row = new VBox(4);

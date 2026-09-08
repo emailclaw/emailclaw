@@ -438,6 +438,20 @@ public class EmailclawChannelRunner {
                             + " contents.";
         }
 
+        // Persist inbound user email message to session history immediately to ensure it is never
+        // lost
+        try {
+            String now = LocalDateTime.now().toString();
+            chatService.appendHistory(
+                    sessionAgent.getId(),
+                    session.getId(),
+                    new ChatMessageRecord(
+                            ChatMessageRoles.USER, List.of(ChatMessagePart.text(prompt)), now));
+            chatService.touchSession(session);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to persist inbound user email message to history", e);
+        }
+
         final AgentInfo effectiveAgent = sessionAgent;
         final ChatSessionInfo effectiveSession = session;
         final MailboxAccountConfig outboundMailbox = mailbox;
@@ -508,8 +522,14 @@ public class EmailclawChannelRunner {
                                     guardService.markDelivered(approval.getId());
                                 }
                             } else {
-                                String replyText =
-                                        ChatMessageRecord.textOfParts(chatService.partsOf(message));
+                                String replyText;
+                                if (deliveryMode == DeliveryMode.FINAL) {
+                                    replyText = extractFinalText(chatService.partsOf(message));
+                                } else {
+                                    replyText =
+                                            ChatMessageRecord.textOfParts(
+                                                    chatService.partsOf(message));
+                                }
                                 if (deliveryMode == DeliveryMode.STREAM) {
                                     LOGGER.log(
                                             Level.INFO,
@@ -1113,6 +1133,37 @@ public class EmailclawChannelRunner {
         } catch (Exception e) {
             throw new IOException("Failed to send reply email", e);
         }
+    }
+
+    /**
+     * Extracts strictly the user-facing final text response from message parts,
+     * stripping all intermediate execution telemetry (thinking, tool calls, tool results).
+     *
+     * @param parts List of ChatMessagePart
+     * @return Consolidated final reply text
+     */
+    private String extractFinalText(List<ChatMessagePart> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ChatMessagePart part : parts) {
+            if (part == null || part.getText() == null || part.getText().isBlank()) {
+                continue;
+            }
+            String type = ChatMessagePart.normalizeType(part.getType());
+            if (ChatMessagePart.TEXT.equals(type)) {
+                if (sb.length() > 0) {
+                    sb.append("\n\n");
+                }
+                sb.append(part.getText().trim());
+            }
+        }
+        if (sb.length() > 0) {
+            return sb.toString();
+        }
+        // Fallback: If no pure TEXT part was produced, safely fallback to standard textOfParts
+        return ChatMessageRecord.textOfParts(parts);
     }
 
     public void sendMail(MailboxAccountConfig mailbox, String to, String subject, String content)

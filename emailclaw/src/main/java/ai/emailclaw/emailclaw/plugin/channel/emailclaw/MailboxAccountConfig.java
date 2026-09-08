@@ -146,7 +146,7 @@ public record MailboxAccountConfig(
                     465,
                     true,
                     false,
-                    "",
+                    AgentIds.DEFAULT,
                     List.of(),
                     30,
                     DeliveryMode.FINAL);
@@ -165,7 +165,7 @@ public record MailboxAccountConfig(
                 465,
                 true,
                 false,
-                "",
+                AgentIds.DEFAULT,
                 List.of(),
                 30,
                 DeliveryMode.FINAL);

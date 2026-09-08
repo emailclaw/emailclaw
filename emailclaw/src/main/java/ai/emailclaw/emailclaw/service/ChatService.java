@@ -645,9 +645,39 @@ public class ChatService {
                 .resolve(WorkspacePaths.SESSIONS_DIR);
     }
 
+    /**
+     * Check if an AgentScope message is an internal conversation compaction summary.
+     *
+     * <p>AgentScope's ConversationCompactor sets the role to MsgRole.USER (to conform to LLM APIs
+     * that disallow middle system messages), but internally names it {@code __compaction_summary__}.
+     *
+     * @param msg AgentScope message
+     * @return true if this message is an internal compaction summary
+     */
+    public static boolean isCompactionSummary(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+        if ("__compaction_summary__".equals(msg.getName())) {
+            return true;
+        }
+        if (msg.getId() != null && msg.getId().startsWith("__compaction_summary__")) {
+            return true;
+        }
+        String text = msg.getTextContent();
+        return text != null
+                && (text.startsWith(
+                                "You are in the middle of a conversation that has been"
+                                        + " summarized.")
+                        || text.startsWith("Here is a summary of the conversation to date:"));
+    }
+
     public String roleOf(Msg msg) {
         if (msg == null || msg.getRole() == null) {
             return ChatMessageRoles.ASSISTANT;
+        }
+        if (isCompactionSummary(msg)) {
+            return ChatMessageRoles.SYSTEM;
         }
         if (msg.getRole() == MsgRole.USER) {
             return ChatMessageRoles.USER;
@@ -675,6 +705,13 @@ public class ChatService {
     static List<ChatMessagePart> partsOfStatic(Msg msg) {
         List<ChatMessagePart> parts = new ArrayList<>();
         if (msg == null || msg.getContent() == null) {
+            return parts;
+        }
+        if (isCompactionSummary(msg)) {
+            parts.add(
+                    ChatMessagePart.text(
+                            "ℹ️ Conversation history prior to this point was automatically"
+                                    + " summarized to optimize context memory."));
             return parts;
         }
         for (ContentBlock block : msg.getContent()) {
