@@ -40,7 +40,9 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -56,11 +58,16 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.Popup;
+import javafx.stage.Window;
+import javafx.util.Duration;
 
 /**
  * Main window container, responsible for side navigation, Project switching, Agent switching, and lifecycle management of various functional views.
@@ -102,6 +109,12 @@ public class MainWindow extends BorderPane {
     private final ScrollPane projectsScrollPane = new ScrollPane(projectsBox);
 
     private final Button codeModeButton = new Button("Code");
+
+    private static final String SUPPORT_MAILBOX = "MARK.YU.CLAW@GMAIL.COM";
+
+    private Popup supportPopup;
+
+    private long lastSupportPopupHideTime = 0L;
 
     private final Map<String, Button> menuButtons = new LinkedHashMap<>();
 
@@ -316,8 +329,19 @@ public class MainWindow extends BorderPane {
         top.setSpacing(18);
         Label brand = new Label("Emailclaw");
         brand.getStyleClass().add("brand");
-        Label version = new Label("v26.9.8");
+        Label version = new Label("v26.9.10");
         version.getStyleClass().add("muted");
+        Label betaBadge = new Label("BETA");
+        betaBadge.getStyleClass().add("beta-badge");
+        betaBadge.setStyle(
+                "-fx-background-color: #ff7a00; -fx-text-fill: #ffffff; -fx-font-size: 9px;"
+                        + " -fx-font-weight: bold; -fx-padding: 1 5 1 5; -fx-background-radius: 8;"
+                        + " -fx-cursor: hand;");
+        betaBadge.setTooltip(
+                new Tooltip("The Service is currently in an experimental testing (Beta) phase"));
+        betaBadge.setTranslateY(-6);
+        HBox versionBox = new HBox(4, version, betaBadge);
+        versionBox.setAlignment(Pos.CENTER_LEFT);
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         MenuItem tutorialItem = new MenuItem("Tutorial");
@@ -332,17 +356,20 @@ public class MainWindow extends BorderPane {
                 new MenuButton(
                         "Documentation", null, tutorialItem, demosItem, changelogItem, faqItem);
         documentation.getStyleClass().add("link-btn");
-        top.getChildren().addAll(brand, version, spacer, documentation);
+        top.getChildren().addAll(brand, versionBox, spacer, documentation);
         top.getChildren().add(navLink("GitHub", "https://github.com/emailclaw/emailclaw"));
         codeModeButton.getStyleClass().add("link-btn");
         codeModeButton.setOnAction(e -> toggleCodingMode(codeModeButton));
         top.getChildren().add(codeModeButton);
 
-        Label supportLabel = new Label("\u2709"); // Envelope icon
-        supportLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #6b7280; -fx-padding: 0 5 0 5;");
-        supportLabel.setTooltip(
-                new javafx.scene.control.Tooltip("Support Mailbox: MARK.YU.CLAW@GMAIL.COM"));
-        top.getChildren().add(supportLabel);
+        Button supportButton = new Button("\u2709"); // Envelope icon button
+        supportButton.getStyleClass().add("support-btn");
+        supportButton.setStyle(
+                "-fx-background-color: transparent; -fx-text-fill: #6b7280; -fx-font-size: 16px;"
+                        + " -fx-padding: 4 8; -fx-cursor: hand; -fx-background-radius: 6;");
+        supportButton.setTooltip(new Tooltip("Support Mailbox: " + SUPPORT_MAILBOX));
+        supportButton.setOnAction(e -> showSupportMailboxPopup(supportButton));
+        top.getChildren().add(supportButton);
         //        top.getChildren().add(navLink("En", null));
         return top;
     }
@@ -375,6 +402,123 @@ public class MainWindow extends BorderPane {
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to open URL: " + url, ex);
         }
+    }
+
+    /**
+     * Displays a lightweight support mailbox popup anchored below the support button.
+     * The popup automatically closes without confirmation whenever the user clicks anywhere outside of it.
+     *
+     * @param anchor The support button triggering this popup
+     */
+    private void showSupportMailboxPopup(Button anchor) {
+        if (supportPopup != null && supportPopup.isShowing()) {
+            supportPopup.hide();
+            return;
+        }
+        // Avoid reopening when clicking the anchor button while the popup is already showing
+        if (System.currentTimeMillis() - lastSupportPopupHideTime < 250L) {
+            return;
+        }
+        if (anchor.getScene() == null || anchor.getScene().getWindow() == null) {
+            return;
+        }
+
+        LOGGER.log(Level.INFO, "Displaying support mailbox popup");
+
+        if (supportPopup == null) {
+            supportPopup = createSupportPopup(anchor);
+        }
+
+        Window window = anchor.getScene().getWindow();
+        Bounds bounds = anchor.localToScreen(anchor.getBoundsInLocal());
+        if (bounds == null) {
+            return;
+        }
+
+        Node popupContent = supportPopup.getContent().get(0);
+        popupContent.applyCss();
+        double prefWidth = popupContent.prefWidth(-1);
+        if (prefWidth <= 0) {
+            prefWidth = 320;
+        }
+
+        double x = bounds.getMaxX() - prefWidth;
+        double y = bounds.getMaxY() + 6;
+
+        // Ensure popup stays within the main window boundary horizontally
+        if (x + prefWidth > window.getX() + window.getWidth() - 10) {
+            x = window.getX() + window.getWidth() - prefWidth - 10;
+        }
+        if (x < window.getX() + 10) {
+            x = window.getX() + 10;
+        }
+
+        supportPopup.show(window, x, y);
+    }
+
+    /**
+     * Creates an auto-hiding popup displaying support mailbox details with a convenient copy button.
+     *
+     * @param anchor The parent anchor button used for theme stylesheet inheritance
+     * @return Fully configured Popup instance
+     */
+    private Popup createSupportPopup(Button anchor) {
+        Popup popup = new Popup();
+        popup.setAutoHide(true);
+        popup.setHideOnEscape(true);
+        popup.setOnHidden(
+                e -> {
+                    lastSupportPopupHideTime = System.currentTimeMillis();
+                    LOGGER.log(Level.FINE, "Support mailbox popup dismissed");
+                });
+
+        HBox card = new HBox(10);
+        card.setAlignment(Pos.CENTER_LEFT);
+        card.getStyleClass().add("support-popup-card");
+        card.setStyle(
+                "-fx-background-color: #ffffff; -fx-background-radius: 8; -fx-border-color:"
+                        + " #d1d5db; -fx-border-radius: 8; -fx-border-width: 1; -fx-padding: 10 14;"
+                        + " -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 3);");
+
+        if (anchor.getScene() != null) {
+            card.getStylesheets().addAll(anchor.getScene().getStylesheets());
+        }
+
+        Label iconLabel = new Label("\u2709");
+        iconLabel.setStyle("-fx-font-size: 15px; -fx-text-fill: #ff7a00;");
+
+        Label textLabel = new Label("Support Mailbox: " + SUPPORT_MAILBOX);
+        textLabel.getStyleClass().add("support-popup-text");
+        textLabel.setStyle("-fx-font-size: 13px; -fx-text-fill: #1f2937; -fx-font-weight: 500;");
+
+        Button copyButton = new Button("Copy");
+        copyButton.getStyleClass().add("chip-btn");
+        copyButton.setStyle("-fx-font-size: 12px; -fx-padding: 3 8; -fx-cursor: hand;");
+        copyButton.setOnAction(
+                e -> {
+                    try {
+                        ClipboardContent content = new ClipboardContent();
+                        content.putString(SUPPORT_MAILBOX);
+                        Clipboard.getSystemClipboard().setContent(content);
+                        copyButton.setText("Copied!");
+                        LOGGER.log(
+                                Level.INFO,
+                                "Support mailbox address copied to clipboard: {0}",
+                                SUPPORT_MAILBOX);
+                        PauseTransition pause = new PauseTransition(Duration.seconds(1.5));
+                        pause.setOnFinished(ev -> copyButton.setText("Copy"));
+                        pause.play();
+                    } catch (Exception ex) {
+                        LOGGER.log(
+                                Level.WARNING,
+                                "Failed to copy support mailbox address to clipboard",
+                                ex);
+                    }
+                });
+
+        card.getChildren().addAll(iconLabel, textLabel, copyButton);
+        popup.getContent().add(card);
+        return popup;
     }
 
     private Node buildSidebar() {

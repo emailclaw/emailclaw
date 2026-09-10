@@ -696,3 +696,49 @@
 .empty-label {
   -fx-text-fill: #9ca3af; -fx-padding: 24;
 }
+
+/* Beta Badge */
+.beta-badge {
+  -fx-background-color: #ff7a00;
+  -fx-text-fill: #ffffff;
+  -fx-font-size: 9px;
+  -fx-font-weight: bold;
+  -fx-padding: 1 5 1 5;
+  -fx-background-radius: 8;
+  -fx-cursor: hand;
+}
+
+.beta-badge:hover {
+  -fx-background-color: #ea6c00;
+}
+
+/* Support Button & Popup */
+.support-btn {
+  -fx-background-color: transparent;
+  -fx-text-fill: #6b7280;
+  -fx-font-size: 16px;
+  -fx-padding: 4 8;
+  -fx-cursor: hand;
+  -fx-background-radius: 6;
+}
+
+.support-btn:hover {
+  -fx-text-fill: #1d1d1f;
+  -fx-background-color: #e5e5e5;
+}
+
+.support-popup-card {
+  -fx-background-color: #ffffff;
+  -fx-background-radius: 8;
+  -fx-border-color: #d1d5db;
+  -fx-border-radius: 8;
+  -fx-border-width: 1;
+  -fx-padding: 10 14;
+  -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 10, 0, 0, 3);
+}
+
+.support-popup-text {
+  -fx-font-size: 13px;
+  -fx-text-fill: #1f2937;
+  -fx-font-weight: 500;
+}
