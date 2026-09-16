@@ -203,7 +203,8 @@ public class ChatMessagePart {
         }
         return normalizeType(type).equals(normalizeType(other.type))
                 && safe(id).equals(safe(other.id))
-                && safe(toolName).equals(safe(other.toolName));
+                && safe(toolName).equals(safe(other.toolName))
+                && safe(title).equals(safe(other.title));
     }
 
     public static String normalizeType(String type) {

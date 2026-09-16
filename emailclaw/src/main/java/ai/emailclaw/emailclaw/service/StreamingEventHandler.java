@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.HintBlockEvent;
@@ -60,9 +61,6 @@ final class StreamingEventHandler {
     /** Logger. */
     private static final Logger LOGGER = Logger.getLogger(StreamingEventHandler.class.getName());
 
-    /** File diff tracker. */
-    private final FileDiffTracker diffTracker;
-
     /** HITL approval tracker. */
     private final PendingApprovalTracker approvalTracker;
 
@@ -93,7 +91,6 @@ final class StreamingEventHandler {
     /**
      * Constructs streaming event handler.
      *
-     * @param diffTracker      File diff tracker
      * @param approvalTracker  HITL approval tracker
      * @param callback         UI callback interface
      * @param agentId          Agent ID
@@ -102,14 +99,12 @@ final class StreamingEventHandler {
      * @param modelId          Model ID
      */
     StreamingEventHandler(
-            FileDiffTracker diffTracker,
             PendingApprovalTracker approvalTracker,
             ai.emailclaw.emailclaw.service.StreamCallback callback,
             String agentId,
             String sessionId,
             String providerId,
             String modelId) {
-        this.diffTracker = diffTracker;
         this.approvalTracker = approvalTracker;
         this.callback = callback;
         this.agentId = agentId;
@@ -135,8 +130,8 @@ final class StreamingEventHandler {
     void handleEvent(Object event) {
         if (event instanceof TextBlockDeltaEvent tb) {
             handleTextBlockDelta(tb);
-        } else if (event instanceof ThinkingBlockStartEvent) {
-            handleThinkingBlockStart();
+        } else if (event instanceof ThinkingBlockStartEvent tbs) {
+            handleThinkingBlockStart(tbs);
         } else if (event instanceof ThinkingBlockDeltaEvent tbd) {
             handleThinkingBlockDelta(tbd);
         } else if (event instanceof ThinkingBlockEndEvent) {
@@ -186,32 +181,59 @@ final class StreamingEventHandler {
      * Handles text delta events.
      */
     private void handleTextBlockDelta(TextBlockDeltaEvent tb) {
-        emitPart(ChatMessagePart.TEXT, "", "", "", tb.getDelta(), false);
+        String subagentName = extractSubagentName(tb);
+        emitPart(
+                ChatMessagePart.TEXT,
+                textBlockTitle(subagentName),
+                textBlockId(subagentName),
+                "",
+                tb.getDelta(),
+                false);
     }
 
     /**
      * Handles thinking block start events.
      */
-    private void handleThinkingBlockStart() {
-        emitPart(ChatMessagePart.THINKING, "THINKING", "", "", "", true);
+    private void handleThinkingBlockStart(ThinkingBlockStartEvent tbs) {
+        String subagentName = extractSubagentName(tbs);
+        emitPart(
+                ChatMessagePart.THINKING,
+                thinkingBlockTitle(subagentName),
+                subagentName == null ? "" : subagentName,
+                "",
+                "",
+                true);
     }
 
     /**
      * Handles thinking block delta events.
      */
     private void handleThinkingBlockDelta(ThinkingBlockDeltaEvent tbd) {
-        emitPart(ChatMessagePart.THINKING, "THINKING", "", "", tbd.getDelta(), false);
+        String subagentName = extractSubagentName(tbd);
+        emitPart(
+                ChatMessagePart.THINKING,
+                thinkingBlockTitle(subagentName),
+                subagentName == null ? "" : subagentName,
+                "",
+                tbd.getDelta(),
+                false);
     }
 
     /**
      * Handles tool call start events.
      */
     private void handleToolCallStart(ToolCallStartEvent tc) {
+        String subagentName = extractSubagentName(tc);
         String tcName = tc.getToolCallName();
         LOGGER.log(
                 Level.INFO,
-                "Tool call started: agent={0}, session={1}, tool={2}",
-                new Object[] {agentId, sessionId, tcName == null ? "unknown" : tcName});
+                "Tool call started: agent={0}, subagent={1}, session={2}, tool={3}",
+                new Object[] {
+                    agentId,
+                    subagentName == null ? "main" : subagentName,
+                    sessionId,
+                    tcName == null ? "unknown" : tcName
+                });
 
         // Cache the actual tool name (not __fragment__ placeholder), for later
         // parsing by ToolCallDeltaEvent
@@ -220,7 +242,7 @@ final class StreamingEventHandler {
         }
         emitPart(
                 ChatMessagePart.TOOL_CALL,
-                toolBlockTitle("TOOL CALL", tcName),
+                toolBlockTitle("TOOL CALL", tcName, subagentName),
                 tc.getToolCallId(),
                 tcName,
                 "",
@@ -231,6 +253,7 @@ final class StreamingEventHandler {
      * Handles tool call delta events.
      */
     private void handleToolCallDelta(ToolCallDeltaEvent tcd) {
+        String subagentName = extractSubagentName(tcd);
         // Parse tool name: AgentScope's stream parser sets the tool name to
         // __fragment__ placeholder in subsequent delta blocks. Look up actual name from cache here.
         String rawTcdName = tcd.getToolCallName();
@@ -243,41 +266,35 @@ final class StreamingEventHandler {
         }
         emitPart(
                 ChatMessagePart.TOOL_CALL,
-                toolBlockTitle("TOOL CALL", tcdName),
+                toolBlockTitle("TOOL CALL", tcdName, subagentName),
                 tcd.getToolCallId(),
                 tcdName,
                 tcd.getDelta(),
                 false);
-
-        // Diff: Accumulate JSON inputs for edit_file/write_file tools
-        if (diffTracker.isDiffTrackedTool(tcdName)) {
-            diffTracker.accumulateInput(tcd.getToolCallId(), tcd.getDelta());
-        }
     }
 
     /**
      * Handles tool result start events.
      */
     private void handleToolResultStart(ToolResultStartEvent tr) {
+        String subagentName = extractSubagentName(tr);
         emitPart(
                 ChatMessagePart.TOOL_RESULT,
-                toolBlockTitle("TOOL RESULT", tr.getToolCallName()),
+                toolBlockTitle("TOOL RESULT", tr.getToolCallName(), subagentName),
                 tr.getToolCallId(),
                 tr.getToolCallName(),
                 "",
                 true);
-
-        // Diff: Capture old file content before tool execution
-        diffTracker.snapshotOldContent(tr.getToolCallId(), tr.getToolCallName());
     }
 
     /**
      * Handles tool result text delta events.
      */
     private void handleToolResultTextDelta(ToolResultTextDeltaEvent trd) {
+        String subagentName = extractSubagentName(trd);
         emitPart(
                 ChatMessagePart.TOOL_RESULT,
-                toolBlockTitle("TOOL RESULT", trd.getToolCallName()),
+                toolBlockTitle("TOOL RESULT", trd.getToolCallName(), subagentName),
                 trd.getToolCallId(),
                 trd.getToolCallName(),
                 trd.getDelta(),
@@ -286,19 +303,26 @@ final class StreamingEventHandler {
 
     /**
      * Handles tool result end events.
+     *
+     * <p>Extracts file diff markup directly from AgentScope 2.0.3 tool result event metadata,
+     * achieving complete protocol decoupling from sidecar trackers.
      */
     private void handleToolResultEnd(ToolResultEndEvent tre) {
-        // Diff: Compute and send file differences after tool execution completes
-        String diffMarkup =
-                diffTracker.computeAndCleanup(tre.getToolCallId(), tre.getToolCallName());
-        if (diffMarkup != null) {
-            emitPart(
-                    ChatMessagePart.TOOL_RESULT,
-                    toolBlockTitle("TOOL RESULT", tre.getToolCallName()),
-                    tre.getToolCallId(),
-                    tre.getToolCallName(),
-                    diffMarkup,
-                    false);
+        String subagentName = extractSubagentName(tre);
+        Map<String, Object> metadata = tre.getMetadata();
+        if (metadata != null
+                && metadata.containsKey(ToolResultDiffMiddleware.METADATA_KEY_FILE_DIFF)) {
+            String diffMarkup =
+                    (String) metadata.get(ToolResultDiffMiddleware.METADATA_KEY_FILE_DIFF);
+            if (diffMarkup != null && !diffMarkup.isBlank()) {
+                emitPart(
+                        ChatMessagePart.TOOL_RESULT,
+                        toolBlockTitle("TOOL RESULT", tre.getToolCallName(), subagentName),
+                        tre.getToolCallId(),
+                        tre.getToolCallName(),
+                        "\n" + diffMarkup,
+                        false);
+            }
         }
     }
 
@@ -322,6 +346,14 @@ final class StreamingEventHandler {
      * the actual user-facing Final Answer here, so it must be merged into ChatView as structured parts.
      */
     private void handleAgentResult(AgentResultEvent ar) {
+        String subagentName = extractSubagentName(ar);
+        if (subagentName != null) {
+            LOGGER.log(
+                    Level.INFO,
+                    "Subagent result event ignored for parent session: subagent={0}, session={1}",
+                    new Object[] {subagentName, sessionId});
+            return;
+        }
         List<ChatMessagePart> resultParts = ChatService.partsOfStatic(ar.getResult());
         ChatService.mergeFinalResultPartsStatic(finalParts, resultParts, callback);
     }
@@ -401,6 +433,48 @@ final class StreamingEventHandler {
     }
 
     /**
+     * Extracts subagent name/identifier from the event source or metadata.
+     *
+     * <p>In AgentScope 2.0.3, child agent events are tagged with {@code event.getSource()},
+     * which contains a slash-separated path such as {@code parentSession/childAgentId} or
+     * {@code main/subagentName}. Top-level parent events return {@code null}.
+     *
+     * @param event Stream event object
+     * @return Subagent name if event originates from a subagent, or {@code null} for top-level agent
+     */
+    private String extractSubagentName(Object event) {
+        if (!(event instanceof AgentEvent ae)) {
+            return null;
+        }
+        String source = ae.getSource();
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        int lastSlash = source.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < source.length() - 1) {
+            return source.substring(lastSlash + 1).trim();
+        }
+        return source.trim();
+    }
+
+    /**
+     * Generates tool block title with optional subagent prefix.
+     *
+     * @param prefix       Title prefix (e.g., "TOOL CALL")
+     * @param toolName     Tool name
+     * @param subagentName Subagent name, if originating from a subagent
+     * @return Formatted title
+     */
+    private String toolBlockTitle(String prefix, String toolName, String subagentName) {
+        String safeName = toolName == null || toolName.isBlank() ? "unknown" : toolName;
+        String base = prefix + ": " + safeName;
+        if (subagentName != null && !subagentName.isBlank()) {
+            return "[Subagent: " + subagentName + "] " + base;
+        }
+        return base;
+    }
+
+    /**
      * Generates tool block title.
      *
      * @param prefix   Title prefix (e.g., "TOOL CALL")
@@ -408,8 +482,46 @@ final class StreamingEventHandler {
      * @return Formatted title
      */
     private String toolBlockTitle(String prefix, String toolName) {
-        String safeName = toolName == null || toolName.isBlank() ? "unknown" : toolName;
-        return prefix + ": " + safeName;
+        return toolBlockTitle(prefix, toolName, null);
+    }
+
+    /**
+     * Generates thinking block title with optional subagent prefix.
+     *
+     * @param subagentName Subagent name, if originating from a subagent
+     * @return Formatted title
+     */
+    private String thinkingBlockTitle(String subagentName) {
+        if (subagentName != null && !subagentName.isBlank()) {
+            return "[Subagent: " + subagentName + "] THINKING";
+        }
+        return "THINKING";
+    }
+
+    /**
+     * Generates text block title with optional subagent prefix.
+     *
+     * @param subagentName Subagent name, if originating from a subagent
+     * @return Formatted title
+     */
+    private String textBlockTitle(String subagentName) {
+        if (subagentName != null && !subagentName.isBlank()) {
+            return "[Subagent: " + subagentName + "]";
+        }
+        return "";
+    }
+
+    /**
+     * Generates text block stream target identifier with optional subagent identifier.
+     *
+     * @param subagentName Subagent name, if originating from a subagent
+     * @return Stream target ID
+     */
+    private String textBlockId(String subagentName) {
+        if (subagentName != null && !subagentName.isBlank()) {
+            return subagentName;
+        }
+        return "";
     }
 
     /**

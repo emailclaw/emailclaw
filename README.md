@@ -5,7 +5,7 @@
 <h1 align="center">Emailclaw</h1>
 
 <p align="center">
-  <strong>Email in. Work out. The Ultimate AI Agent for Email Lovers!</strong><br />
+  <strong>Email in. Work out. The Ultimate Java-Powered AI Agent for Email Lovers!</strong><br />
   A local-first AI Agent that uses email as its default interactive entry point and subjects as project boundaries.
 </p>
 

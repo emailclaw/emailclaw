@@ -17,6 +17,7 @@ import ai.emailclaw.emailclaw.model.AgentStatRecord;
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.TokenUsageRecord;
 import ai.emailclaw.emailclaw.service.memory.MemoAutoSync;
@@ -215,14 +216,10 @@ public class MessagePipeline {
                             agentRuntimeDispatcher.selectedModelSupportsVideo(provider, modelId));
             boolean hasError = false;
             // ── Initialize tracker components ──────────────────────────────────
-            Path diffWorkspace =
-                    repository.workspaceFor(agent.getId()).toAbsolutePath().normalize();
-            FileDiffTracker diffTracker = new FileDiffTracker(diffWorkspace);
             PendingApprovalTracker approvalTracker = new PendingApprovalTracker(governanceService);
             // Declare streaming event handler
             StreamingEventHandler eventHandler =
                     new StreamingEventHandler(
-                            diffTracker,
                             approvalTracker,
                             callback,
                             agent.getId(),
@@ -245,13 +242,34 @@ public class MessagePipeline {
                                 "Large model streaming event processing started: agent={0},"
                                         + " session={1}, attempt={2}",
                                 new Object[] {agent.getId(), sessionInfo.getId(), attempts});
-                        RuntimeContext runtimeContext =
+                        DeliveryMode deliveryMode = resolveDeliveryMode(route);
+                        RuntimeContext.Builder rcBuilder =
                                 RuntimeContext.builder()
+                                        .userId(
+                                                sessionInfo != null
+                                                                && sessionInfo.getUserId() != null
+                                                        ? sessionInfo.getUserId()
+                                                        : "")
                                         .sessionId(
                                                 sessionInfo != null && sessionInfo.getId() != null
                                                         ? sessionInfo.getId()
-                                                        : "default")
-                                        .build();
+                                                        : "default");
+                        if (toolRuntimeContext != null
+                                && toolRuntimeContext.activeProject != null) {
+                            rcBuilder.put("projectId", toolRuntimeContext.activeProject.getId());
+                            rcBuilder.put(
+                                    "projectName", toolRuntimeContext.activeProject.getName());
+                            rcBuilder.put(
+                                    ai.emailclaw.emailclaw.model.ProjectInfo.class,
+                                    toolRuntimeContext.activeProject);
+                        }
+                        if (deliveryMode != null) {
+                            rcBuilder.put(DeliveryMode.class, deliveryMode);
+                            rcBuilder.put(
+                                    AdaptiveFinalAnswerFilterMiddleware.CONTEXT_KEY_DELIVERY_MODE,
+                                    deliveryMode);
+                        }
+                        RuntimeContext runtimeContext = rcBuilder.build();
                         StreamingEventHandler currentHandler = eventHandler;
                         reactAgent
                                 .streamEvents(userMsg, runtimeContext)
@@ -333,7 +351,6 @@ public class MessagePipeline {
 
                             eventHandler =
                                     new StreamingEventHandler(
-                                            diffTracker,
                                             approvalTracker,
                                             callback,
                                             agent.getId(),
@@ -815,5 +832,19 @@ public class MessagePipeline {
         }
 
         return text;
+    }
+
+    private DeliveryMode resolveDeliveryMode(Map<String, Object> route) {
+        if (route == null || route.isEmpty()) {
+            return null;
+        }
+        Object modeObj = route.get("deliveryMode");
+        if (modeObj instanceof DeliveryMode dm) {
+            return dm;
+        }
+        if (modeObj instanceof String s) {
+            return DeliveryMode.fromValue(s);
+        }
+        return null;
     }
 }

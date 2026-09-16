@@ -698,6 +698,8 @@ public class CronJobService implements AutoCloseable {
                     modelId,
                     session,
                     prompt,
+                    List.of(),
+                    Map.of("deliveryMode", mode),
                     new ai.emailclaw.emailclaw.service.StreamCallback() {
 
                         @Override
