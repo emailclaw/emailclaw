@@ -43,6 +43,12 @@ public class ToolRuntimeContext {
      */
     public volatile ProjectInfo activeProject;
 
+    /**
+     * Session-scoped active session ID resolved by {@code AgentRuntimeDispatcher} before each
+     * execution. Used for parentSessionId propagation in multi-agent collaboration.
+     */
+    public volatile String activeSessionId;
+
     /** Message bus service, providing inter-agent communication and asynchronous tool execution tracking capability. */
     private MessageBusService messageBusService;
 
@@ -89,6 +95,14 @@ public class ToolRuntimeContext {
      */
     public SpawnRegistryService getSpawnRegistryService() {
         return spawnRegistryService;
+    }
+
+    public String getActiveSessionId() {
+        return activeSessionId;
+    }
+
+    public void setActiveSessionId(String activeSessionId) {
+        this.activeSessionId = activeSessionId;
     }
 
     public ai.emailclaw.emailclaw.service.memory.MemoryService getMemoryService() {

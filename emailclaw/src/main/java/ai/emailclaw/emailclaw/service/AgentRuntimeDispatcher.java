@@ -39,6 +39,7 @@ import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
+import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -106,6 +107,10 @@ public class AgentRuntimeDispatcher {
 
     private final RateLimitMiddleware rateLimitMiddleware;
 
+    private final AdaptiveFinalAnswerFilterMiddleware adaptiveFinalAnswerFilterMiddleware;
+
+    private final ToolResultDiffMiddleware toolResultDiffMiddleware;
+
     private final PlanToHintMiddleware planToHintMiddleware;
 
     private final MemoryRecallMiddleware memoryRecallMiddleware;
@@ -121,6 +126,8 @@ public class AgentRuntimeDispatcher {
             ToolRuntimeContext toolRuntimeContext,
             GovernanceService governanceService,
             RateLimitMiddleware rateLimitMiddleware,
+            AdaptiveFinalAnswerFilterMiddleware adaptiveFinalAnswerFilterMiddleware,
+            ToolResultDiffMiddleware toolResultDiffMiddleware,
             MessageBusService messageBusService,
             PlanToHintMiddleware planToHintMiddleware,
             MemoryRecallMiddleware memoryRecallMiddleware,
@@ -131,6 +138,8 @@ public class AgentRuntimeDispatcher {
         this.toolRuntimeContext = toolRuntimeContext;
         this.governanceService = governanceService;
         this.rateLimitMiddleware = rateLimitMiddleware;
+        this.adaptiveFinalAnswerFilterMiddleware = adaptiveFinalAnswerFilterMiddleware;
+        this.toolResultDiffMiddleware = toolResultDiffMiddleware;
         this.messageBusService = messageBusService;
         this.planToHintMiddleware = planToHintMiddleware;
         this.memoryRecallMiddleware = memoryRecallMiddleware;
@@ -192,6 +201,7 @@ public class AgentRuntimeDispatcher {
         ai.emailclaw.emailclaw.model.ProjectInfo project =
                 resolveSessionProject(sessionId, toolRuntimeContext);
         toolRuntimeContext.activeProject = project;
+        toolRuntimeContext.activeSessionId = sessionId;
         Path projectRoot = agentWorkspace;
         boolean projectWritable = true;
 
@@ -407,6 +417,8 @@ public class AgentRuntimeDispatcher {
                         .maxIters(Math.max(1, config.getMaxIterations()))
                         .permissionContext(permissionContext)
                         .middleware(rateLimitMiddleware)
+                        .middleware(adaptiveFinalAnswerFilterMiddleware)
+                        .middleware(toolResultDiffMiddleware)
                         .middleware(asyncToolMiddleware)
                         .middleware(inboxMiddleware)
                         .middleware(planToHintMiddleware)
@@ -424,6 +436,9 @@ public class AgentRuntimeDispatcher {
                         SubagentDeclaration.builder()
                                 .name(a.getKey())
                                 .description(desc.trim())
+                                .workspaceMode(WorkspaceMode.SHARED)
+                                .persistSession(true)
+                                .inheritParentPermissions(true)
                                 .mode(SubagentDeclaration.Mode.SUBAGENT)
                                 .build());
             }

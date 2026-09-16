@@ -17,6 +17,7 @@ import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRecord;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
@@ -24,16 +25,19 @@ import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
+import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
+import io.agentscope.core.message.GenerateReason;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolCallState;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
@@ -65,6 +69,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -240,8 +245,8 @@ public class ChatService {
         this.agentRuntimeDispatcher = agentRuntimeDispatcher;
         LOGGER.log(
                 Level.INFO,
-                "ChatService initialization complete (file diff logic extracted to"
-                        + " FileDiffTracker)");
+                "ChatService initialization complete (file diff handled via"
+                        + " ToolResultDiffMiddleware metadata)");
     }
 
     public void setMessagePipeline(MessagePipeline messagePipeline) {
@@ -283,10 +288,16 @@ public class ChatService {
     }
 
     /**
-     * Resume session execution suspended by PermissionEngine via ConfirmResult.
+     * Resumes execution after a user approval or rejection.
      *
-     * <p>Called when email approval code reply arrives, constructing a resume message and waking up the Agent to continue execution.
-     * The Agent's ASKING state is persisted in AgentStateStore and can be recovered even if JVM restarts.
+     * <p>Modernized to use non-deprecated AgentScope 2.0.3 API:
+     * <ul>
+     *   <li>Binds explicit {@link RuntimeContext} containing session ID, user ID, routing metadata,
+     *       and delivery mode so downstream middleware and agent state slots are properly targeted.</li>
+     *   <li>Executes via {@link HarnessAgent#call(Msg, RuntimeContext)} rather than deprecated
+     *       {@code call(List<Msg>)}.</li>
+     *   <li>Maintains thread-safety and proper audit logging for HITL resumption.</li>
+     * </ul>
      *
      * @param agentId        Agent ID
      * @param sessionId      Session ID
@@ -301,43 +312,161 @@ public class ChatService {
             String channel,
             Map<String, Object> route,
             List<ConfirmResult> confirmResults) {
+        LOGGER.log(
+                Level.INFO,
+                "resumeWithConfirmResult invoked: agentId={0}, sessionId={1}, channel={2},"
+                        + " confirmResultsCount={3}",
+                new Object[] {
+                    agentId, sessionId, channel, confirmResults != null ? confirmResults.size() : 0
+                });
+
         try {
-            AgentInfo agent = agentService.currentDefault();
+            AgentInfo agent = null;
+            if (agentId != null && !agentId.isBlank()) {
+                agent =
+                        repository.configManager().getAgents().stream()
+                                .filter(a -> agentId.equals(a.getId()))
+                                .findFirst()
+                                .orElse(null);
+            }
+            if (agent == null) {
+                agent = agentService.currentDefault();
+            }
             if (agent == null) {
                 LOGGER.log(Level.WARNING, "resumeWithConfirmResult: No available Agent");
                 return null;
             }
+
             ProviderInfo provider = resolveEffectiveProvider(agent);
             if (provider == null || provider.allModels().isEmpty()) {
                 LOGGER.log(Level.WARNING, "resumeWithConfirmResult: No available Provider");
                 return null;
             }
+
             String modelId = resolveEffectiveModelId(agent, provider);
             if (modelId == null || modelId.isBlank()) {
                 LOGGER.log(Level.WARNING, "resumeWithConfirmResult: No available Model");
                 return null;
             }
+
             AgentConfiguration config = repository.loadAgentConfig(agent.getId());
+            if (config == null) {
+                config = new AgentConfiguration();
+            }
+
+            ChatSessionInfo sessionInfo = findSession(sessionId);
+            String effectiveSessionId =
+                    (sessionId != null && !sessionId.isBlank()) ? sessionId : "default";
+
+            DeliveryMode deliveryMode = resolveDeliveryMode(route);
+            RuntimeContext.Builder rcBuilder =
+                    RuntimeContext.builder().sessionId(effectiveSessionId);
+            if (sessionInfo != null && sessionInfo.getUserId() != null) {
+                rcBuilder.userId(sessionInfo.getUserId());
+            }
+            if (deliveryMode != null) {
+                rcBuilder.put(DeliveryMode.class, deliveryMode);
+                rcBuilder.put(
+                        AdaptiveFinalAnswerFilterMiddleware.CONTEXT_KEY_DELIVERY_MODE,
+                        deliveryMode);
+            }
+            if (channel != null && !channel.isBlank()) {
+                rcBuilder.put("channel", channel);
+            }
+            if (route != null && !route.isEmpty()) {
+                rcBuilder.put("route", route);
+            }
+            if (toolRuntimeContext != null && toolRuntimeContext.activeProject != null) {
+                rcBuilder.put("projectId", toolRuntimeContext.activeProject.getId());
+                rcBuilder.put("projectName", toolRuntimeContext.activeProject.getName());
+                rcBuilder.put(
+                        ai.emailclaw.emailclaw.model.ProjectInfo.class,
+                        toolRuntimeContext.activeProject);
+            }
+            RuntimeContext runtimeContext = rcBuilder.build();
+
             Msg result;
             try (HarnessAgent reactAgent =
                     agentRuntimeDispatcher.buildAgent(
-                            agent, provider, modelId, config, channel, sessionId)) {
+                            agent, provider, modelId, config, channel, effectiveSessionId)) {
+
+                String confirmDesc =
+                        confirmResults != null
+                                ? confirmResults.stream()
+                                        .map(
+                                                cr ->
+                                                        (cr.isConfirmed() ? "Approved" : "Rejected")
+                                                                + " tool: "
+                                                                + (cr.getToolCall() != null
+                                                                        ? cr.getToolCall().getName()
+                                                                        : "unknown"))
+                                        .collect(Collectors.joining(", "))
+                                : "none";
+
                 Msg resumeMsg =
                         Msg.builder()
                                 .role(MsgRole.USER)
-                                .metadata(Map.of(Msg.METADATA_CONFIRM_RESULTS, confirmResults))
+                                .textContent("[confirm: " + confirmDesc + "]")
+                                .metadata(
+                                        Map.of(
+                                                Msg.METADATA_CONFIRM_RESULTS,
+                                                confirmResults != null
+                                                        ? confirmResults
+                                                        : List.of()))
                                 .build();
+
+                LOGGER.log(
+                        Level.INFO,
+                        "Resuming agent execution: agent={0}, session={1}, model={2}, desc={3}",
+                        new Object[] {agent.getId(), effectiveSessionId, modelId, confirmDesc});
+
                 result =
                         reactAgent
-                                .call(List.of(resumeMsg))
+                                .call(resumeMsg, runtimeContext)
                                 .block(
                                         Duration.ofSeconds(
                                                 config.effectiveTaskExecutionTimeoutSeconds()));
 
+                LOGGER.log(
+                        Level.INFO,
+                        "Agent resumed execution completed: agent={0}, session={1}, hasResult={2},"
+                                + " generateReason={3}",
+                        new Object[] {
+                            agent.getId(),
+                            effectiveSessionId,
+                            result != null,
+                            result != null ? result.getGenerateReason() : "null"
+                        });
+
                 // Persist resume result to history
                 if (result != null) {
-                    appendHistoryMsg(agent.getId(), sessionId, resumeMsg);
-                    appendHistoryMsg(agent.getId(), sessionId, result);
+                    appendHistoryMsg(agent.getId(), effectiveSessionId, resumeMsg);
+                    appendHistoryMsg(agent.getId(), effectiveSessionId, result);
+
+                    // If resumed turn paused on another ASKING tool call, register new pending
+                    // approval
+                    if (result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {
+                        List<ToolUseBlock> askingBlocks =
+                                result.getContentBlocks(ToolUseBlock.class).stream()
+                                        .filter(b -> b.getState() == ToolCallState.ASKING)
+                                        .toList();
+                        if (!askingBlocks.isEmpty()) {
+                            LOGGER.log(
+                                    Level.INFO,
+                                    "Resumed execution requires subsequent user approval:"
+                                            + " pendingCount={0}, session={1}",
+                                    new Object[] {askingBlocks.size(), effectiveSessionId});
+                            PendingApprovalTracker tracker =
+                                    new PendingApprovalTracker(governanceService);
+                            tracker.onRequireUserConfirm(
+                                    askingBlocks,
+                                    agent.getId(),
+                                    effectiveSessionId,
+                                    channel,
+                                    sessionInfo != null ? sessionInfo.getUserId() : null,
+                                    route);
+                        }
+                    }
                 }
             }
             return result;
@@ -345,6 +474,20 @@ public class ChatService {
             LOGGER.log(Level.WARNING, "resumeWithConfirmResult failed", e);
             return null;
         }
+    }
+
+    private static DeliveryMode resolveDeliveryMode(Map<String, Object> route) {
+        if (route == null || route.isEmpty()) {
+            return null;
+        }
+        Object modeObj = route.get("deliveryMode");
+        if (modeObj instanceof DeliveryMode dm) {
+            return dm;
+        }
+        if (modeObj instanceof String s) {
+            return DeliveryMode.fromValue(s);
+        }
+        return null;
     }
 
     /**

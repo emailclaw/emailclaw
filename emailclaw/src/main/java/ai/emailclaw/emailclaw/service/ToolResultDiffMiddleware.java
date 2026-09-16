@@ -17,7 +17,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.MiddlewareBase;
@@ -44,11 +43,33 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
 
     private static final Logger LOGGER = Logger.getLogger(ToolResultDiffMiddleware.class.getName());
 
+    /** Event metadata key for the formatted file diff markup. */
+    public static final String METADATA_KEY_FILE_DIFF = "emailclaw.file_diff";
+
+    /** Event metadata key for the structured FileDiffRecord object. */
+    public static final String METADATA_KEY_FILE_DIFF_RECORD = "emailclaw.file_diff_record";
+
     private static final String EDIT_FILE = "edit_file";
     private static final String WRITE_FILE = "write_file";
 
     /** Filesystem instance, read file content through overlay (instead of direct disk read). */
     private AbstractFilesystem filesystem;
+
+    /**
+     * Default constructor for Pure DI wiring; dynamically resolves filesystem from HarnessAgent.
+     */
+    public ToolResultDiffMiddleware() {
+        this(null);
+    }
+
+    /**
+     * Pure DI constructor accepting an explicit {@link AbstractFilesystem} instance.
+     *
+     * @param filesystem overlay or local filesystem instance
+     */
+    public ToolResultDiffMiddleware(AbstractFilesystem filesystem) {
+        this.filesystem = filesystem;
+    }
 
     /**
      * Set the filesystem instance.
@@ -244,16 +265,17 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
                                                 "ToolResultDiffMiddleware.onActing: generated diff"
                                                         + " markup, length={0}",
                                                 markup.length());
-                                        // Send additional delta event to append diff to tool result
-                                        return Flux.just(
-                                                new ToolResultTextDeltaEvent(
-                                                        tre.getReplyId(),
-                                                        id,
-                                                        tre.getToolCallName(),
-                                                        "\n" + markup),
-                                                event);
+                                        // Inject file diff directly into ToolResultEndEvent
+                                        // metadata (AgentScope 2.0.3)
+                                        tre.withMetadataEntry(METADATA_KEY_FILE_DIFF, markup);
+                                        tre.withMetadataEntry(
+                                                METADATA_KEY_FILE_DIFF_RECORD, diffRecord);
                                     }
                                 }
+                                // Clean up tracking state for this tool call
+                                oldContents.remove(id);
+                                relativePaths.remove(id);
+                                absPaths.remove(id);
                             }
                             return Flux.just(event);
                         });
@@ -268,6 +290,15 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
             return null;
         }
         Object path = inp.get("path");
+        if (path == null) {
+            path = inp.get("TargetFile");
+        }
+        if (path == null) {
+            path = inp.get("filePath");
+        }
+        if (path == null) {
+            path = inp.get("file_path");
+        }
         return path != null ? path.toString() : null;
     }
 
@@ -321,7 +352,13 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
      * @return file content, null on failure
      */
     private String readFromFilesystem(RuntimeContext ctx, Agent agent, String relativePath) {
-        if (filesystem != null) {
+        AbstractFilesystem effectiveFs = this.filesystem;
+        if (effectiveFs == null
+                && agent instanceof HarnessAgent ha
+                && ha.getWorkspaceManager() != null) {
+            effectiveFs = ha.getWorkspaceManager().getFilesystem();
+        }
+        if (effectiveFs != null) {
             try {
                 RuntimeContext rc =
                         ctx != null
@@ -330,13 +367,13 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
                                         ? ha.getRuntimeContext()
                                         : null);
                 LOGGER.log(
-                        Level.INFO,
+                        Level.FINE,
                         "ToolResultDiffMiddleware.readFromFilesystem: rc={0}, relativePath={1}",
                         new Object[] {rc != null ? "not-null" : "null", relativePath});
                 if (rc != null) {
-                    ReadResult result = filesystem.read(rc, relativePath, 0, Integer.MAX_VALUE);
+                    ReadResult result = effectiveFs.read(rc, relativePath, 0, Integer.MAX_VALUE);
                     LOGGER.log(
-                            Level.INFO,
+                            Level.FINE,
                             "ToolResultDiffMiddleware.readFromFilesystem: overlay read={0},"
                                     + " isSuccess={1}",
                             new Object[] {relativePath, result.isSuccess()});
@@ -346,7 +383,7 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
                 }
             } catch (Exception e) {
                 LOGGER.log(
-                        Level.INFO,
+                        Level.FINE,
                         "ToolResultDiffMiddleware.readFromFilesystem: overlay read failed: "
                                 + relativePath,
                         e);

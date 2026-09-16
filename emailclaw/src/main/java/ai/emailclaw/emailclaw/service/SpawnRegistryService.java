@@ -6,9 +6,11 @@ package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -83,6 +85,27 @@ public class SpawnRegistryService {
         saveToDisk(projectId);
     }
 
+    public void updateStatus(String projectId, String key, String status) {
+        if (key == null || status == null) return;
+        ConcurrentHashMap<String, SpawnEntry> reg = getRegistry(projectId);
+        SpawnEntry existing = reg.get(key);
+        if (existing != null) {
+            reg.put(key, existing.withStatus(status));
+            saveToDisk(projectId);
+            LOGGER.log(
+                    Level.FINE,
+                    "Updated subagent entry status: key={0}, status={1}",
+                    new Object[] {key, status});
+        }
+    }
+
+    public List<SpawnEntry> findByParentSessionId(String projectId, String parentSessionId) {
+        if (parentSessionId == null) return List.of();
+        return getRegistry(projectId).values().stream()
+                .filter(e -> parentSessionId.equals(e.parentSessionId()))
+                .toList();
+    }
+
     public SpawnEntry findSpawnEntry(String projectId, String key) {
         if (key == null) return null;
         return getRegistry(projectId).get(key);
@@ -99,8 +122,76 @@ public class SpawnRegistryService {
         return Map.copyOf(getRegistry(projectId));
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record SpawnEntry(
-            String key, String agentId, String sessionId, String label, int depth) {
-        public SpawnEntry {}
+            String key,
+            String agentId,
+            String sessionId,
+            String label,
+            int depth,
+            String parentSessionId,
+            String status,
+            long createdAtEpochMs,
+            long updatedAtEpochMs) {
+
+        public SpawnEntry {
+            key = key == null ? "" : key;
+            agentId = agentId == null ? "" : agentId;
+            sessionId = sessionId == null ? "" : sessionId;
+            label = label == null ? "" : label;
+            parentSessionId = parentSessionId == null ? "" : parentSessionId;
+            status = status == null || status.isBlank() ? "RUNNING" : status;
+            if (createdAtEpochMs <= 0) {
+                createdAtEpochMs = System.currentTimeMillis();
+            }
+            if (updatedAtEpochMs <= 0) {
+                updatedAtEpochMs = createdAtEpochMs;
+            }
+        }
+
+        public SpawnEntry(String key, String agentId, String sessionId, String label, int depth) {
+            this(
+                    key,
+                    agentId,
+                    sessionId,
+                    label,
+                    depth,
+                    "",
+                    "RUNNING",
+                    System.currentTimeMillis(),
+                    System.currentTimeMillis());
+        }
+
+        public SpawnEntry(
+                String key,
+                String agentId,
+                String sessionId,
+                String label,
+                int depth,
+                String parentSessionId) {
+            this(
+                    key,
+                    agentId,
+                    sessionId,
+                    label,
+                    depth,
+                    parentSessionId,
+                    "RUNNING",
+                    System.currentTimeMillis(),
+                    System.currentTimeMillis());
+        }
+
+        public SpawnEntry withStatus(String newStatus) {
+            return new SpawnEntry(
+                    this.key,
+                    this.agentId,
+                    this.sessionId,
+                    this.label,
+                    this.depth,
+                    this.parentSessionId,
+                    newStatus,
+                    this.createdAtEpochMs,
+                    System.currentTimeMillis());
+        }
     }
 }

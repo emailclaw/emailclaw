@@ -472,7 +472,9 @@ public class EmailclawChannelRunner {
                         "originalSubject",
                         mail.subject() == null ? "" : mail.subject(),
                         "originMailboxId",
-                        mailbox.id()),
+                        mailbox.id(),
+                        "deliveryMode",
+                        deliveryMode),
                 new StreamCallback() {
                     @Override
                     public void onPart(ChatMessagePart part, boolean startsNew) {

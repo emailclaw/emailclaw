@@ -21,6 +21,7 @@ import ai.emailclaw.emailclaw.plugin.PluginContext;
 import ai.emailclaw.emailclaw.plugin.PluginManager;
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.service.AcpService;
+import ai.emailclaw.emailclaw.service.AdaptiveFinalAnswerFilterMiddleware;
 import ai.emailclaw.emailclaw.service.AgentRuntimeDispatcher;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.BackupService;
@@ -42,6 +43,7 @@ import ai.emailclaw.emailclaw.service.SessionTitleGenerator;
 import ai.emailclaw.emailclaw.service.SkillService;
 import ai.emailclaw.emailclaw.service.SpawnRegistryService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
+import ai.emailclaw.emailclaw.service.ToolResultDiffMiddleware;
 import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
 import ai.emailclaw.emailclaw.service.ToolService;
 import ai.emailclaw.emailclaw.service.WakeupDispatcherService;
@@ -225,6 +227,9 @@ public final class ApplicationBootstrap {
         ChannelMessageBusIntegration channelMessageBusIntegration =
                 new ChannelMessageBusIntegration(messageBusService);
         SessionTitleGenerator titleGenerator = new SessionTitleGenerator(repository);
+        AdaptiveFinalAnswerFilterMiddleware adaptiveFinalAnswerFilterMiddleware =
+                new AdaptiveFinalAnswerFilterMiddleware();
+        ToolResultDiffMiddleware toolResultDiffMiddleware = new ToolResultDiffMiddleware();
         AgentRuntimeDispatcher agentRuntimeDispatcher =
                 new AgentRuntimeDispatcher(
                         repository,
@@ -233,6 +238,8 @@ public final class ApplicationBootstrap {
                         toolRuntimeContext,
                         governanceService,
                         rateLimitMiddleware,
+                        adaptiveFinalAnswerFilterMiddleware,
+                        toolResultDiffMiddleware,
                         messageBusService,
                         planToHintMiddleware,
                         memoryRecallMiddleware,

@@ -14,7 +14,9 @@ import ai.emailclaw.emailclaw.model.AcpAgentInfo;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.AgentRuntimeStatus;
 import ai.emailclaw.emailclaw.service.MessageBusService;
+import ai.emailclaw.emailclaw.service.SpawnRegistryService;
 import ai.emailclaw.emailclaw.service.ToolService;
+import ai.emailclaw.emailclaw.util.FileNameUtils;
 import ai.emailclaw.emailclaw.util.UuidUtils;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
@@ -24,6 +26,8 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -97,7 +101,10 @@ public class AgentManagementTool extends BaseEmailclawTool {
         }
         int timeout = timeoutSeconds == null ? 60 : Math.max(1, timeoutSeconds);
         String taskId = UuidUtils.randomUUIDv7().toString();
-        ExternalAgentTask t = new ExternalAgentTask(taskId, "external", task, "", timeout);
+        String parentSessionId =
+                context != null && context.activeSessionId != null ? context.activeSessionId : "";
+        ExternalAgentTask t =
+                new ExternalAgentTask(taskId, "external", task, parentSessionId, timeout);
         TASKS.put(taskId, t);
         Thread.startVirtualThread(
                 () -> {
@@ -112,7 +119,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
                             }
                         }
                         if (target != null) {
-                            String r = runAcpProcess(target, task, timeout);
+                            String r = runAcpProcess(target, task, timeout, parentSessionId);
                             t.result = r;
                             t.status = "completed";
                         } else {
@@ -190,14 +197,21 @@ public class AgentManagementTool extends BaseEmailclawTool {
         // Guardrail: limit max blocking wait to prevent thread starvation
         t = Math.min(t, 600);
         String taskId = UuidUtils.randomUUIDv7().toString();
+        String effectiveSessionId =
+                sessionId != null && !sessionId.isBlank()
+                        ? sessionId
+                        : (context != null && context.activeSessionId != null
+                                ? context.activeSessionId
+                                : "");
         ExternalAgentTask task =
-                new ExternalAgentTask(taskId, toAgent, text, sessionId == null ? "" : sessionId, t);
+                new ExternalAgentTask(taskId, toAgent, text, effectiveSessionId, t);
         TASKS.put(taskId, task);
         final int finalT = t;
         Thread.startVirtualThread(
                 () -> {
                     try {
-                        String r = executeTaskAgainstAgent(toAgent, text, sessionId, finalT);
+                        String r =
+                                executeTaskAgainstAgent(toAgent, text, effectiveSessionId, finalT);
                         task.result = r;
                         task.status = "completed";
                     } catch (Exception e) {
@@ -246,14 +260,19 @@ public class AgentManagementTool extends BaseEmailclawTool {
             return "Error: text cannot be empty.";
         }
         String taskId = UuidUtils.randomUUIDv7().toString();
+        String effectiveSessionId =
+                sessionId != null && !sessionId.isBlank()
+                        ? sessionId
+                        : (context != null && context.activeSessionId != null
+                                ? context.activeSessionId
+                                : "");
         ExternalAgentTask task =
-                new ExternalAgentTask(
-                        taskId, toAgent, text, sessionId == null ? "" : sessionId, 300);
+                new ExternalAgentTask(taskId, toAgent, text, effectiveSessionId, 300);
         TASKS.put(taskId, task);
         Thread.startVirtualThread(
                 () -> {
                     try {
-                        String r = executeTaskAgainstAgent(toAgent, text, sessionId, 300);
+                        String r = executeTaskAgainstAgent(toAgent, text, effectiveSessionId, 300);
                         task.result = r;
                         task.status = "completed";
                     } catch (Exception e) {
@@ -264,9 +283,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
         return "[TASK_ID: "
                 + taskId
                 + "]\n"
-                + (sessionId != null && !sessionId.isBlank()
-                        ? "[SESSION: " + sessionId + "]\n"
-                        : "")
+                + (!effectiveSessionId.isBlank() ? "[SESSION: " + effectiveSessionId + "]\n" : "")
                 + "\nTask submitted to "
                 + toAgent
                 + ".";
@@ -336,7 +353,8 @@ public class AgentManagementTool extends BaseEmailclawTool {
                 + (status.lastFinishAt() == null ? "" : status.lastFinishAt());
     }
 
-    private String runAcpProcess(AcpAgentInfo agent, String taskText, int timeoutSeconds) {
+    private String runAcpProcess(
+            AcpAgentInfo agent, String taskText, int timeoutSeconds, String parentSessionId) {
         List<String> cmd = new ArrayList<>();
         if (agent.getCommand() != null && !agent.getCommand().isBlank()) {
             Collections.addAll(cmd, agent.getCommand().split("\\s+"));
@@ -347,11 +365,73 @@ public class AgentManagementTool extends BaseEmailclawTool {
         if (cmd.isEmpty()) {
             return "Error: no command configured for agent " + agent.getKey();
         }
+
+        Path projectRoot = null;
+        if (context != null && context.currentProject() != null) {
+            String baseDirStr = context.currentProject().getBaseDirectory();
+            if (baseDirStr != null && !baseDirStr.isBlank()) {
+                Path baseDir =
+                        Path.of(FileNameUtils.expandUserHome(baseDirStr))
+                                .toAbsolutePath()
+                                .normalize();
+                if (Files.isDirectory(baseDir)) {
+                    projectRoot = baseDir;
+                }
+            }
+        }
+        if (projectRoot == null && context != null) {
+            projectRoot = context.currentWorkspace().toAbsolutePath().normalize();
+        }
+
+        String projectId =
+                (context != null && context.currentProject() != null)
+                        ? context.currentProject().getId()
+                        : "default";
+        SpawnRegistryService registryService =
+                context != null ? context.getSpawnRegistryService() : null;
+        String taskId = UuidUtils.randomUUIDv7().toString();
+        String spawnKey = "acp:" + agent.getKey() + ":" + taskId;
+        String effectiveParentSession =
+                (parentSessionId != null && !parentSessionId.isBlank())
+                        ? parentSessionId
+                        : (context != null && context.activeSessionId != null
+                                ? context.activeSessionId
+                                : "");
+
+        if (registryService != null) {
+            SpawnRegistryService.SpawnEntry entry =
+                    new SpawnRegistryService.SpawnEntry(
+                            spawnKey,
+                            agent.getKey(),
+                            taskId,
+                            "ACP Task: " + agent.getKey(),
+                            1,
+                            effectiveParentSession,
+                            "RUNNING",
+                            System.currentTimeMillis(),
+                            System.currentTimeMillis());
+            registryService.registerSpawnEntry(projectId, spawnKey, entry);
+        }
+
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
+            if (projectRoot != null) {
+                pb.directory(projectRoot.toFile());
+            }
+            Map<String, String> env = pb.environment();
+            if (context != null && context.currentProject() != null) {
+                env.put("EMAILCLAW_PROJECT_ID", context.currentProject().getId());
+                env.put("EMAILCLAW_PROJECT_NAME", context.currentProject().getName());
+            }
+            if (projectRoot != null) {
+                env.put("EMAILCLAW_PROJECT_ROOT", projectRoot.toString());
+            }
+            if (!effectiveParentSession.isBlank()) {
+                env.put("EMAILCLAW_PARENT_SESSION_ID", effectiveParentSession);
+            }
+
             Process process = pb.start();
-            String taskId = UuidUtils.randomUUIDv7().toString();
             String requestJson =
                     "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"tasks/create\",\"params\":{\"task\":{\"id\":\""
                             + taskId
@@ -401,12 +481,28 @@ public class AgentManagementTool extends BaseEmailclawTool {
                                 + " did not return a response within "
                                 + timeoutSeconds
                                 + "s.";
+                if (registryService != null) {
+                    registryService.updateStatus(projectId, spawnKey, "TIMED_OUT");
+                }
+            } else {
+                if (registryService != null) {
+                    registryService.updateStatus(projectId, spawnKey, "COMPLETED");
+                }
             }
             return result;
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "ACP process call failed for agent " + agent.getKey(), e);
+            if (registryService != null) {
+                registryService.updateStatus(projectId, spawnKey, "FAILED");
+            }
             return "Error calling agent " + agent.getKey() + ": " + e.getMessage();
         }
+    }
+
+    private String runAcpProcess(AcpAgentInfo agent, String taskText, int timeoutSeconds) {
+        String parentSessionId =
+                context != null && context.activeSessionId != null ? context.activeSessionId : "";
+        return runAcpProcess(agent, taskText, timeoutSeconds, parentSessionId);
     }
 
     private String executeTaskAgainstAgent(
@@ -415,7 +511,7 @@ public class AgentManagementTool extends BaseEmailclawTool {
             List<AcpAgentInfo> acpAgents = context.repository.configManager().getAcpAgents();
             for (AcpAgentInfo a : acpAgents) {
                 if (a.isEnabled() && a.getKey().equals(toAgent)) {
-                    return runAcpProcess(a, text, timeoutSeconds);
+                    return runAcpProcess(a, text, timeoutSeconds, sessionId);
                 }
             }
         } catch (Exception e) {
@@ -444,12 +540,32 @@ public class AgentManagementTool extends BaseEmailclawTool {
         MessageBus bus = mbs.getMessageBus(projectId);
         String correlationId = UuidUtils.randomUUIDv7().toString();
         String replyQueue = "agentscope:reply:" + correlationId;
+        String effectiveParentSession =
+                sessionId != null && !sessionId.isBlank()
+                        ? sessionId
+                        : (context.activeSessionId != null ? context.activeSessionId : "");
+        String spawnKey = "internal:" + agent.getId() + ":" + correlationId;
+        SpawnRegistryService spawnRegistry = context.getSpawnRegistryService();
+        if (spawnRegistry != null) {
+            SpawnRegistryService.SpawnEntry entry =
+                    new SpawnRegistryService.SpawnEntry(
+                            spawnKey,
+                            agent.getId(),
+                            correlationId,
+                            "Internal Chat: " + agent.getId(),
+                            1,
+                            effectiveParentSession,
+                            "RUNNING",
+                            System.currentTimeMillis(),
+                            System.currentTimeMillis());
+            spawnRegistry.registerSpawnEntry(projectId, spawnKey, entry);
+        }
         Map<String, Object> request = new HashMap<>();
         request.put("type", "agent_chat");
         request.put("from", context.currentAgent.getId());
         request.put("text", text);
         request.put("correlationId", correlationId);
-        request.put("sessionId", sessionId != null ? sessionId : "");
+        request.put("sessionId", effectiveParentSession);
         request.put("replyTo", replyQueue);
         String targetInbox = "agentscope:inbox:agent:" + agent.getId();
         bus.queuePush(targetInbox, request).block();
@@ -473,6 +589,9 @@ public class AgentManagementTool extends BaseEmailclawTool {
                         Level.FINE,
                         "Internal agent communication received reply: from={0}, correlationId={1}",
                         new Object[] {agent.getId(), correlationId});
+                if (spawnRegistry != null) {
+                    spawnRegistry.updateStatus(projectId, spawnKey, "COMPLETED");
+                }
                 return reply;
             }
             try {
@@ -480,8 +599,14 @@ public class AgentManagementTool extends BaseEmailclawTool {
                 Thread.sleep(Math.min(200 + loopCount * 50, 2000));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                if (spawnRegistry != null) {
+                    spawnRegistry.updateStatus(projectId, spawnKey, "FAILED");
+                }
                 return "Interrupted while waiting for internal agent " + agent.getId() + ".";
             }
+        }
+        if (spawnRegistry != null) {
+            spawnRegistry.updateStatus(projectId, spawnKey, "TIMED_OUT");
         }
         return "Internal agent "
                 + agent.getId()
