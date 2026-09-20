@@ -23,7 +23,9 @@ import ai.emailclaw.emailclaw.model.CronJobModel.JobRuntimeSpec;
 import ai.emailclaw.emailclaw.model.CronJobModel.ScheduleSpec;
 import ai.emailclaw.emailclaw.model.CronJobStatus;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
+import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.CronJobService;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
@@ -96,6 +98,8 @@ public class CronJobListView implements ViewPane {
 
     private AgentInfo currentAgent;
 
+    private ProjectInfo currentProject;
+
     /**
      * Currently filtered schedule type.
      */
@@ -123,9 +127,24 @@ public class CronJobListView implements ViewPane {
             String channel) {}
 
     public CronJobListView(CronJobService cronService, AgentInfo agent) {
+        this(cronService, agent, ProjectService.PROJECT_DEFAULT);
+    }
+
+    public CronJobListView(CronJobService cronService, AgentInfo agent, ProjectInfo project) {
         this.cronService = cronService;
         this.currentAgent = agent;
+        this.currentProject = project;
         initUi();
+    }
+
+    /**
+     * Retrieve the current normalized project ID ("default" if null or blank).
+     */
+    private String getCurrentProjectId() {
+        if (currentProject.getId().isBlank()) {
+            return "default";
+        }
+        return currentProject.getId();
     }
 
     private void initUi() {
@@ -230,9 +249,14 @@ public class CronJobListView implements ViewPane {
     }
 
     private void renderJobs() {
-        LOGGER.fine("Refreshing Cron task list, filter condition: " + scheduleTypeFilter);
+        LOGGER.fine(
+                () ->
+                        "Refreshing Cron task list for project: "
+                                + getCurrentProjectId()
+                                + ", filter condition: "
+                                + scheduleTypeFilter);
         jobList.getChildren().clear();
-        List<CronJobSpec> allJobs = cronService.list();
+        List<CronJobSpec> allJobs = cronService.listByProject(getCurrentProjectId());
         // Filter
         List<CronJobSpec> filtered;
         if ("enabled".equals(scheduleTypeFilter)) {
@@ -500,6 +524,14 @@ public class CronJobListView implements ViewPane {
                     filtered =
                             filtered.stream()
                                     .filter(s -> ChatSessionInfo.KIND_TASK.equals(s.getKind()))
+                                    .filter(
+                                            s -> {
+                                                String sProj =
+                                                        s.getProjectId().isBlank()
+                                                                ? "default"
+                                                                : s.getProjectId();
+                                                return getCurrentProjectId().equals(sProj);
+                                            })
                                     .toList();
                     ObservableList<String> items =
                             FXCollections.observableArrayList(
@@ -723,7 +755,12 @@ public class CronJobListView implements ViewPane {
                     CronJobSpec spec =
                             new CronJobSpec(
                                     existing != null ? existing.id() : "",
-                                    existing != null ? existing.projectId() : "default",
+                                    existing != null
+                                                    && existing.projectId() != null
+                                                    && !existing.projectId().isBlank()
+                                                    && !"default".equals(existing.projectId())
+                                            ? existing.projectId()
+                                            : getCurrentProjectId(),
                                     name,
                                     enabledCb.isSelected(),
                                     schedule,
@@ -832,9 +869,7 @@ public class CronJobListView implements ViewPane {
         table.setPlaceholder(new Label("No execution history yet."));
         TableColumn<CronExecutionRecord, String> runAtCol = new TableColumn<>("Run At");
         runAtCol.setCellValueFactory(
-                cd ->
-                        new SimpleStringProperty(
-                                cd.getValue().runAt() != null ? cd.getValue().runAt() : "-"));
+                cd -> new SimpleStringProperty(cd.getValue().formattedRunAt()));
         runAtCol.setPrefWidth(220);
         TableColumn<CronExecutionRecord, CronJobStatus> statusCol = new TableColumn<>("Status");
         statusCol.setCellValueFactory(cd -> new SimpleObjectProperty<>(cd.getValue().status()));
@@ -1007,8 +1042,17 @@ public class CronJobListView implements ViewPane {
                 .ifPresent(
                         spec -> {
                             if (spec != null) {
+                                CronJobSpec specWithProject =
+                                        (spec.projectId() == null
+                                                                || spec.projectId().isBlank()
+                                                                || "default"
+                                                                        .equals(spec.projectId()))
+                                                        && !"default".equals(getCurrentProjectId())
+                                                ? spec.withProjectId(getCurrentProjectId())
+                                                : spec;
                                 CronJobSpec resolved =
-                                        cronService.resolveTask(spec, currentAgent.getId());
+                                        cronService.resolveTask(
+                                                specWithProject, currentAgent.getId());
                                 cronService.add(resolved);
                                 renderJobs();
                             }
@@ -1044,7 +1088,7 @@ public class CronJobListView implements ViewPane {
         }
         return new CronJobSpec(
                 "",
-                "default",
+                getCurrentProjectId(),
                 t.name(),
                 true,
                 schedule,
@@ -1104,6 +1148,12 @@ public class CronJobListView implements ViewPane {
     @Override
     public void onAgentChanged(AgentInfo agent) {
         currentAgent = agent;
+    }
+
+    @Override
+    public void onProjectChanged(ProjectInfo project) {
+        this.currentProject = project;
+        renderJobs();
     }
 
     @Override

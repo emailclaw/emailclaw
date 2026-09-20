@@ -104,12 +104,29 @@ public class MessageBusService {
         }
     }
 
+    public List<BusEntry> queueDrain(String projectId, String queueName, int maxCount) {
+        LOGGER.log(
+                Level.FINE,
+                "Draining queue: project={0}, queue={1}, maxCount={2}",
+                new Object[] {projectId, queueName, maxCount});
+        try {
+            return getMessageBus(projectId).queueDrain(queueName, maxCount).block();
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to drain queue: " + queueName, e);
+            return List.of();
+        }
+    }
+
     public void publish(String projectId, String eventType, Map<String, Object> payload) {
         getMessageBus(projectId).publish(eventType, payload).subscribe();
     }
 
-    public void enqueueWakeup(String projectId, String sessionId, String taskLabel, String logUri) {
-        getMessageBus(projectId).enqueueWakeup(sessionId, taskLabel, logUri).subscribe();
+    public void enqueueWakeup(String projectId, String userId, String sessionId, String agentId) {
+        getMessageBus(projectId).enqueueWakeup(userId, sessionId, agentId).subscribe();
+    }
+
+    public void enqueueWakeup(String projectId, String sessionId, String agentId) {
+        getMessageBus(projectId).enqueueWakeup(sessionId, agentId).subscribe();
     }
 
     public Flux<Map<String, Object>> subscribeWakeup(String projectId) {

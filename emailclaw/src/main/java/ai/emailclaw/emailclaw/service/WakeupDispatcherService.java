@@ -70,9 +70,10 @@ public class WakeupDispatcherService implements AutoCloseable {
          * @param projectId Project ID
          * @param sessionId Session ID (may be null, in which case agentId identifies wakeup source)
          * @param agentId   Agent ID to wake up
+         * @param userId    Owning user ID
          * @return run result
          */
-        Mono<Object> runWakeup(String projectId, String sessionId, String agentId);
+        Mono<Object> runWakeup(String projectId, String sessionId, String agentId, String userId);
     }
 
     private final ProjectService projectService;
@@ -142,13 +143,19 @@ public class WakeupDispatcherService implements AutoCloseable {
      * Drain wakeup queue and dispatch wakeup requests for all projects.
      */
     private void drainAndDispatch() {
+        java.util.Set<String> projectIds = new java.util.HashSet<>();
         for (ai.emailclaw.emailclaw.model.ProjectInfo project : projectService.list()) {
+            if (project.getId() != null && !project.getId().isBlank()) {
+                projectIds.add(project.getId());
+            }
+        }
+        projectIds.add(ProjectService.PROJECT_ID_DEFAULT);
+
+        for (String projectId : projectIds) {
             try {
                 List<BusEntry> entries =
-                        messageBusService
-                                .getMessageBus(project.getId())
-                                .inboxDrain("agentscope:wakeups", MAX_DRAIN_COUNT)
-                                .block();
+                        messageBusService.queueDrain(
+                                projectId, "agentscope:wakeups", MAX_DRAIN_COUNT);
                 if (entries == null || entries.isEmpty()) {
                     continue;
                 }
@@ -156,13 +163,13 @@ public class WakeupDispatcherService implements AutoCloseable {
                 LOGGER.log(
                         Level.FINE,
                         "Drained wakeup queue for project {0}: {1} entries",
-                        new Object[] {project.getId(), entries.size()});
+                        new Object[] {projectId, entries.size()});
 
                 for (BusEntry entry : entries) {
-                    dispatch(project.getId(), entry.payload());
+                    dispatch(projectId, entry.payload());
                 }
             } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Wakeup drain error for project " + project.getId(), e);
+                LOGGER.log(Level.WARNING, "Wakeup drain error for project " + projectId, e);
             }
         }
     }
@@ -174,6 +181,7 @@ public class WakeupDispatcherService implements AutoCloseable {
      * @param payload wakeup request payload
      */
     private void dispatch(String projectId, Map<String, Object> payload) {
+        String userId = getString(payload, "userId");
         String sessionId = getString(payload, "sessionId");
         String agentId = getString(payload, "agentId");
 
@@ -186,8 +194,7 @@ public class WakeupDispatcherService implements AutoCloseable {
         // agentId as identifier
         String effectiveSessionId =
                 (sessionId != null && !sessionId.isBlank()) ? sessionId : agentId;
-        String effectiveAgentId =
-                (agentId != null && !agentId.isBlank()) ? agentId : effectiveSessionId;
+        String effectiveAgentId = (agentId != null && !agentId.isBlank()) ? agentId : "";
 
         // Check if session is running
         if (wakeupTarget.isSessionRunning(projectId, effectiveSessionId)) {
@@ -197,12 +204,12 @@ public class WakeupDispatcherService implements AutoCloseable {
 
         LOGGER.log(
                 Level.INFO,
-                "Waking up idle session: session={0}, agent={1}",
-                new Object[] {effectiveSessionId, effectiveAgentId});
+                "Waking up idle session: session={0}, agent={1}, user={2}",
+                new Object[] {effectiveSessionId, effectiveAgentId, userId});
 
         // Trigger wakeup run
         wakeupTarget
-                .runWakeup(projectId, effectiveSessionId, effectiveAgentId)
+                .runWakeup(projectId, effectiveSessionId, effectiveAgentId, userId)
                 .subscribe(
                         msg ->
                                 LOGGER.log(

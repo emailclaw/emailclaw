@@ -15,6 +15,7 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.AllToolsDeniedEvent;
 import io.agentscope.core.event.HintBlockEvent;
+import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.RequestStopEvent;
 import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
@@ -23,10 +24,18 @@ import io.agentscope.core.event.ThinkingBlockEndEvent;
 import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultDataDeltaEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.JsonUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -88,6 +97,18 @@ final class StreamingEventHandler {
     /** Model ID (for logging). */
     private final String modelId;
 
+    /** Cumulative input (prompt) tokens across model calls in this turn. */
+    private long totalInputTokens = 0;
+
+    /** Cumulative output (completion) tokens across model calls in this turn. */
+    private long totalOutputTokens = 0;
+
+    /** Cumulative cached tokens served from prompt cache across model calls in this turn. */
+    private long totalCachedTokens = 0;
+
+    /** Whether at least one ModelCallEndEvent was observed. */
+    private boolean hasModelUsage = false;
+
     /**
      * Constructs streaming event handler.
      *
@@ -128,7 +149,9 @@ final class StreamingEventHandler {
      * @param event Stream event object
      */
     void handleEvent(Object event) {
-        if (event instanceof TextBlockDeltaEvent tb) {
+        if (event instanceof ModelCallEndEvent mce) {
+            handleModelCallEnd(mce);
+        } else if (event instanceof TextBlockDeltaEvent tb) {
             handleTextBlockDelta(tb);
         } else if (event instanceof ThinkingBlockStartEvent tbs) {
             handleThinkingBlockStart(tbs);
@@ -146,6 +169,8 @@ final class StreamingEventHandler {
             handleToolResultStart(tr);
         } else if (event instanceof ToolResultTextDeltaEvent trd) {
             handleToolResultTextDelta(trd);
+        } else if (event instanceof ToolResultDataDeltaEvent trdata) {
+            handleToolResultDataDelta(trdata);
         } else if (event instanceof ToolResultEndEvent tre) {
             handleToolResultEnd(tre);
         } else if (event instanceof HintBlockEvent hb) {
@@ -173,6 +198,42 @@ final class StreamingEventHandler {
      */
     List<ChatMessagePart> getFinalParts() {
         return finalParts;
+    }
+
+    /**
+     * Returns true if at least one ModelCallEndEvent was observed with valid token metrics.
+     *
+     * @return true if model usage was recorded
+     */
+    boolean hasModelUsage() {
+        return hasModelUsage;
+    }
+
+    /**
+     * Returns cumulative prompt/input tokens used in this turn.
+     *
+     * @return input tokens
+     */
+    long getTotalInputTokens() {
+        return totalInputTokens;
+    }
+
+    /**
+     * Returns cumulative completion/output tokens generated in this turn.
+     *
+     * @return output tokens
+     */
+    long getTotalOutputTokens() {
+        return totalOutputTokens;
+    }
+
+    /**
+     * Returns cumulative prompt cache hit tokens in this turn.
+     *
+     * @return cached tokens
+     */
+    long getTotalCachedTokens() {
+        return totalCachedTokens;
     }
 
     // ── Event Processing Methods ──────────────────────────────────────
@@ -323,6 +384,72 @@ final class StreamingEventHandler {
                         "\n" + diffMarkup,
                         false);
             }
+        }
+    }
+
+    /**
+     * Handles fine-grained tool result data delta events (e.g. multimodal images or structured blocks).
+     */
+    private void handleToolResultDataDelta(ToolResultDataDeltaEvent trdata) {
+        if (trdata == null || trdata.getData() == null) {
+            return;
+        }
+        String subagentName = extractSubagentName(trdata);
+        ContentBlock block = trdata.getData();
+        if (block instanceof TextBlock tb) {
+            emitPart(
+                    ChatMessagePart.TOOL_RESULT,
+                    toolBlockTitle("TOOL RESULT", trdata.getToolCallName(), subagentName),
+                    trdata.getToolCallId(),
+                    trdata.getToolCallName(),
+                    tb.getText(),
+                    false);
+        } else if (block instanceof ImageBlock ib) {
+            String dataUrl = "";
+            if (ib.getSource() instanceof URLSource urlSource) {
+                dataUrl = urlSource.getUrl();
+            } else if (ib.getSource() instanceof Base64Source base64Source) {
+                dataUrl =
+                        "data:" + base64Source.getMediaType() + ";base64," + base64Source.getData();
+            }
+            emitPart(
+                    ChatMessagePart.IMAGE,
+                    toolBlockTitle("TOOL IMAGE", trdata.getToolCallName(), subagentName),
+                    trdata.getToolCallId(),
+                    trdata.getToolCallName(),
+                    dataUrl != null ? dataUrl : "",
+                    true);
+        } else {
+            String json = JsonUtils.getJsonCodec().toJson(block);
+            emitPart(
+                    ChatMessagePart.TOOL_RESULT,
+                    toolBlockTitle("TOOL RESULT", trdata.getToolCallName(), subagentName),
+                    trdata.getToolCallId(),
+                    trdata.getToolCallName(),
+                    json,
+                    false);
+        }
+    }
+
+    /**
+     * Handles model call end events, accumulating token usage and prompt caching metrics.
+     */
+    private void handleModelCallEnd(ModelCallEndEvent mce) {
+        if (mce != null && mce.getUsage() != null) {
+            ChatUsage usage = mce.getUsage();
+            totalInputTokens += usage.getInputTokens();
+            totalOutputTokens += usage.getOutputTokens();
+            totalCachedTokens += usage.getCachedTokens();
+            hasModelUsage = true;
+            LOGGER.log(
+                    Level.FINE,
+                    "Model call ended for session {0}: input={1}, output={2}, cached={3}",
+                    new Object[] {
+                        sessionId,
+                        usage.getInputTokens(),
+                        usage.getOutputTokens(),
+                        usage.getCachedTokens()
+                    });
         }
     }
 

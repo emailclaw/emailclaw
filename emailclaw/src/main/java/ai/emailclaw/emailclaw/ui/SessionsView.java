@@ -16,7 +16,7 @@ import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
-import java.time.LocalDateTime;
+import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -206,11 +206,11 @@ public class SessionsView implements ViewPane {
         channelCol.setPrefWidth(100);
         table.getColumns().add(channelCol);
         TableColumn<ChatSessionInfo, String> createdCol =
-                column("CreatedAt", s -> s.getCreatedAt());
+                column("CreatedAt", s -> DateTimeUtils.formatEpochMillis(s.getCreatedAt()));
         createdCol.setPrefWidth(150);
         table.getColumns().add(createdCol);
         TableColumn<ChatSessionInfo, String> updatedCol =
-                column("UpdatedAt", s -> s.getUpdatedAt());
+                column("UpdatedAt", s -> DateTimeUtils.formatEpochMillis(s.getUpdatedAt()));
         updatedCol.setPrefWidth(150);
         table.getColumns().add(updatedCol);
         TableColumn<ChatSessionInfo, Void> actionCol = new TableColumn<>("Action");
@@ -309,14 +309,8 @@ public class SessionsView implements ViewPane {
         if (session == null) {
             return false;
         }
-        String sProj =
-                session.getProjectId() == null || session.getProjectId().isBlank()
-                        ? "default"
-                        : session.getProjectId();
-        String currentProj =
-                project == null || project.getId() == null || project.getId().isBlank()
-                        ? "default"
-                        : project.getId();
+        String sProj = session.getProjectId().isBlank() ? "default" : session.getProjectId();
+        String currentProj = project.getId().isBlank() ? "default" : project.getId();
         return currentProj.equals(sProj);
     }
 
@@ -489,10 +483,12 @@ public class SessionsView implements ViewPane {
         TextField channelField = new TextField(session.getChannel());
         channelField.setEditable(false);
         channelField.getStyleClass().addAll("bg-muted", "text-gray");
-        TextField createdAtField = new TextField(session.getCreatedAt());
+        TextField createdAtField =
+                new TextField(DateTimeUtils.formatEpochMillis(session.getCreatedAt()));
         createdAtField.setEditable(false);
         createdAtField.getStyleClass().addAll("bg-muted", "text-gray");
-        TextField updatedAtField = new TextField(session.getUpdatedAt());
+        TextField updatedAtField =
+                new TextField(DateTimeUtils.formatEpochMillis(session.getUpdatedAt()));
         updatedAtField.setEditable(false);
         updatedAtField.getStyleClass().addAll("bg-muted", "text-gray");
         grid.add(new Label("ID:"), 0, 0);
@@ -512,7 +508,7 @@ public class SessionsView implements ViewPane {
                 dialogButton -> {
                     if (dialogButton == saveButtonType) {
                         session.setName(nameField.getText());
-                        session.setUpdatedAt(LocalDateTime.now().toString());
+                        session.setUpdatedAt(DateTimeUtils.currentTimeMillis());
                         return session;
                     }
                     return null;

@@ -57,6 +57,14 @@ public final class ToolCatalog {
                         BuiltInToolNames.INVOKE_ANTIGRAVITY_CLI,
                         "Invoke Antigravity CLI in headless print mode to execute agent tasks and"
                                 + " return structured JSON results"));
+        tools.add(
+                tool(
+                        BuiltInToolNames.VIEW_TEXT_FILE,
+                        "View text file content with optional line range specification"));
+        tools.add(
+                tool(
+                        BuiltInToolNames.LIST_DIR,
+                        "List files and directories in a specified directory"));
         return tools;
     }
 

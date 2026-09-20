@@ -27,14 +27,10 @@ public final class AppPaths {
     /** Global config file (current Agent / country / language). */
     public final Path globalConfigFile;
 
-    public final Path sessionsMetaFile;
-    public final Path tokenUsageFile;
-    public final Path agentStatsFile;
     public final Path toolConfigFile;
     public final Path channelsFile;
     public final Path cronJobsFile;
     public final Path projectsFile;
-    public final Path tasksFile;
     public final Path mcpClientsFile;
     public final Path acpAgentsFile;
     public final Path envsFile;
@@ -47,6 +43,7 @@ public final class AppPaths {
     public final Path logsDir;
     public final Path pluginsDir;
     public final Path projectsRoot;
+    public final Path webviewDir;
 
     public AppPaths(Path root) {
         this.root = root;
@@ -55,14 +52,10 @@ public final class AppPaths {
         this.providersFile = configDir.resolve("providers.json");
         this.agentsFile = configDir.resolve("agents.json");
         this.globalConfigFile = configDir.resolve("global-config.json");
-        this.sessionsMetaFile = configDir.resolve("sessions.json");
-        this.tokenUsageFile = configDir.resolve("token-usage.json");
-        this.agentStatsFile = configDir.resolve("agent-stats.json");
         this.toolConfigFile = configDir.resolve("tools.json");
         this.channelsFile = configDir.resolve("channels.json");
         this.cronJobsFile = configDir.resolve("cron-jobs.json");
         this.projectsFile = configDir.resolve("projects.json");
-        this.tasksFile = configDir.resolve("tasks.json");
         this.mcpClientsFile = configDir.resolve("mcp-clients.json");
         this.acpAgentsFile = configDir.resolve("acp-agents.json");
         this.envsFile = secretDir.resolve("envs.json");
@@ -75,5 +68,6 @@ public final class AppPaths {
         this.logsDir = root.resolve(AppHomeConstants.LOGS_DIR);
         this.pluginsDir = root.resolve(AppHomeConstants.PLUGINS_DIR);
         this.projectsRoot = root.resolve(AppHomeConstants.PROJECTS_DIR);
+        this.webviewDir = root.resolve(AppHomeConstants.WEBVIEW_DIR);
     }
 }

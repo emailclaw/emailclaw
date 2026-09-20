@@ -24,7 +24,9 @@ import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
+import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.ConfirmResult;
@@ -33,6 +35,7 @@ import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.DataBlock;
 import io.agentscope.core.message.GenerateReason;
+import io.agentscope.core.message.HintBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -44,8 +47,9 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
+import io.agentscope.harness.agent.gateway.LocalSessionTurnGate;
+import io.agentscope.harness.agent.gateway.SessionTurnGate;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -54,7 +58,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
@@ -63,7 +66,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -141,6 +143,85 @@ public class ChatService {
                 agent, provider, modelId, sessionInfo, prompt, List.of(), Map.of(), callback);
     }
 
+    private final SessionTurnGate turnGate = new LocalSessionTurnGate();
+
+    /**
+     * Gets the process-local session turn gate for fair mutual exclusion across execution turns.
+     *
+     * @return session turn gate
+     */
+    public SessionTurnGate getTurnGate() {
+        return turnGate;
+    }
+
+    /**
+     * Checks if an execution turn is currently active for the given session.
+     *
+     * @param sessionId Session ID to check
+     * @return true if the session turn is active
+     */
+    public boolean isSessionRunning(String sessionId) {
+        return sessionId != null && turnGate.isRunning(sessionId);
+    }
+
+    public void markSessionRunning(String sessionId) {
+        // Maintained for backward compatibility; actual exclusion handled by turnGate
+    }
+
+    public void markSessionFinished(String sessionId) {
+        // Maintained for backward compatibility; actual exclusion handled by turnGate
+    }
+
+    /**
+     * Resumes reasoning on an existing session woken up by background tasks or notifications.
+     *
+     * <p>Executes an agent turn without a user prompt (passing empty message list to streamEvents),
+     * allowing {@link io.agentscope.harness.agent.middleware.InboxMiddleware} to drain pending hints
+     * and produce the assistant response.
+     *
+     * @param sessionInfo Session to resume
+     * @param callback    Streaming callback for results
+     */
+    public void resumeSessionWakeup(ChatSessionInfo sessionInfo, StreamCallback callback) {
+        if (sessionInfo == null) {
+            LOGGER.log(Level.WARNING, "Cannot resume session wakeup: sessionInfo is null");
+            return;
+        }
+        String agentId = sessionInfo.getAgentId();
+        if (agentId == null || agentId.isBlank()) {
+            AgentInfo defaultAgent = agentService.currentDefault();
+            agentId = defaultAgent != null ? defaultAgent.getId() : null;
+        }
+        if (agentId == null) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Cannot resume session wakeup: no agent found for session {0}",
+                    sessionInfo.getId());
+            return;
+        }
+        AgentInfo agent = agentService.findById(agentId).orElse(null);
+        if (agent == null) {
+            LOGGER.log(Level.WARNING, "Cannot resume session wakeup: agent {0} not found", agentId);
+            return;
+        }
+        ProviderInfo provider = providerService.getById(agent.getProviderId()).orElse(null);
+        if (provider == null) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Cannot resume session wakeup: provider {0} not found",
+                    agent.getProviderId());
+            return;
+        }
+        String modelId =
+                agent.getModelId() != null && !agent.getModelId().isBlank()
+                        ? agent.getModelId()
+                        : provider.allModels().stream()
+                                .findFirst()
+                                .map(ai.emailclaw.emailclaw.model.ModelInfo::getId)
+                                .orElse(null);
+        sendMessage(agent, provider, modelId, sessionInfo, null, List.of(), Map.of(), callback);
+    }
+
     private static final Logger LOGGER = Logger.getLogger(ChatService.class.getName());
 
     private static final long CHAT_ATTACHMENT_MAX_BYTES = 10L * 1024L * 1024L;
@@ -148,8 +229,6 @@ public class ChatService {
     private static final long TEXT_ATTACHMENT_INLINE_MAX_BYTES = 64L * 1024L;
 
     private static final String AGENT_STATE_KEY = "agent_state";
-
-    private static final String MEMORY_MESSAGES_KEY = "memory_messages";
 
     /**
      * Emailclaw does not pass RuntimeContext.userId, so AgentScope persists the session to an anonymous namespace.
@@ -511,14 +590,14 @@ public class ChatService {
      * @return List of history messages
      */
     public List<Msg> loadHistory(String agentId, String sessionId) {
-        ChatSessionInfo sessionInfo = findSession(sessionId);
-        String projectId = sessionInfo != null ? sessionInfo.projectId() : "default";
-        AgentStateStore session =
-                new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                        new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
+        AgentStateStore session = resolveAgentStateStore();
         io.agentscope.core.state.AgentState state = loadAgentState(session, sessionId);
         List<Msg> msgs = state != null ? state.getContext() : null;
         return msgs != null ? new ArrayList<>(msgs) : new ArrayList<>();
+    }
+
+    private AgentStateStore resolveAgentStateStore() {
+        return repository.agentStateStore();
     }
 
     private io.agentscope.core.state.AgentState loadAgentState(
@@ -570,11 +649,7 @@ public class ChatService {
             return;
         }
         try {
-            ChatSessionInfo sessionInfo = findSession(sessionId);
-            String projectId = sessionInfo != null ? sessionInfo.projectId() : "default";
-            AgentStateStore session =
-                    new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                            new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
+            AgentStateStore session = resolveAgentStateStore();
             io.agentscope.core.state.AgentState state =
                     Optional.ofNullable(loadAgentState(session, sessionId))
                             .orElseGet(
@@ -696,9 +771,32 @@ public class ChatService {
      * @return Newly created session info
      */
     public ChatSessionInfo newSession(String agentId) {
-        LOGGER.log(Level.INFO, "Created new session: agent={0}", agentId);
+        return newSession(agentId, ChatSessionInfo.KIND_CHAT, "New Chat", null);
+    }
+
+    /**
+     * Create a new session for a specific agent with explicit kind, name, and project ID.
+     *
+     * @param agentId   Agent ID
+     * @param kind      Session kind (ChatSessionInfo.KIND_CHAT or KIND_TASK)
+     * @param name      Session display name
+     * @param projectId Project ID (optional)
+     * @return Newly created and persisted session info
+     */
+    public ChatSessionInfo newSession(String agentId, String kind, String name, String projectId) {
+        String effectiveKind = kind != null && !kind.isBlank() ? kind : ChatSessionInfo.KIND_CHAT;
+        String defaultName =
+                ChatSessionInfo.KIND_TASK.equals(effectiveKind) ? "New Task" : "New Chat";
+        String effectiveName = name != null && !name.isBlank() ? name : defaultName;
+        LOGGER.log(
+                Level.INFO,
+                "Created new session: agent={0}, kind={1}, name={2}, projectId={3}",
+                new Object[] {agentId, effectiveKind, effectiveName, projectId});
         List<ChatSessionInfo> sessions = repository.loadSessions();
         ChatSessionInfo info = repository.createSession(agentId);
+        info.setKind(effectiveKind);
+        info.setName(effectiveName);
+        info.setProjectId(projectId);
         sessions.add(0, info);
         repository.saveSessions(sessions);
         return info;
@@ -727,7 +825,7 @@ public class ChatService {
         info.setAgentId(agentId);
         info.setName(name != null && !name.isBlank() ? name : "New Chat");
         info.setChannel(channel != null && !channel.isBlank() ? channel : ChannelIds.CONSOLE);
-        String now = LocalDateTime.now().toString();
+        long now = DateTimeUtils.currentTimeMillis();
         info.setCreatedAt(now);
         info.setUpdatedAt(now);
         sessions.add(0, info);
@@ -774,7 +872,7 @@ public class ChatService {
         List<ChatSessionInfo> sessions = new ArrayList<>(repository.loadSessions());
         Optional<ChatSessionInfo> old =
                 sessions.stream().filter(s -> s.getId().equals(session.getId())).findFirst();
-        old.ifPresent(s -> s.setUpdatedAt(LocalDateTime.now().toString()));
+        old.ifPresent(s -> s.setUpdatedAt(DateTimeUtils.currentTimeMillis()));
         repository.saveSessions(sessions);
     }
 
@@ -893,7 +991,7 @@ public class ChatService {
                 ChatMessagePart part;
                 if (fullText.length() > TOOL_RESULT_OFFLOAD_THRESHOLD) {
                     // Oversized payload, trigger offload
-                    String uuid = UUID.randomUUID().toString();
+                    String uuid = UuidUtils.randomUUIDv7().toString();
                     Path offloadPath = OFFLOAD_DIR.resolve(uuid + ".txt");
                     try {
                         Files.createDirectories(OFFLOAD_DIR);
@@ -933,6 +1031,16 @@ public class ChatService {
                 }
                 part.setId(trb.getId());
                 part.setToolName(trb.getName());
+                appendLoadedPart(parts, part);
+            } else if (block instanceof HintBlock hb) {
+                ChatMessagePart part =
+                        ChatMessagePart.block(
+                                ChatMessagePart.HINT,
+                                hb.getSource() == null || hb.getSource().isBlank()
+                                        ? "HINT"
+                                        : "HINT FROM " + hb.getSource(),
+                                hb.getHint() == null ? "" : hb.getHint());
+                part.setId(hb.getId());
                 appendLoadedPart(parts, part);
             } else if (block != null) {
                 appendLoadedPart(parts, ChatMessagePart.text(block.toString()));
@@ -1255,23 +1363,6 @@ public class ChatService {
         }
     }
 
-    void sanitizeMemoryMessages(AgentStateStore session, String userId, String sessionId) {
-        List<Msg> rawMsgs = session.getList(userId, sessionId, MEMORY_MESSAGES_KEY, Msg.class);
-        if (rawMsgs == null || rawMsgs.isEmpty()) {
-            return;
-        }
-        boolean changed = false;
-        List<Msg> sanitized = new ArrayList<>(rawMsgs.size());
-        for (Msg msg : rawMsgs) {
-            MsgSanitizeResult result = sanitizeMessageMediaSources(msg);
-            sanitized.add(result.msg);
-            changed = changed || result.changed;
-        }
-        if (changed) {
-            session.save(userId, sessionId, MEMORY_MESSAGES_KEY, sanitized);
-        }
-    }
-
     private MsgSanitizeResult sanitizeMessageMediaSources(Msg msg) {
         if (msg == null || msg.getContent() == null || msg.getContent().isEmpty()) {
             return new MsgSanitizeResult(msg, false);
@@ -1555,7 +1646,7 @@ public class ChatService {
                 return;
             }
             current.setName(title);
-            current.setUpdatedAt(LocalDateTime.now().toString());
+            current.setUpdatedAt(DateTimeUtils.currentTimeMillis());
             repository.saveSessions(sessions);
             LOGGER.log(
                     Level.INFO,
@@ -1627,7 +1718,7 @@ public class ChatService {
         boolean found = false;
         for (int i = 0; i < sessions.size(); i++) {
             if (sessions.get(i).getId().equals(session.getId())) {
-                session.setUpdatedAt(LocalDateTime.now().toString());
+                session.setUpdatedAt(DateTimeUtils.currentTimeMillis());
                 sessions.set(i, session);
                 found = true;
                 break;
@@ -1661,14 +1752,8 @@ public class ChatService {
         if (sessionIds == null || sessionIds.isEmpty()) {
             return;
         }
-        List<ChatSessionInfo> sessions = new ArrayList<>(repository.loadSessions());
-        int before = sessions.size();
-        sessions.removeIf(s -> sessionIds.contains(s.getId()));
-        repository.saveSessions(sessions);
-        LOGGER.log(
-                Level.INFO,
-                "Batch delete sessions: requested={0}, actually removed={1}",
-                new Object[] {sessionIds.size(), before - sessions.size()});
+        repository.configManager().batchDeleteSessions(sessionIds);
+        LOGGER.log(Level.INFO, "Batch delete sessions: count={0}", sessionIds.size());
     }
 
     static void safeOnPart(StreamCallback callback, ChatMessagePart part, boolean startsNew) {

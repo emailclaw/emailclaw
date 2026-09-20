@@ -26,11 +26,18 @@ import ai.emailclaw.emailclaw.model.SecurityRule;
 import ai.emailclaw.emailclaw.model.TokenUsageRecord;
 import ai.emailclaw.emailclaw.model.ToolInfo;
 import ai.emailclaw.emailclaw.model.VoiceTranscriptionConfig;
+import ai.emailclaw.emailclaw.storage.sqlite.DatabaseManager;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStateStore;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStatsRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteCronHistoryRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteTokenUsageRepository;
+import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import ai.emailclaw.emailclaw.util.UuidUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -41,17 +48,79 @@ import java.util.logging.Logger;
  * <p>Responsibilities:
  * <br>1) Aggregate path objects;
  * <br>2) Expose unified configuration read/write entry (delegated to ConfigManager);
- * <br>3) Provide workspace path and session metadata helper methods.
+ * <br>3) Expose SQLite database manager and repositories for sessions, state, stats, usage, cron history, and memory notes;
+ * <br>4) Provide workspace path and session metadata helper methods.
  */
 public class AppContext implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(AppContext.class.getName());
 
     private final AppPaths paths;
     private final ConfigManager configManager;
+    private final DatabaseManager databaseManager;
+    private final SqliteChatSessionRepository sessionRepository;
+    private final SqliteAgentStateStore agentStateStore;
+    private final SqliteTokenUsageRepository tokenUsageRepository;
+    private final SqliteAgentStatsRepository agentStatsRepository;
+    private final SqliteCronHistoryRepository cronHistoryRepository;
+    private final SqliteMemoryRepository memoryRepository;
 
     public AppContext(AppPaths paths) {
+        this(paths, new DatabaseManager(AppHomeConstants.DATABASE_FILE));
+    }
+
+    public AppContext(AppPaths paths, DatabaseManager databaseManager) {
+        this(
+                paths,
+                databaseManager,
+                new SqliteChatSessionRepository(databaseManager),
+                new SqliteAgentStateStore(databaseManager),
+                new SqliteTokenUsageRepository(databaseManager),
+                new SqliteAgentStatsRepository(databaseManager),
+                new SqliteCronHistoryRepository(databaseManager),
+                new SqliteMemoryRepository(databaseManager));
+    }
+
+    public AppContext(
+            AppPaths paths,
+            DatabaseManager databaseManager,
+            SqliteChatSessionRepository sessionRepository,
+            SqliteAgentStateStore agentStateStore,
+            SqliteTokenUsageRepository tokenUsageRepository,
+            SqliteAgentStatsRepository agentStatsRepository,
+            SqliteCronHistoryRepository cronHistoryRepository,
+            SqliteMemoryRepository memoryRepository) {
+        this(
+                paths,
+                new ConfigManager(
+                        paths, sessionRepository, tokenUsageRepository, agentStatsRepository),
+                databaseManager,
+                sessionRepository,
+                agentStateStore,
+                tokenUsageRepository,
+                agentStatsRepository,
+                cronHistoryRepository,
+                memoryRepository);
+    }
+
+    public AppContext(
+            AppPaths paths,
+            ConfigManager configManager,
+            DatabaseManager databaseManager,
+            SqliteChatSessionRepository sessionRepository,
+            SqliteAgentStateStore agentStateStore,
+            SqliteTokenUsageRepository tokenUsageRepository,
+            SqliteAgentStatsRepository agentStatsRepository,
+            SqliteCronHistoryRepository cronHistoryRepository,
+            SqliteMemoryRepository memoryRepository) {
         this.paths = paths;
-        this.configManager = new ConfigManager(paths);
+        this.configManager = configManager;
+        this.databaseManager = databaseManager;
+        this.sessionRepository = sessionRepository;
+        this.agentStateStore = agentStateStore;
+        this.tokenUsageRepository = tokenUsageRepository;
+        this.agentStatsRepository = agentStatsRepository;
+        this.cronHistoryRepository = cronHistoryRepository;
+        this.memoryRepository = memoryRepository;
     }
 
     public AppPaths paths() {
@@ -73,6 +142,11 @@ public class AppContext implements AutoCloseable {
             Files.createDirectories(paths.backupsDir);
             Files.createDirectories(paths.logsDir);
             Files.createDirectories(paths.pluginsDir);
+            Files.createDirectories(paths.webviewDir);
+            Path dbDir = AppHomeConstants.DATABASE_FILE.getParent();
+            if (dbDir != null) {
+                Files.createDirectories(dbDir);
+            }
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Failed to initialize working directory", e);
             throw new RuntimeException("Failed to initialize workspace", e);
@@ -241,14 +315,46 @@ public class AppContext implements AutoCloseable {
         info.setAgentId(agentId);
         info.setName("New Chat");
         info.setChannel("console");
-        String now = LocalDateTime.now().toString();
+        long now = DateTimeUtils.currentTimeMillis();
         info.setCreatedAt(now);
         info.setUpdatedAt(now);
         return info;
     }
 
+    // --- SQLite Repositories ---
+    public DatabaseManager databaseManager() {
+        return databaseManager;
+    }
+
+    public SqliteChatSessionRepository sessionRepository() {
+        return sessionRepository;
+    }
+
+    public SqliteAgentStateStore agentStateStore() {
+        return agentStateStore;
+    }
+
+    public SqliteTokenUsageRepository tokenUsageRepository() {
+        return tokenUsageRepository;
+    }
+
+    public SqliteAgentStatsRepository agentStatsRepository() {
+        return agentStatsRepository;
+    }
+
+    public SqliteCronHistoryRepository cronHistoryRepository() {
+        return cronHistoryRepository;
+    }
+
+    public SqliteMemoryRepository memoryRepository() {
+        return memoryRepository;
+    }
+
     @Override
     public void close() {
         configManager.close();
+        if (databaseManager != null) {
+            databaseManager.close();
+        }
     }
 }

@@ -267,7 +267,7 @@ public final class CronJobModel {
      * @param name              Task name
      * @param enabled           Whether enabled
      * @param schedule          Schedule plan
-     * @param taskId            Associated task (TaskInfo) ID
+     * @param taskId            Associated task (ChatSessionInfo) ID
      * @param inputPrompt       Prompt sent when task is triggered (text input)
      * @param dispatch          Dispatch specification
      * @param saveResultToInbox Whether to save execution result to Inbox
@@ -352,6 +352,28 @@ public final class CronJobModel {
                     meta,
                     countdown);
         }
+
+        /**
+         * Conveniently create a copy with a replaced project ID.
+         *
+         * @param newProjectId New project ID to associate with the job
+         * @return A new CronJobSpec copy with the specified project ID
+         */
+        public CronJobSpec withProjectId(String newProjectId) {
+            return new CronJobSpec(
+                    id,
+                    newProjectId,
+                    name,
+                    enabled,
+                    schedule,
+                    taskId,
+                    inputPrompt,
+                    dispatch,
+                    saveResultToInbox,
+                    runtime,
+                    meta,
+                    countdown);
+        }
     }
 
     // ======================== File Storage Root Structure ========================
@@ -393,13 +415,23 @@ public final class CronJobModel {
     /**
      * Single execution record.
      *
-     * @param runAt   Execution time (ISO-8601)
+     * @param runAt   Execution time (UTC epoch milliseconds)
      * @param status  Execution status
      * @param error   Error message
      * @param trigger Trigger mode: "scheduled" or "manual"
      */
     public record CronExecutionRecord(
-            String runAt, CronJobStatus status, String error, CronJobTrigger trigger) {}
+            long runAt, CronJobStatus status, String error, CronJobTrigger trigger) {
+
+        /**
+         * Returns a human-readable formatted execution time in the system default timezone.
+         *
+         * @return formatted date time string
+         */
+        public String formattedRunAt() {
+            return ai.emailclaw.emailclaw.util.DateTimeUtils.formatEpochMillis(runAt);
+        }
+    }
 
     // ======================== Dispatch Target List Item ========================
     /**

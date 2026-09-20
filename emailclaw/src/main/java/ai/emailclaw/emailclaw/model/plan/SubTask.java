@@ -10,11 +10,11 @@
  */
 package ai.emailclaw.emailclaw.model.plan;
 
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * A single subtask in a plan.
@@ -23,7 +23,7 @@ import java.util.UUID;
  */
 public class SubTask {
     /** Subtask unique identifier (UUID). */
-    private String id = UUID.randomUUID().toString();
+    private String id = UuidUtils.randomUUIDv7().toString();
 
     /** Execution sequence number, reflecting the agreed execution order in the plan. */
     private int seq = 0;
@@ -200,7 +200,7 @@ public class SubTask {
      * @param description Detailed description
      */
     public SubTask(int seq, String title, String description) {
-        this.id = UUID.randomUUID().toString();
+        this.id = UuidUtils.randomUUIDv7().toString();
         this.seq = seq;
         this.title = title == null ? "" : title;
         this.description = description == null ? "" : description;

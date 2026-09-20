@@ -12,7 +12,7 @@ package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import java.time.LocalDateTime;
+import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -100,7 +100,7 @@ public final class SessionTitleGenerator {
                 return;
             }
             current.setName(title);
-            current.setUpdatedAt(LocalDateTime.now().toString());
+            current.setUpdatedAt(DateTimeUtils.currentTimeMillis());
             repository.saveSessions(sessions);
             LOGGER.log(
                     Level.INFO,

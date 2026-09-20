@@ -15,6 +15,7 @@ import ai.emailclaw.emailclaw.model.AgentRuntimeStatus;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.SkillService;
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
@@ -167,12 +168,7 @@ public class AgentManagementView implements ViewPane {
                         formComponent.commitTo(agent);
                         if (agent.getId() == null || agent.getId().isBlank()) {
                             agent.setId(
-                                    "agent-"
-                                            + java.util
-                                                    .UUID
-                                                    .randomUUID()
-                                                    .toString()
-                                                    .substring(0, 8));
+                                    "agent-" + UuidUtils.randomUUIDv7().toString().substring(0, 8));
                         }
                         return agent;
                     }

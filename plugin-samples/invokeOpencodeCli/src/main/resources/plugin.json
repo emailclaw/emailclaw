@@ -1,0 +1,9 @@
+{
+  "id": "emailclaw-plugin-tool-invokeOpencodeCli",
+  "name": "Invoke OpenCode CLI",
+  "version": "1.0.0",
+  "author": "Example Author",
+  "type": "tool",
+  "entry_point": "ai.emailclaw.emailclaw.plugin.tool.opencode.InvokeOpencodeCliPlugin",
+  "description": "Plugin adapter for the OpenCode CLI Tool."
+}

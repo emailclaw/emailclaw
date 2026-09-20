@@ -108,7 +108,6 @@ public class BootstrapService {
             Path workspace = repository.workspaceFor(agent.getId());
             try {
                 Files.createDirectories(workspace);
-                Files.createDirectories(workspace.resolve(WorkspacePaths.MEMORY_DIR));
                 Files.createDirectories(workspace.resolve(WorkspacePaths.SKILLS_DIR));
             } catch (IOException e) {
                 throw new RuntimeException("Failed to init workspace for " + agent.getId(), e);

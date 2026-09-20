@@ -18,7 +18,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.JsonFileAgentStateStore;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -42,9 +41,15 @@ public class ChatSessionRepository {
     private static final String SESSION_USER_ID = null;
 
     private final ProjectService projectService;
+    private final AgentStateStore agentStateStore;
 
-    public ChatSessionRepository(ProjectService projectService) {
+    public ChatSessionRepository(ProjectService projectService, AgentStateStore agentStateStore) {
         this.projectService = projectService;
+        this.agentStateStore = agentStateStore;
+    }
+
+    private AgentStateStore resolveStore() {
+        return agentStateStore;
     }
 
     public Path sessionPath(String projectId, String agentId) {
@@ -58,9 +63,7 @@ public class ChatSessionRepository {
     }
 
     public List<Msg> loadHistory(String projectId, String agentId, String sessionId) {
-        AgentStateStore session =
-                new MergingAgentStateStore(
-                        new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
+        AgentStateStore session = resolveStore();
         AgentState state = loadAgentState(session, sessionId);
         List<Msg> msgs = state != null ? state.getContext() : null;
         return msgs != null ? new ArrayList<>(msgs) : new ArrayList<>();
@@ -84,11 +87,9 @@ public class ChatSessionRepository {
         }
         try {
             /**
-             * Batch save session metadata.
+             * Save session state via configured state store (SQLite or legacy file store).
              */
-            AgentStateStore session =
-                    new MergingAgentStateStore(
-                            new JsonFileAgentStateStore(sessionPath(projectId, agentId)));
+            AgentStateStore session = resolveStore();
             /**
              * Load all session metadata (sorted descending by updatedAt).
              */

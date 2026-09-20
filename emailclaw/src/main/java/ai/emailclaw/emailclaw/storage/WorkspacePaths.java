@@ -15,7 +15,6 @@ package ai.emailclaw.emailclaw.storage;
  */
 public final class WorkspacePaths {
 
-    public static final String MEMORY_DIR = "memory";
     public static final String SKILLS_DIR = "skills";
     public static final String SESSIONS_DIR = "sessions";
     public static final String PLANS_DIR = "plans";

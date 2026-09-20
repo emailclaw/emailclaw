@@ -91,19 +91,23 @@ public class PlaywrightManager {
                                             "--disable-popup-blocking",
                                             "--profile-directory=Default",
                                             "--ignore-certificate-errors",
-                                            "--disable-plugins-discovery"))
+                                            "--disable-plugins-discovery",
+                                            "--lang=en-US,en"))
                             .setExecutablePath(Paths.get(executablePath))
-                            .setUserAgent(
-                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                                            + " (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                             .setViewportSize(1920, 1080)
                             .setIgnoreHTTPSErrors(true);
+            String customUserAgent = System.getenv("EMAILCLAW_BROWSER_USER_AGENT");
+            if (customUserAgent != null && !customUserAgent.isBlank()) {
+                LOGGER.info("Using configured custom browser User-Agent");
+                options.setUserAgent(customUserAgent.trim());
+            }
             LOGGER.log(
                     Level.INFO,
                     "Initializing browser persistent context: {0}",
                     userDataDir.toAbsolutePath());
             BrowserContext context =
                     playwright.chromium().launchPersistentContext(userDataDir, options);
+            BrowserStealthSupport.applyStealth(context);
             context.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
             context.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
             browserContextMap.put(agentId, context);
