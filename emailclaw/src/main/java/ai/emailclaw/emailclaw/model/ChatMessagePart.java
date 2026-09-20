@@ -27,6 +27,7 @@ public class ChatMessagePart {
     public static final String HINT = "hint";
     public static final String ERROR = "error";
     public static final String SUB_AGENT_EVENT = "sub_agent_event";
+    public static final String IMAGE = "image";
 
     /** Content part type. */
     private String type = TEXT;

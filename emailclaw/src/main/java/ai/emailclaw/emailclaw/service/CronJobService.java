@@ -24,6 +24,7 @@ import ai.emailclaw.emailclaw.model.CronJobModel.ScheduleSpec;
 import ai.emailclaw.emailclaw.model.CronJobStatus;
 import ai.emailclaw.emailclaw.model.CronJobTrigger;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
+import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.SessionDefaults;
 import ai.emailclaw.emailclaw.plugin.PluginManager;
@@ -32,9 +33,6 @@ import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.util.UuidUtils;
 import io.agentscope.core.message.Msg;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -53,8 +51,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Cron job configuration service.
@@ -74,13 +70,6 @@ public class CronJobService implements AutoCloseable {
     private final AppContext appContext;
 
     private final ConfigManager configManager;
-
-    private final Path historyDir;
-
-    /**
-     * History JSON serializer (independent from ConfigManager's mapper to avoid lock contention).
-     */
-    private final ObjectMapper historyMapper = new ObjectMapper();
 
     /**
      * Scheduler thread pool.
@@ -146,7 +135,6 @@ public class CronJobService implements AutoCloseable {
         this.agentService = agentService;
         this.providerService = providerService;
         this.pluginManager = pluginManager;
-        this.historyDir = appContext.paths().cronJobsFile.resolveSibling("cron-jobs-history");
         // Register hot reload listener: automatically reschedule when cron-jobs.json is modified
         // externally
         this.configManager.addChangeListener(
@@ -160,6 +148,7 @@ public class CronJobService implements AutoCloseable {
      */
     public synchronized void start() {
         if (started) return;
+        normalizeCronJobProjectIds();
         started = true;
         LOGGER.info("Starting Cron scheduler...");
         List<CronJobSpec> jobs = configManager.getCronJobs();
@@ -227,7 +216,7 @@ public class CronJobService implements AutoCloseable {
     }
 
     /**
-     * Parse and complete the TaskInfo associated with the job.
+     * Parse and complete the task session (ChatSessionInfo) associated with the job.
      *
      * <p>If {@code spec.taskId} is empty or {@code default}, a new task will be created
      * automatically based on the job name (ID will be UUID v7), and the taskId will be written back to the spec.
@@ -251,15 +240,14 @@ public class CronJobService implements AutoCloseable {
         }
         // Need to automatically create an associated Session
         String channel = spec.dispatch() != null ? spec.dispatch().channel() : ChannelIds.CONSOLE;
-        ChatSessionInfo task = chatService.newSession(agentId);
-        task.setKind(ChatSessionInfo.KIND_TASK);
-        task.setName(spec.name());
-        task.setProjectId(spec.projectId());
+        ChatSessionInfo task =
+                chatService.newSession(
+                        agentId, ChatSessionInfo.KIND_TASK, spec.name(), spec.projectId());
         task.setChannel(channel);
         task.setDescription("Underlying task automatically created for cron job: " + spec.name());
         task.setStatus(ChatSessionInfo.TaskStatus.ACTIVE);
-        // Trigger save to sessions.json
-        chatService.touchSession(task);
+        // Trigger save to database
+        chatService.updateSession(task);
         LOGGER.log(
                 Level.INFO,
                 "Cron job didn't specify associated task, auto-created: taskId={0}, name={1}",
@@ -292,12 +280,124 @@ public class CronJobService implements AutoCloseable {
                 spec.countdown());
     }
 
+    // ======================== Project Resolution ========================
+    /**
+     * Resolve the effective project ID for a cron job specification.
+     *
+     * <p>If {@code job.projectId()} is non-blank and not "default", returns it. Otherwise, falls
+     * back to inspecting the associated session or dispatch target, and if that session belongs
+     * to a specific project, returns that project's ID.
+     *
+     * @param job Cron job specification
+     * @return Effective project ID ("default" if unassociated or belongs to default project)
+     */
+    public String resolveJobProjectId(CronJobSpec job) {
+        if (job == null) {
+            return "default";
+        }
+        String pId = job.projectId();
+        if (pId != null && !pId.isBlank() && !"default".equals(pId)) {
+            return pId;
+        }
+        // Fallback: check session if projectId is missing, blank, or "default"
+        String sessionId = null;
+        if (job.dispatch() != null && job.dispatch().target() != null) {
+            sessionId = job.dispatch().target().sessionId();
+        }
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = job.taskId();
+        }
+        if (sessionId != null && !sessionId.isBlank()) {
+            if (chatService != null) {
+                ChatSessionInfo session = chatService.findSession(sessionId);
+                if (session != null && !session.getProjectId().isBlank()) {
+                    return session.getProjectId();
+                }
+            }
+            if (configManager != null && configManager.getProjects() != null) {
+                for (ProjectInfo p : configManager.getProjects()) {
+                    if (sessionId.equals(p.getId())) {
+                        return p.getId();
+                    }
+                }
+            }
+        }
+        if (configManager != null && configManager.getProjects() != null && job.id() != null) {
+            for (ProjectInfo p : configManager.getProjects()) {
+                if (!"default".equals(p.getId()) && job.id().startsWith(p.getId())) {
+                    return p.getId();
+                }
+            }
+        }
+        return (pId != null && !pId.isBlank()) ? pId : "default";
+    }
+
+    /**
+     * Normalize project IDs for cron jobs that are marked as "default" or blank,
+     * but are associated with a project-specific session.
+     */
+    public void normalizeCronJobProjectIds() {
+        List<CronJobSpec> current = configManager.getCronJobs();
+        boolean changed = false;
+        List<CronJobSpec> updated = new ArrayList<>(current.size());
+        for (CronJobSpec job : current) {
+            String resolved = resolveJobProjectId(job);
+            String original =
+                    (job.projectId() == null || job.projectId().isBlank())
+                            ? "default"
+                            : job.projectId();
+            if (!resolved.equals(original)) {
+                LOGGER.log(
+                        Level.INFO,
+                        "Normalizing cron job project ID: id={0}, name={1}, oldProjectId={2},"
+                                + " newProjectId={3}",
+                        new Object[] {job.id(), job.name(), original, resolved});
+                updated.add(job.withProjectId(resolved));
+                changed = true;
+            } else {
+                updated.add(job);
+            }
+        }
+        if (changed) {
+            LOGGER.log(Level.INFO, "Persisting normalized cron jobs to configManager...");
+            configManager.saveCronJobs(updated);
+        }
+    }
+
     // ======================== CRUD Operations ========================
     /**
      * List all cron jobs.
      */
     public List<CronJobSpec> list() {
-        return configManager.getCronJobs();
+        return configManager.getCronJobs().stream()
+                .map(
+                        j -> {
+                            String resolved = resolveJobProjectId(j);
+                            return (!resolved.equals(j.projectId()))
+                                    ? j.withProjectId(resolved)
+                                    : j;
+                        })
+                .toList();
+    }
+
+    /**
+     * List cron jobs for a specific project.
+     *
+     * @param projectId Project ID to filter by; null or blank defaults to "default"
+     * @return List of matching cron job specifications
+     */
+    public List<CronJobSpec> listByProject(String projectId) {
+        String target = (projectId == null || projectId.isBlank()) ? "default" : projectId;
+        return configManager.getCronJobs().stream()
+                .filter(j -> target.equals(resolveJobProjectId(j)))
+                .map(
+                        j -> {
+                            String resolved = resolveJobProjectId(j);
+                            return (!resolved.equals(j.projectId()))
+                                    ? j.withProjectId(resolved)
+                                    : j;
+                        })
+                .toList();
     }
 
     /**
@@ -306,6 +406,13 @@ public class CronJobService implements AutoCloseable {
     public CronJobSpec get(String jobId) {
         return configManager.getCronJobs().stream()
                 .filter(j -> jobId.equals(j.id()))
+                .map(
+                        j -> {
+                            String resolved = resolveJobProjectId(j);
+                            return (!resolved.equals(j.projectId()))
+                                    ? j.withProjectId(resolved)
+                                    : j;
+                        })
                 .findFirst()
                 .orElse(null);
     }
@@ -315,13 +422,15 @@ public class CronJobService implements AutoCloseable {
      */
     public CronJobSpec add(CronJobSpec spec) {
         String jobId = UuidUtils.randomUUIDv7().toString();
-        CronJobSpec created = spec.withId(jobId);
+        String resolvedProjectId = resolveJobProjectId(spec);
+        CronJobSpec created = spec.withId(jobId).withProjectId(resolvedProjectId);
         LOGGER.log(
                 Level.INFO,
-                "Added cron job: id={0}, name={1}, cron={2}",
+                "Added cron job: id={0}, name={1}, projectId={2}, cron={3}",
                 new Object[] {
                     jobId,
                     created.name(),
+                    created.projectId(),
                     created.schedule() != null ? created.schedule().cron() : "N/A"
                 });
         List<CronJobSpec> jobs = new ArrayList<>(configManager.getCronJobs());
@@ -376,8 +485,8 @@ public class CronJobService implements AutoCloseable {
         jobStates.remove(jobId);
         runningCounts.remove(jobId);
         jobHistory.remove(jobId);
-        // Clean up history file
-        deleteHistoryFile(jobId);
+        // Clean up history
+        deleteHistory(jobId);
         List<CronJobSpec> jobs = new ArrayList<>(configManager.getCronJobs());
         boolean removed = jobs.removeIf(j -> jobId.equals(j.id()));
         if (removed) {
@@ -822,11 +931,7 @@ public class CronJobService implements AutoCloseable {
     private void recordExecution(
             String jobId, CronJobStatus status, String error, CronJobTrigger trigger) {
         CronExecutionRecord record =
-                new CronExecutionRecord(
-                        ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                        status,
-                        error,
-                        trigger);
+                new CronExecutionRecord(System.currentTimeMillis(), status, error, trigger);
         synchronized (historyLock) {
             List<CronExecutionRecord> records =
                     jobHistory.computeIfAbsent(jobId, k -> loadHistory(jobId));
@@ -943,43 +1048,21 @@ public class CronJobService implements AutoCloseable {
     }
 
     private List<CronExecutionRecord> loadHistory(String jobId) {
-        Path file = historyFileFor(jobId);
-        if (!Files.exists(file)) return new ArrayList<>();
-        try {
-            String content = Files.readString(file);
-            if (content.isBlank()) return new ArrayList<>();
-            return historyMapper.readValue(
-                    content, new TypeReference<List<CronExecutionRecord>>() {});
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to read task history records: id=" + jobId, e);
-            return new ArrayList<>();
+        if (appContext != null && appContext.cronHistoryRepository() != null) {
+            return appContext.cronHistoryRepository().loadHistory(jobId);
         }
+        return new ArrayList<>();
     }
 
     private void saveHistory(String jobId, List<CronExecutionRecord> records) {
-        try {
-            Files.createDirectories(historyDir);
-            Path file = historyFileFor(jobId);
-            String content =
-                    historyMapper.writerWithDefaultPrettyPrinter().writeValueAsString(records);
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, content);
-            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to save task history records: id=" + jobId, e);
+        if (appContext != null && appContext.cronHistoryRepository() != null) {
+            appContext.cronHistoryRepository().saveHistory(jobId, records);
         }
     }
 
-    private void deleteHistoryFile(String jobId) {
-        try {
-            Files.deleteIfExists(historyFileFor(jobId));
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to delete task history file: id=" + jobId, e);
+    private void deleteHistory(String jobId) {
+        if (appContext != null && appContext.cronHistoryRepository() != null) {
+            appContext.cronHistoryRepository().deleteHistory(jobId);
         }
-    }
-
-    private Path historyFileFor(String jobId) {
-        String encoded = jobId.replaceAll("[^a-zA-Z0-9_-]", "_");
-        return historyDir.resolve(encoded + ".json");
     }
 }

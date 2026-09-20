@@ -36,10 +36,11 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
+import io.agentscope.harness.agent.gateway.TurnBusyException;
+import io.agentscope.harness.agent.gateway.TurnLease;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -162,6 +163,24 @@ public class MessagePipeline {
             List<Path> attachmentPaths,
             Map<String, Object> route,
             StreamCallback callback) {
+        String sessionId =
+                (sessionInfo != null && sessionInfo.getId() != null)
+                        ? sessionInfo.getId()
+                        : "default";
+        TurnLease lease;
+        try {
+            lease = chatService.getTurnGate().acquire(sessionId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(
+                    Level.WARNING,
+                    "Interrupted while waiting for session turn lease: {0}",
+                    sessionId);
+            return;
+        } catch (TurnBusyException e) {
+            LOGGER.log(Level.WARNING, "Session turn busy: {0}", sessionId);
+            return;
+        }
         String completedText = "";
         boolean started = false;
         try {
@@ -176,22 +195,16 @@ public class MessagePipeline {
             boolean firstUserMessage = history.isEmpty();
             // If the session has no custom name, generate a temporary placeholder name based on the
             // first message
-            maybeSetPlaceholderSessionName(sessionInfo, prompt);
+            if (prompt != null && !prompt.isBlank()) {
+                maybeSetPlaceholderSessionName(sessionInfo, prompt);
+            }
             AgentConfiguration config = repository.loadAgentConfig(agent.getId());
             // 1. Build the core HarnessAgent agent
             String channel =
                     sessionInfo == null || sessionInfo.getChannel() == null
                             ? ChannelIds.CONSOLE
                             : sessionInfo.getChannel();
-            AgentStateStore sessionStore =
-                    new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                            new JsonFileAgentStateStore(
-                                    chatService.sessionPath(
-                                            sessionInfo != null
-                                                    ? sessionInfo.projectId()
-                                                    : "default",
-                                            agent.getId())));
-            sanitizeSessionMediaSources(sessionStore, sessionInfo.getId());
+            AgentStateStore sessionStore = repository.agentStateStore();
             // Append title generation instructions to the first message, asking the LLM to output
             // [TITLE: xxx] at the end of the main reply
             // Note: The instruction text will be persisted by AgentScope along with the user
@@ -199,7 +212,7 @@ public class MessagePipeline {
             // when reading history, this instruction will be automatically stripped to avoid dirty
             // data when reopening the session.
             String effectivePrompt = prompt;
-            if (firstUserMessage && config.isAutoGenerateSessionTitle()) {
+            if (prompt != null && firstUserMessage && config.isAutoGenerateSessionTitle()) {
                 effectivePrompt = prompt + EMBEDDED_TITLE_INSTRUCTION;
             }
             HarnessAgent reactAgent =
@@ -207,13 +220,17 @@ public class MessagePipeline {
                             agent, provider, modelId, config, channel, sessionInfo.getId());
             // 2. Wrap the message currently sent by the user into a Msg object
             Msg userMsg =
-                    buildUserMessage(
-                            agent,
-                            sessionInfo,
-                            effectivePrompt,
-                            attachmentPaths,
-                            agentRuntimeDispatcher.selectedModelSupportsImage(provider, modelId),
-                            agentRuntimeDispatcher.selectedModelSupportsVideo(provider, modelId));
+                    (prompt != null || (attachmentPaths != null && !attachmentPaths.isEmpty()))
+                            ? buildUserMessage(
+                                    agent,
+                                    sessionInfo,
+                                    effectivePrompt,
+                                    attachmentPaths,
+                                    agentRuntimeDispatcher.selectedModelSupportsImage(
+                                            provider, modelId),
+                                    agentRuntimeDispatcher.selectedModelSupportsVideo(
+                                            provider, modelId))
+                            : null;
             boolean hasError = false;
             // ── Initialize tracker components ──────────────────────────────────
             PendingApprovalTracker approvalTracker = new PendingApprovalTracker(governanceService);
@@ -228,6 +245,7 @@ public class MessagePipeline {
                             modelId);
 
             agentService.markTaskStarted(agent.getId());
+            chatService.markSessionRunning(sessionInfo.getId());
             started = true;
             try {
                 int attempts = 0;
@@ -271,8 +289,9 @@ public class MessagePipeline {
                         }
                         RuntimeContext runtimeContext = rcBuilder.build();
                         StreamingEventHandler currentHandler = eventHandler;
+                        List<Msg> inputMsgs = userMsg != null ? List.of(userMsg) : List.of();
                         reactAgent
-                                .streamEvents(userMsg, runtimeContext)
+                                .streamEvents(inputMsgs, runtimeContext)
                                 .doOnNext(event -> currentHandler.handleEvent(event))
                                 .doOnComplete(
                                         () -> {
@@ -379,6 +398,11 @@ public class MessagePipeline {
                 }
             } finally {
                 try {
+                    chatService.markSessionFinished(sessionInfo.getId());
+                } catch (Exception markErr) {
+                    LOGGER.log(Level.WARNING, "markSessionFinished failed (ignored)", markErr);
+                }
+                try {
                     agentService.markTaskFinished(agent.getId());
                 } catch (Exception markErr) {
                     LOGGER.log(Level.WARNING, "markTaskFinished failed (ignored)", markErr);
@@ -407,21 +431,29 @@ public class MessagePipeline {
                 // usually not triggering the default persistence operation.
                 // Therefore, we must manually flush the user input of this round and the output
                 // containing the error information to disk, to prevent record loss.
-                Msg errorUserMsg =
-                        Msg.builder()
-                                .name(ChatMessageRoles.USER)
-                                .role(MsgRole.USER)
-                                .content(
-                                        List.of(
-                                                TextBlock.builder()
-                                                        .text(userMsg.getTextContent())
-                                                        .build()))
-                                .timestamp(userMsg.getTimestamp())
-                                .build();
-                chatService.appendHistoryMsg(agent.getId(), sessionInfo.getId(), errorUserMsg);
+                if (userMsg != null) {
+                    Msg errorUserMsg =
+                            Msg.builder()
+                                    .name(ChatMessageRoles.USER)
+                                    .role(MsgRole.USER)
+                                    .content(
+                                            List.of(
+                                                    TextBlock.builder()
+                                                            .text(userMsg.getTextContent())
+                                                            .build()))
+                                    .timestamp(userMsg.getTimestamp())
+                                    .build();
+                    chatService.appendHistoryMsg(agent.getId(), sessionInfo.getId(), errorUserMsg);
+                }
                 chatService.appendHistoryMsg(agent.getId(), sessionInfo.getId(), completedMsg);
             }
-            recordUsage(agent.getId(), provider.getId(), modelId, prompt, completedText);
+            recordUsage(
+                    agent.getId(),
+                    provider.getId(),
+                    modelId,
+                    prompt != null ? prompt : "",
+                    completedText,
+                    eventHandler);
             // Use PostStreamHandler to execute post-processing logic (title generation, memory
             // synchronization, internal communication reply)
             if (!hasError) {
@@ -434,13 +466,23 @@ public class MessagePipeline {
                                 chatService,
                                 titleGenerator);
                 postHandler.executePostProcessing(
-                        completedText, firstUserMessage, config.isAutoGenerateSessionTitle());
+                        completedText,
+                        firstUserMessage && prompt != null,
+                        config.isAutoGenerateSessionTitle());
             }
             LOGGER.log(Level.INFO, "Final result output started: session={0}", sessionInfo.getId());
             safeOnCompleted(callback, completedMsg);
         } catch (Throwable fatal) {
             LOGGER.log(Level.SEVERE, "sendMessage encountered unhandled exception", fatal);
             if (started) {
+                try {
+                    chatService.markSessionFinished(sessionInfo.getId());
+                } catch (Exception ignore) {
+                    LOGGER.log(
+                            Level.FINE,
+                            "markSessionFinished secondary fallback failed (ignored)",
+                            ignore);
+                }
                 try {
                     agentService.markTaskFinished(agent.getId());
                 } catch (Exception ignore) {
@@ -460,17 +502,21 @@ public class MessagePipeline {
                             .content(List.of(TextBlock.builder().text(fatalText).build()))
                             .timestamp(LocalDateTime.now().toString())
                             .build();
-            Msg fatalUserMsg =
-                    Msg.builder()
-                            .name(ChatMessageRoles.USER)
-                            .role(MsgRole.USER)
-                            .content(List.of(TextBlock.builder().text(prompt).build()))
-                            .timestamp(LocalDateTime.now().toString())
-                            .build();
-            chatService.appendHistoryMsg(agent.getId(), sessionInfo.getId(), fatalUserMsg);
+            if (prompt != null) {
+                Msg fatalUserMsg =
+                        Msg.builder()
+                                .name(ChatMessageRoles.USER)
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text(prompt).build()))
+                                .timestamp(LocalDateTime.now().toString())
+                                .build();
+                chatService.appendHistoryMsg(agent.getId(), sessionInfo.getId(), fatalUserMsg);
+            }
             chatService.appendHistoryMsg(agent.getId(), sessionInfo.getId(), fatalMsg);
             ChatService.safeOnPart(callback, fatalPart, true);
             safeOnCompleted(callback, fatalMsg);
+        } finally {
+            lease.close();
         }
     }
 
@@ -479,7 +525,9 @@ public class MessagePipeline {
      */
     private void maybeSetPlaceholderSessionName(ChatSessionInfo session, String prompt) {
         String current = session.getName() == null ? "" : session.getName().trim();
-        if (!current.isBlank() && !"New Chat".equalsIgnoreCase(current)) {
+        if (!current.isBlank()
+                && !"New Chat".equalsIgnoreCase(current)
+                && !"New Task".equalsIgnoreCase(current)) {
             LOGGER.log(
                     Level.FINE,
                     "Session already has custom name, skipping placeholder setting: session={0},"
@@ -487,7 +535,7 @@ public class MessagePipeline {
                     new Object[] {session.getId(), current});
             return;
         }
-        String fallback = truncateSessionName(prompt);
+        String fallback = truncateSessionName(prompt, session.getKind());
         if (fallback.isBlank()) {
             return;
         }
@@ -497,17 +545,6 @@ public class MessagePipeline {
                 Level.INFO,
                 "Session placeholder name setting completed: session={0}, name={1}",
                 new Object[] {session.getId(), fallback});
-    }
-
-    private void sanitizeSessionMediaSources(AgentStateStore session, String sessionId) {
-        if (session == null || sessionId == null || sessionId.isBlank()) {
-            return;
-        }
-        try {
-            chatService.sanitizeMemoryMessages(session, ChatService.SESSION_USER_ID, sessionId);
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Session media history sanitation failed (ignored)", e);
-        }
     }
 
     private Msg buildUserMessage(
@@ -582,10 +619,10 @@ public class MessagePipeline {
                 .build();
     }
 
-    private String truncateSessionName(String prompt) {
+    private String truncateSessionName(String prompt, String kind) {
         String line = (prompt == null ? "" : prompt).trim().replace("\n", " ");
         if (line.isBlank()) {
-            return "New Chat";
+            return ChatSessionInfo.KIND_TASK.equals(kind) ? "New Task" : "New Chat";
         }
         return line.length() > 30 ? line.substring(0, 30).trim() + "…" : line;
     }
@@ -601,12 +638,26 @@ public class MessagePipeline {
      * @param output     Message content returned by large model
      */
     private void recordUsage(
-            String agentId, String providerId, String modelId, String prompt, String output) {
-        long promptTokens = Math.max(1, prompt.length() / 4L);
-        long completionTokens = Math.max(1, output.length() / 4L);
-        // cachedTokens cannot be accurately estimated from plain text, defaulting to 0; can
-        // integrate real ChatUsage data later
-        long cachedTokens = 0;
+            String agentId,
+            String providerId,
+            String modelId,
+            String prompt,
+            String output,
+            StreamingEventHandler handler) {
+        long promptTokens;
+        long completionTokens;
+        long cachedTokens;
+
+        if (handler != null && handler.hasModelUsage()) {
+            promptTokens = handler.getTotalInputTokens();
+            completionTokens = handler.getTotalOutputTokens();
+            cachedTokens = handler.getTotalCachedTokens();
+        } else {
+            promptTokens = Math.max(1, prompt.length() / 4L);
+            completionTokens = Math.max(1, output.length() / 4L);
+            cachedTokens = 0;
+        }
+
         List<TokenUsageRecord> usage = repository.loadTokenUsage();
         TokenUsageRecord u =
                 new TokenUsageRecord(
@@ -619,11 +670,17 @@ public class MessagePipeline {
         usage.add(u);
         repository.saveTokenUsage(usage);
         LOGGER.log(
-                Level.FINE,
-                "Recording token usage: agent={0}, provider={1}, model={2}, promptTokens={3},"
-                        + " completionTokens={4}, cachedTokens={5}",
+                Level.INFO,
+                "Recorded token usage: agent={0}, provider={1}, model={2}, promptTokens={3},"
+                        + " completionTokens={4}, cachedTokens={5} (source: {6})",
                 new Object[] {
-                    agentId, providerId, modelId, promptTokens, completionTokens, cachedTokens
+                    agentId,
+                    providerId,
+                    modelId,
+                    promptTokens,
+                    completionTokens,
+                    cachedTokens,
+                    (handler != null && handler.hasModelUsage()) ? "ModelCallEndEvent" : "estimated"
                 });
         List<AgentStatRecord> stats = repository.loadAgentStats();
         AgentStatRecord s = new AgentStatRecord(LocalDate.now().toString(), agentId, 1, 0);

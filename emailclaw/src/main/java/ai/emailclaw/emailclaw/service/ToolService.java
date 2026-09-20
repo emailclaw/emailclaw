@@ -10,13 +10,18 @@
  */
 package ai.emailclaw.emailclaw.service;
 
+import ai.emailclaw.emailclaw.model.McpClientInfo;
 import ai.emailclaw.emailclaw.model.ToolInfo;
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.tools.ToolRegistry;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.tools.McpServerConfig;
+import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +42,7 @@ public class ToolService {
     private final Object toolsLock = new Object();
     private final ConfigManager configManager;
     private final PluginRegistry pluginRegistry;
+    private final McpService mcpService;
 
     /** Default vision model name, used for multi-modal tools. */
     private String defaultVisionModel = "gpt-4o";
@@ -45,8 +51,14 @@ public class ToolService {
     public static final String TOOL_DISABLED_MESSAGE = "Tool disabled.";
 
     public ToolService(AppContext repository, PluginRegistry pluginRegistry) {
+        this(repository, pluginRegistry, new McpService(repository));
+    }
+
+    public ToolService(
+            AppContext repository, PluginRegistry pluginRegistry, McpService mcpService) {
         this.configManager = repository.configManager();
         this.pluginRegistry = pluginRegistry;
+        this.mcpService = mcpService;
         LOGGER.info("ToolService initialized");
     }
 
@@ -137,7 +149,62 @@ public class ToolService {
             }
         }
 
+        // Register enabled MCP servers with McpServerRegistrationListener
+        registerMcpServers(toolkit);
+
         LOGGER.log(Level.FINE, "Build Toolkit, enabled tool count: {0}", enabled.size());
         return toolkit;
+    }
+
+    /**
+     * Registers configured and enabled MCP servers into the Toolkit with registration result tracking.
+     */
+    private void registerMcpServers(Toolkit toolkit) {
+        if (mcpService == null) {
+            return;
+        }
+        List<McpClientInfo> clients = mcpService.list();
+        if (clients == null || clients.isEmpty()) {
+            return;
+        }
+        Map<String, McpServerConfig> servers = new HashMap<>();
+        for (McpClientInfo client : clients) {
+            if (!client.enabled()) {
+                continue;
+            }
+            if (client.command() == null || client.command().isBlank()) {
+                continue;
+            }
+            McpServerConfig cfg = new McpServerConfig();
+            cfg.setTransport("stdio");
+            cfg.setCommand(client.command());
+            if (client.args() != null && !client.args().isEmpty()) {
+                cfg.setArgs(client.args());
+            }
+            if (client.envJson() != null && !client.envJson().isBlank()) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> env =
+                            JsonUtils.getJsonCodec().fromJson(client.envJson(), Map.class);
+                    cfg.setEnv(env);
+                } catch (Exception e) {
+                    LOGGER.log(
+                            Level.WARNING,
+                            "Failed to parse envJson for MCP client: " + client.key(),
+                            e);
+                }
+            }
+            if (client.toolWhitelistEnabled()
+                    && client.allowedToolNames() != null
+                    && !client.allowedToolNames().isEmpty()) {
+                cfg.setEnableTools(client.allowedToolNames());
+            }
+            servers.put(client.key(), cfg);
+        }
+        if (!servers.isEmpty()) {
+            LOGGER.log(Level.INFO, "Registering {0} MCP server(s)...", servers.size());
+            McpServerRegistrar.register(
+                    toolkit, servers, result -> mcpService.recordRegistrationResult(result));
+        }
     }
 }

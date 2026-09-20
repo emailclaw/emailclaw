@@ -33,8 +33,11 @@ public final class AppHomeConstants {
     public static final String SECRET_DIR = ".secret";
     public static final String SECURITY_APPROVALS_DIR = ".security/approvals";
     public static final String SESSIONS_DIR = "sessions";
-    public static final Path BROWSER_DATA_PATH =
-            AppHomeConstants.HOME_RESOLVED.resolve(".browser-data");
+    public static final String WEBVIEW_DIR = ".webview";
+    public static final Path BROWSER_DATA_PATH = HOME_RESOLVED.resolve(".browser-data");
+    public static final Path WEBVIEW_DATA_PATH = HOME_RESOLVED.resolve(WEBVIEW_DIR);
+    public static final Path DATABASE_FILE =
+            HOME_RESOLVED.resolve(".database").resolve("emailclaw.db");
 
     private AppHomeConstants() {}
 

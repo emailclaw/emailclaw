@@ -28,6 +28,7 @@ import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.service.CronJobService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
+import ai.emailclaw.emailclaw.util.WebViewUtils;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolUseBlock;
@@ -128,7 +129,7 @@ public class ChatView implements ViewPane {
 
     private ChatSearchPanel chatSearchPanel;
 
-    private final TextField title = new TextField("New Chat");
+    private final TextField title = new TextField();
 
     private final List<Path> attachments = new ArrayList<>();
 
@@ -180,6 +181,7 @@ public class ChatView implements ViewPane {
                 sessionKind == null
                         ? ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_CHAT
                         : sessionKind;
+        this.title.setText(defaultSessionTitle());
         initCodingModePane();
         initUi();
         restoreCodingModeState();
@@ -195,14 +197,50 @@ public class ChatView implements ViewPane {
                         () -> Platform.runLater(this::refreshSessionTitle));
     }
 
+    /**
+     * Get the default session title based on the session kind.
+     *
+     * @return "New Task" for task sessions, or "New Chat" for chat sessions
+     */
+    private String defaultSessionTitle() {
+        return ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
+                ? "New Task"
+                : "New Chat";
+    }
+
+    /**
+     * Get the default session title for a specific session based on its kind.
+     *
+     * @param session The session to check
+     * @return "New Task" if kind is TASK, or "New Chat" otherwise
+     */
+    private String defaultTitleFor(ChatSessionInfo session) {
+        String kind =
+                session != null && session.getKind() != null ? session.getKind() : sessionKind;
+        return ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(kind)
+                ? "New Task"
+                : "New Chat";
+    }
+
+    /**
+     * Get the display title for a session, falling back to defaultTitleFor if name is blank.
+     *
+     * @param session The session to inspect
+     * @return Resolved display title
+     */
+    private String getSessionTitle(ChatSessionInfo session) {
+        if (session != null && session.getName() != null && !session.getName().isBlank()) {
+            return session.getName();
+        }
+        return defaultTitleFor(session);
+    }
+
     private void refreshSessionTitle() {
         if (currentSession != null) {
             ChatSessionInfo updatedSession = chatService.findSession(currentSession.getId());
-            if (updatedSession != null
-                    && updatedSession.getName() != null
-                    && !updatedSession.getName().isBlank()) {
+            if (updatedSession != null) {
                 currentSession.setName(updatedSession.getName());
-                title.setText(currentSession.getName());
+                title.setText(getSessionTitle(updatedSession));
             }
         }
     }
@@ -667,17 +705,12 @@ public class ChatView implements ViewPane {
         attachBtn.setTooltip(attachTooltip);
         newChatBtn.setOnAction(
                 e -> {
-                    currentSession = chatService.newSession(currentAgent.getId());
-                    currentSession.setKind(sessionKind);
-                    if (currentProject != null) {
-                        currentSession.setProjectId(currentProject.getId());
-                    }
-                    currentSession.setName(
-                            ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(
-                                            sessionKind)
-                                    ? "New Task"
-                                    : "New Chat");
-                    chatService.touchSession(currentSession);
+                    currentSession =
+                            chatService.newSession(
+                                    currentAgent.getId(),
+                                    sessionKind,
+                                    defaultSessionTitle(),
+                                    currentProject.getId());
                     title.setText(currentSession.getName());
                     if (selectedProvider == null || selectedModel == null) {
                         resolveDefaultModel();
@@ -705,6 +738,7 @@ public class ChatView implements ViewPane {
         webViewContainer.getStyleClass().add("bg-f6");
         webView.setPrefHeight(640);
         webView.getStyleClass().add("bg-f6");
+        WebViewUtils.configureUserDataDirectory(webView);
         webView.getEngine()
                 .getLoadWorker()
                 .stateProperty()
@@ -1082,14 +1116,8 @@ public class ChatView implements ViewPane {
         if (session == null) {
             return false;
         }
-        String sProj =
-                session.getProjectId() == null || session.getProjectId().isBlank()
-                        ? "default"
-                        : session.getProjectId();
-        String currentProj =
-                project == null || project.getId() == null || project.getId().isBlank()
-                        ? "default"
-                        : project.getId();
+        String sProj = session.getProjectId().isBlank() ? "default" : session.getProjectId();
+        String currentProj = project.getId().isBlank() ? "default" : project.getId();
         return currentProj.equals(sProj);
     }
 
@@ -1106,16 +1134,12 @@ public class ChatView implements ViewPane {
                         .filter(s -> sessionMatchesProject(s, currentProject))
                         .toList();
         if (sessions.isEmpty()) {
-            currentSession = chatService.newSession(currentAgent.getId());
-            currentSession.setKind(sessionKind);
-            if (currentProject != null) {
-                currentSession.setProjectId(currentProject.getId());
-            }
-            currentSession.setName(
-                    ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
-                            ? "New Task"
-                            : "New Chat");
-            chatService.updateSession(currentSession);
+            currentSession =
+                    chatService.newSession(
+                            currentAgent.getId(),
+                            sessionKind,
+                            defaultSessionTitle(),
+                            currentProject.getId());
         } else {
             currentSession = sessions.getFirst();
         }
@@ -1903,10 +1927,21 @@ public class ChatView implements ViewPane {
             taskDescriptionInput.setText(currentSession.getDescription());
             // Build cron jobs table
             ai.emailclaw.emailclaw.ui.CronJobListView tmpCronView =
-                    new ai.emailclaw.emailclaw.ui.CronJobListView(cronJobService, currentAgent);
+                    new ai.emailclaw.emailclaw.ui.CronJobListView(
+                            cronJobService, currentAgent, currentProject);
             List<CronJobSpec> taskJobs =
                     cronJobService.list().stream()
-                            .filter(j -> currentSession.getId().equals(j.taskId()))
+                            .filter(
+                                    j ->
+                                            currentSession.getId().equals(j.taskId())
+                                                    || (j.dispatch() != null
+                                                            && j.dispatch().target() != null
+                                                            && currentSession
+                                                                    .getId()
+                                                                    .equals(
+                                                                            j.dispatch()
+                                                                                    .target()
+                                                                                    .sessionId())))
                             .toList();
             if (taskJobs == null || taskJobs.isEmpty()) {
                 cronJobContainer.setVisible(false);
@@ -2098,10 +2133,7 @@ public class ChatView implements ViewPane {
             }
         }
         // Set title
-        title.setText(
-                currentSession.getName() == null || currentSession.getName().isBlank()
-                        ? "New Chat"
-                        : currentSession.getName());
+        title.setText(getSessionTitle(currentSession));
         // Clear old messages, display empty state (immediate render, no debounce)
         messages.clear();
         doRenderMessages();
@@ -2161,21 +2193,17 @@ public class ChatView implements ViewPane {
      */
     public void loadSession(ChatSessionInfo session) {
         if (session == null) {
-            currentSession = chatService.newSession(currentAgent.getId());
-            currentSession.setKind(this.sessionKind);
-            if (currentProject != null) {
-                currentSession.setProjectId(currentProject.getId());
-            }
-            currentSession.setName(
-                    ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
-                            ? "New Task"
-                            : "New Chat");
-            chatService.updateSession(currentSession);
+            currentSession =
+                    chatService.newSession(
+                            currentAgent.getId(),
+                            this.sessionKind,
+                            defaultSessionTitle(),
+                            currentProject.getId());
             refresh();
             return;
         }
-        if (session.getProjectId() != null && !session.getProjectId().isBlank()) {
-            if (currentProject == null || !currentProject.getId().equals(session.getProjectId())) {
+        if (!session.getProjectId().isBlank()) {
+            if (!currentProject.getId().equals(session.getProjectId())) {
                 this.currentProject = new ProjectInfo();
                 this.currentProject.setId(session.getProjectId());
                 if (codingModePane != null) {
@@ -2190,16 +2218,12 @@ public class ChatView implements ViewPane {
                     Level.WARNING,
                     "Session has been deleted (sessionId={0}), creating new session",
                     session.getId());
-            currentSession = chatService.newSession(currentAgent.getId());
-            currentSession.setKind(this.sessionKind);
-            if (currentProject != null) {
-                currentSession.setProjectId(currentProject.getId());
-            }
-            currentSession.setName(
-                    ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(sessionKind)
-                            ? "New Task"
-                            : "New Chat");
-            chatService.updateSession(currentSession);
+            currentSession =
+                    chatService.newSession(
+                            currentAgent.getId(),
+                            this.sessionKind,
+                            defaultSessionTitle(),
+                            currentProject.getId());
         } else {
             // Use the session object queried from the database to ensure data is up-to-date
             currentSession = validatedSession;
@@ -2237,24 +2261,19 @@ public class ChatView implements ViewPane {
                     public void switchSession(ChatSessionInfo session) {
                         currentSession = session;
                         refresh();
-                        title.setText(session.getName() != null ? session.getName() : "New Chat");
+                        title.setText(getSessionTitle(session));
                     }
 
                     @Override
                     public ChatSessionInfo createNewSession() {
-                        ChatSessionInfo newSession = chatService.newSession(currentAgent.getId());
-                        newSession.setKind(sessionKind);
-                        if (currentProject != null) {
-                            newSession.setProjectId(currentProject.getId());
-                        }
-                        newSession.setName(
-                                ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(
-                                                sessionKind)
-                                        ? "New Task"
-                                        : "New Chat");
-                        chatService.updateSession(newSession);
+                        ChatSessionInfo newSession =
+                                chatService.newSession(
+                                        currentAgent.getId(),
+                                        sessionKind,
+                                        defaultSessionTitle(),
+                                        currentProject.getId());
                         currentSession = newSession;
-                        title.setText(currentSession.getName());
+                        title.setText(getSessionTitle(currentSession));
                         messages.clear();
                         renderMessages();
                         return newSession;

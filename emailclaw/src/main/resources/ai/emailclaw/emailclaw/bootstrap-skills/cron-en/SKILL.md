@@ -90,8 +90,9 @@ Cron jobs are stored in `cron-jobs.json` with the following format:
 ```
 
 
-### Schedule Field Notes
+### Field Notes
 
+- `projectId`: **Important**. The project ID this task belongs to. If the current session or task belongs to a specific Project, you MUST specify that project's ID; only specify `"default"` if it belongs to the global Default project.
 - `timezone`: **optional**. If omitted, the system evaluates the schedule in the
   current system timezone (the `timeZone` field in `global-config.json`).
   If specified, it must be an IANA time zone ID, e.g. `Asia/Shanghai`,

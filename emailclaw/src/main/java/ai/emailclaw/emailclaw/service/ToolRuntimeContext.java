@@ -143,29 +143,27 @@ public class ToolRuntimeContext {
 
         // 3. Project scope
         ProjectInfo project = currentProject();
-        if (project != null) {
-            // Base directory is always writable
-            if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
-                Path base =
-                        Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
-                                .toAbsolutePath()
-                                .normalize();
-                if (normalized.startsWith(base)) {
-                    return true;
-                }
+        // Base directory is always writable
+        if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
+            Path base =
+                    Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
+                            .toAbsolutePath()
+                            .normalize();
+            if (normalized.startsWith(base)) {
+                return true;
             }
-            // Additional dirs are writable only if checked
-            if (project.getAdditionalDirs() != null) {
-                for (java.util.Map.Entry<String, Boolean> entry :
-                        project.getAdditionalDirs().entrySet()) {
-                    if (entry.getKey() != null && !entry.getKey().isBlank()) {
-                        Path additional =
-                                Path.of(FileNameUtils.expandUserHome(entry.getKey()))
-                                        .toAbsolutePath()
-                                        .normalize();
-                        if (normalized.startsWith(additional)) {
-                            return Boolean.TRUE.equals(entry.getValue());
-                        }
+        }
+        // Additional dirs are writable only if checked
+        if (project.getAdditionalDirs() != null) {
+            for (java.util.Map.Entry<String, Boolean> entry :
+                    project.getAdditionalDirs().entrySet()) {
+                if (entry.getKey() != null && !entry.getKey().isBlank()) {
+                    Path additional =
+                            Path.of(FileNameUtils.expandUserHome(entry.getKey()))
+                                    .toAbsolutePath()
+                                    .normalize();
+                    if (normalized.startsWith(additional)) {
+                        return Boolean.TRUE.equals(entry.getValue());
                     }
                 }
             }

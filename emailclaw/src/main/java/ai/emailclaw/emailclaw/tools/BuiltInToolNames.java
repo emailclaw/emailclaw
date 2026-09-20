@@ -37,6 +37,9 @@ public final class BuiltInToolNames {
     public static final String SAVE_GLOBAL_PREFERENCE = "save_global_preference";
     public static final String SAVE_PROJECT_MEMORY = "save_project_memory";
     public static final String INVOKE_ANTIGRAVITY_CLI = "invokeAntigravityCli";
+    public static final String VIEW_TEXT_FILE = "view_text_file";
+    public static final String LIST_DIRECTORY = "list_directory";
+    public static final String LIST_DIR = LIST_DIRECTORY;
 
     private BuiltInToolNames() {}
 }

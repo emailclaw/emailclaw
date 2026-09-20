@@ -12,9 +12,9 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.model.AgentIds;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
 
 /**
  * Immutable configuration record for a single mailbox account in Emailclaw.
@@ -61,7 +61,7 @@ public record MailboxAccountConfig(
      * Compact constructor with normalization and defaults.
      */
     public MailboxAccountConfig {
-        id = (id == null || id.isBlank()) ? UUID.randomUUID().toString() : id.trim();
+        id = (id == null || id.isBlank()) ? UuidUtils.randomUUIDv7().toString() : id.trim();
         emailAddress = emailAddress == null ? "" : emailAddress.trim().toLowerCase(Locale.ROOT);
         name =
                 (name == null || name.isBlank())
@@ -133,7 +133,7 @@ public record MailboxAccountConfig(
         EmailMailPreset preset = EmailPresetRegistry.presetOf(normalizedEmail);
         if (preset != null) {
             return new MailboxAccountConfig(
-                    UUID.randomUUID().toString(),
+                    UuidUtils.randomUUIDv7().toString(),
                     preset.displayName(),
                     true,
                     normalizedEmail,
@@ -152,7 +152,7 @@ public record MailboxAccountConfig(
                     DeliveryMode.FINAL);
         }
         return new MailboxAccountConfig(
-                UUID.randomUUID().toString(),
+                UuidUtils.randomUUIDv7().toString(),
                 normalizedEmail.isBlank() ? "New Mailbox" : normalizedEmail,
                 true,
                 normalizedEmail,

@@ -13,7 +13,7 @@ package ai.emailclaw.emailclaw.model;
 /**
  * Task definition interface.
  *
- * <p>Extracts common fields from {@link TaskInfo} and {@link ai.emailclaw.emailclaw.model.CronJobModel.CronJobSpec},
+ * <p>Extracts common fields from {@link ChatSessionInfo} and {@link ai.emailclaw.emailclaw.model.CronJobModel.CronJobSpec},
  * unifying the core semantics of "task identifier + project it belongs to + name".
  *
  * <p>Any record representing an "entity that can be scheduled or tracked by the system" can implement this interface,

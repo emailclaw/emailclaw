@@ -13,10 +13,15 @@ package ai.emailclaw.emailclaw.service;
 import ai.emailclaw.emailclaw.model.McpClientInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
+import io.agentscope.harness.agent.tools.McpServerRegistrationResult;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,9 +35,53 @@ public class McpService {
 
     private final Object clientsLock = new Object();
     private final ConfigManager configManager;
+    private final ConcurrentMap<String, McpServerRegistrationResult> healthMap =
+            new ConcurrentHashMap<>();
 
     public McpService(AppContext repository) {
-        this.configManager = repository.configManager();
+        this(repository != null ? repository.configManager() : null);
+    }
+
+    public McpService(ConfigManager configManager) {
+        this.configManager = configManager;
+    }
+
+    /**
+     * Records the terminal registration result for an MCP server.
+     *
+     * @param result terminal registration result from McpServerRegistrationListener
+     */
+    public void recordRegistrationResult(McpServerRegistrationResult result) {
+        if (result != null && result.serverName() != null) {
+            healthMap.put(result.serverName(), result);
+            LOGGER.log(
+                    Level.INFO,
+                    "MCP server registration result: server={0}, status={1}, cause={2}",
+                    new Object[] {
+                        result.serverName(),
+                        result.status(),
+                        result.cause() != null ? result.cause().getMessage() : "none"
+                    });
+        }
+    }
+
+    /**
+     * Gets the latest registration/health result for an MCP client key.
+     *
+     * @param key MCP client key
+     * @return registration result, or null if not yet registered
+     */
+    public McpServerRegistrationResult getHealthResult(String key) {
+        return key != null ? healthMap.get(key) : null;
+    }
+
+    /**
+     * Gets all recorded health results.
+     *
+     * @return unmodifiable map of health results
+     */
+    public Map<String, McpServerRegistrationResult> getAllHealthResults() {
+        return Collections.unmodifiableMap(healthMap);
     }
 
     public List<McpClientInfo> list() {

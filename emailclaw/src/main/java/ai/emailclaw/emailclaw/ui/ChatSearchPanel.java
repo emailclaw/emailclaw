@@ -13,10 +13,8 @@ package ai.emailclaw.emailclaw.ui;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.service.ChatService;
+import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import io.agentscope.core.message.Msg;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -311,9 +309,11 @@ public final class ChatSearchPanel {
             ChatSessionInfo session = sessions.get(index);
             String chatName =
                     session.getName() == null || session.getName().isBlank()
-                            ? "New Chat"
+                            ? (ChatSessionInfo.KIND_TASK.equals(session.getKind())
+                                    ? "New Task"
+                                    : "New Chat")
                             : session.getName();
-            String timestamp = pickSessionTimestamp(session);
+            long timestamp = pickSessionTimestamp(session);
             int current = index + 1;
             Platform.runLater(
                     () -> statusLabel.setText("Searching " + current + "/" + total + "..."));
@@ -400,50 +400,21 @@ public final class ChatSearchPanel {
     private static List<SearchResult> sortResults(List<SearchResult> results) {
         List<SearchResult> sorted = new ArrayList<>(results);
         sorted.sort(
-                Comparator.comparing(
-                                (SearchResult item) -> parseTimestamp(item.timestamp),
-                                Comparator.nullsLast(Comparator.reverseOrder()))
+                Comparator.comparingLong((SearchResult item) -> item.timestamp)
+                        .reversed()
                         .thenComparing(item -> item.chatName, String.CASE_INSENSITIVE_ORDER));
         return sorted;
     }
 
-    private static LocalDateTime parseTimestamp(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        String normalized = raw.replace(' ', 'T');
-        try {
-            return LocalDateTime.parse(normalized);
-        } catch (DateTimeParseException ignored) {
-            // Try to truncate to minute precision
-        }
-        try {
-            if (normalized.length() >= 16) {
-                return LocalDateTime.parse(normalized.substring(0, 16));
-            }
-        } catch (DateTimeParseException ignored) {
-            LOGGER.fine("Failed to parse timestamp: " + raw);
-        }
-        return null;
-    }
-
-    private static String pickSessionTimestamp(ChatSessionInfo session) {
-        if (session.getUpdatedAt() != null && !session.getUpdatedAt().isBlank()) {
+    private static long pickSessionTimestamp(ChatSessionInfo session) {
+        if (session.getUpdatedAt() > 0) {
             return session.getUpdatedAt();
         }
         return session.getCreatedAt();
     }
 
-    private static String formatTimestamp(String raw) {
-        LocalDateTime dateTime = parseTimestamp(raw);
-        if (dateTime == null) {
-            if (raw == null) {
-                return "";
-            }
-            String display = raw.replace('T', ' ');
-            return display.length() > 16 ? display.substring(0, 16) : display;
-        }
-        return dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+    private static String formatTimestamp(long epochMillis) {
+        return DateTimeUtils.formatEpochMillisMinute(epochMillis);
     }
 
     private void renderResults(String query, List<SearchResult> results, boolean partial) {
@@ -533,14 +504,16 @@ public final class ChatSearchPanel {
 
         private final String matchedText;
 
-        private final String timestamp;
+        private final long timestamp;
 
         private SearchResult(
-                ChatSessionInfo session, String roleLabel, String matchedText, String timestamp) {
+                ChatSessionInfo session, String roleLabel, String matchedText, long timestamp) {
             this.session = session;
             this.chatName =
                     session.getName() == null || session.getName().isBlank()
-                            ? "New Chat"
+                            ? (ChatSessionInfo.KIND_TASK.equals(session.getKind())
+                                    ? "New Task"
+                                    : "New Chat")
                             : session.getName();
             this.roleLabel = roleLabel;
             this.matchedText = matchedText;

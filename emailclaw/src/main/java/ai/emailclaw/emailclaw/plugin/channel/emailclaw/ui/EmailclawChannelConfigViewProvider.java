@@ -18,6 +18,7 @@ import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailclawChannelConfig;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.MailboxAccountConfig;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.OneTimePasswordAuth;
 import ai.emailclaw.emailclaw.ui.plugin.CustomConfigViewProvider;
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -38,6 +39,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.RadioButton;
@@ -47,6 +49,7 @@ import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -357,8 +360,30 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
         private VBox sysAllocatedAccountSection;
 
         private final RadioButton ownEmailRadio = new RadioButton("Bring my own Email account");
-        private final RadioButton sysEmailRadio =
-                new RadioButton("Use system provided Email account (Beta)");
+        private final RadioButton sysEmailRadio = createSysEmailRadioButton();
+
+        /**
+         * Creates the system email radio button with an orange BETA badge matching MainWindow.
+         *
+         * @return styled radio button
+         */
+        private static RadioButton createSysEmailRadioButton() {
+            RadioButton radio = new RadioButton("Use system provided Email account");
+            Label betaBadge = new Label("BETA");
+            betaBadge.getStyleClass().add("beta-badge");
+            betaBadge.setStyle(
+                    "-fx-background-color: #ff7a00; -fx-text-fill: #ffffff; -fx-font-size: 9px;"
+                        + " -fx-font-weight: bold; -fx-padding: 1 5 1 5; -fx-background-radius: 8;"
+                        + " -fx-cursor: hand;");
+            betaBadge.setTooltip(
+                    new Tooltip(
+                            "The Service is currently in an experimental testing (Beta) phase"));
+            betaBadge.setTranslateY(-6);
+            radio.setGraphic(betaBadge);
+            radio.setContentDisplay(ContentDisplay.RIGHT);
+            radio.setGraphicTextGap(4);
+            return radio;
+        }
 
         private Button saveButton;
 
@@ -860,9 +885,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                                                 new MailboxAccountConfig(
                                                         initialConfig != null
                                                                 ? initialConfig.id()
-                                                                : java.util
-                                                                        .UUID
-                                                                        .randomUUID()
+                                                                : UuidUtils.randomUUIDv7()
                                                                         .toString(),
                                                         mailboxNameField.getText().trim(),
                                                         initialConfig != null
@@ -900,7 +923,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                             new MailboxAccountConfig(
                                     initialConfig != null
                                             ? initialConfig.id()
-                                            : java.util.UUID.randomUUID().toString(),
+                                            : UuidUtils.randomUUIDv7().toString(),
                                     mailboxNameField.getText().trim(),
                                     initialConfig != null ? initialConfig.enabled() : true,
                                     sysAllocatedEmailField.getText(),
@@ -940,7 +963,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                     new MailboxAccountConfig(
                             initialConfig != null
                                     ? initialConfig.id()
-                                    : java.util.UUID.randomUUID().toString(),
+                                    : UuidUtils.randomUUIDv7().toString(),
                             mailboxNameField.getText().trim(),
                             initialConfig != null ? initialConfig.enabled() : true,
                             email,

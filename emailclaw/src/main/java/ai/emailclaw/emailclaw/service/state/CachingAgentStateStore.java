@@ -17,6 +17,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.State;
+import io.agentscope.core.state.VersionedState;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -100,6 +101,35 @@ public class CachingAgentStateStore implements AgentStateStore {
     }
 
     // ==================== Event Sourcing: Context reordering core ====================
+    @Override
+    public boolean supportsVersioning() {
+        return delegate.supportsVersioning();
+    }
+
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String userId, String sessionId, String key, Class<T> type) {
+        VersionedState<T> result = delegate.getVersioned(userId, sessionId, key, type);
+        if (result != null && result.isPresent() && AgentState.class.isAssignableFrom(type)) {
+            String slot = slotKey(userId, sessionId);
+            cache.put(slot, (AgentState) result.value());
+        }
+        return result;
+    }
+
+    @Override
+    public long saveIfVersion(
+            String userId, String sessionId, String key, State value, long expectedVersion) {
+        if (value instanceof AgentState agentState) {
+            reorderContextBeforePersist(agentState);
+        }
+        long newVersion = delegate.saveIfVersion(userId, sessionId, key, value, expectedVersion);
+        if (newVersion != UNVERSIONED && value instanceof AgentState agentState) {
+            cache.put(slotKey(userId, sessionId), agentState);
+        }
+        return newVersion;
+    }
+
     @Override
     public void save(String userId, String sessionId, String key, State value) {
         LOGGER.log(Level.FINE, "Save state to disk: {0}", slotKey(userId, sessionId));

@@ -171,8 +171,7 @@ public class MainWindow extends BorderPane {
                 Level.INFO,
                 "Initializing main window, current Project: {0}, current Agent: {1}",
                 new Object[] {
-                    currentProject != null ? currentProject.getId() : "null",
-                    currentAgent != null ? currentAgent.getId() : "null"
+                    currentProject.getId(), currentAgent != null ? currentAgent.getId() : "null"
                 });
         // First register all view factories to avoid being unable to get View instances when
         // initialization triggers showView later
@@ -295,7 +294,9 @@ public class MainWindow extends BorderPane {
         factories.put(ViewIds.TOKEN_USAGE, () -> new TokenUsageView(repository));
         factories.put(ViewIds.AGENT_STATISTICS, () -> new AgentStatisticsView(repository));
         factories.put(ViewIds.CHANNELS, () -> new ChannelsView(channelService));
-        factories.put(ViewIds.CRON_JOBS, () -> new CronJobListView(cronJobService, currentAgent));
+        factories.put(
+                ViewIds.CRON_JOBS,
+                () -> new CronJobListView(cronJobService, currentAgent, currentProject));
         factories.put(ViewIds.HEARTBEAT, () -> new HeartbeatView(repository, currentAgent));
         factories.put(ViewIds.MCP, () -> new McpView(mcpService));
         factories.put(ViewIds.ACP, () -> new AcpView(acpService));
@@ -329,7 +330,7 @@ public class MainWindow extends BorderPane {
         top.setSpacing(18);
         Label brand = new Label("Emailclaw");
         brand.getStyleClass().add("brand");
-        Label version = new Label("v26.9.15");
+        Label version = new Label("v26.9.20");
         version.getStyleClass().add("muted");
         Label betaBadge = new Label("BETA");
         betaBadge.getStyleClass().add("beta-badge");
@@ -590,8 +591,7 @@ public class MainWindow extends BorderPane {
                         (obs, oldToggle, newToggle) -> {
                             if (newToggle != null
                                     && newToggle.getUserData() instanceof ProjectInfo newProject) {
-                                if (currentProject == null
-                                        || !newProject.getId().equals(currentProject.getId())) {
+                                if (!newProject.getId().equals(currentProject.getId())) {
                                     currentProject = newProject;
                                     projectService.setCurrentProject(newProject.getId());
                                     views.values().forEach(v -> v.onProjectChanged(currentProject));
@@ -612,11 +612,10 @@ public class MainWindow extends BorderPane {
                                         newList.stream()
                                                 .filter(
                                                         p ->
-                                                                currentProject != null
-                                                                        && p.getId()
-                                                                                .equals(
-                                                                                        currentProject
-                                                                                                .getId()))
+                                                                p.getId()
+                                                                        .equals(
+                                                                                currentProject
+                                                                                        .getId()))
                                                 .findFirst()
                                                 .orElse(selected);
                                 currentProject = newCurrent;
@@ -963,19 +962,13 @@ public class MainWindow extends BorderPane {
     }
 
     private void renderTasksList() {
-        if (currentProject == null) return;
-        String curProjId =
-                currentProject.getId() == null || currentProject.getId().isBlank()
-                        ? "default"
-                        : currentProject.getId();
+        String curProjId = currentProject.getId().isBlank() ? "default" : currentProject.getId();
         List<ChatSessionInfo> projectTasks =
                 chatService.sessions(currentAgent.getId()).stream()
                         .filter(
                                 t -> {
                                     String tProjId =
-                                            t.projectId() == null || t.projectId().isBlank()
-                                                    ? "default"
-                                                    : t.projectId();
+                                            t.projectId().isBlank() ? "default" : t.projectId();
                                     return curProjId.equals(tProjId)
                                             && ai.emailclaw.emailclaw.model.ChatSessionInfo
                                                     .KIND_TASK
@@ -1033,19 +1026,11 @@ public class MainWindow extends BorderPane {
         }
         if (currentIndex < 0) return;
         int targetIndex = -1;
-        String curProjId =
-                currentProject == null
-                                || currentProject.getId() == null
-                                || currentProject.getId().isBlank()
-                        ? "default"
-                        : currentProject.getId();
+        String curProjId = currentProject.getId().isBlank() ? "default" : currentProject.getId();
         if ("up".equals(action)) {
             for (int i = currentIndex - 1; i >= 0; i--) {
                 ChatSessionInfo s = allSessions.get(i);
-                String sProjId =
-                        s.getProjectId() == null || s.getProjectId().isBlank()
-                                ? "default"
-                                : s.getProjectId();
+                String sProjId = s.getProjectId().isBlank() ? "default" : s.getProjectId();
                 if (ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(s.getKind())
                         && curProjId.equals(sProjId)) {
                     targetIndex = i;
@@ -1055,10 +1040,7 @@ public class MainWindow extends BorderPane {
         } else if ("down".equals(action)) {
             for (int i = currentIndex + 1; i < allSessions.size(); i++) {
                 ChatSessionInfo s = allSessions.get(i);
-                String sProjId =
-                        s.getProjectId() == null || s.getProjectId().isBlank()
-                                ? "default"
-                                : s.getProjectId();
+                String sProjId = s.getProjectId().isBlank() ? "default" : s.getProjectId();
                 if (ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(s.getKind())
                         && curProjId.equals(sProjId)) {
                     targetIndex = i;
@@ -1097,12 +1079,10 @@ public class MainWindow extends BorderPane {
     private void showTaskView(ChatSessionInfo task) {
         String logId = task == null ? "new" : task.getId();
         LOGGER.log(java.util.logging.Level.INFO, "Switch task view: {0}", logId);
-        if (task != null && task.getProjectId() != null && !task.getProjectId().isBlank()) {
-            if (currentProject == null || !task.getProjectId().equals(currentProject.getId())) {
+        if (task != null && !task.getProjectId().isBlank()) {
+            if (!task.getProjectId().equals(currentProject.getId())) {
                 ProjectInfo targetProj = projectService.findById(task.getProjectId());
-                if (targetProj != null) {
-                    selectProject(targetProj);
-                }
+                selectProject(targetProj);
             }
         }
         TaskView taskView =
@@ -1151,7 +1131,7 @@ public class MainWindow extends BorderPane {
             rb.setStyle(
                     "-fx-font-size: 13px; -fx-text-fill: #1d1d1f; -fx-cursor: hand; -fx-padding: 2"
                             + " 4;");
-            if (currentProject != null && p.getId().equals(currentProject.getId())) {
+            if (p.getId().equals(currentProject.getId())) {
                 toSelect = rb;
             }
             projectsBox.getChildren().add(rb);

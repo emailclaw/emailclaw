@@ -10,12 +10,12 @@
  */
 package ai.emailclaw.emailclaw.model.plan;
 
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Plan - decomposes user goals into an executable list of subtasks.
@@ -25,7 +25,7 @@ import java.util.UUID;
  */
 public class Plan {
     /** Plan unique identifier (UUID). */
-    private String id = UUID.randomUUID().toString();
+    private String id = UuidUtils.randomUUIDv7().toString();
 
     /** User's original goal description. */
     private String goal = "";
@@ -245,7 +245,7 @@ public class Plan {
      * @param goal      User goal
      */
     public Plan(String projectId, String agentId, String sessionId, String goal) {
-        this.id = UUID.randomUUID().toString();
+        this.id = UuidUtils.randomUUIDv7().toString();
         this.projectId = projectId == null ? "" : projectId;
         this.agentId = agentId == null ? "" : agentId;
         this.sessionId = sessionId == null ? "" : sessionId;

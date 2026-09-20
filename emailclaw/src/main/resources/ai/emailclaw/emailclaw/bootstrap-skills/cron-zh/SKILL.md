@@ -92,8 +92,9 @@ metadata:
 ```
 
 
-### schedule 字段说明
+### 字段说明
 
+- `projectId`：**重要**。所属项目 ID。若当前会话或任务属于某个 Project，必须填入该 project 的 ID；仅当属于全局默认项目时才填 `"default"`。
 - `timezone`：**非必填**。省略时系统按当前系统时区解析（即 `global-config.json` 的
   `timeZone` 字段）；如需指定，必须使用 IANA 时区 ID，
   如 `Asia/Shanghai`、`America/New_York`、`UTC`。

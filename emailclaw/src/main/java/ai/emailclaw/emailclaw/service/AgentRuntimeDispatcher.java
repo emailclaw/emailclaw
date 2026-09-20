@@ -26,12 +26,14 @@ import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.core.permission.PermissionRule;
-import io.agentscope.core.state.JsonFileAgentStateStore;
+import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -41,8 +43,10 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -205,9 +209,7 @@ public class AgentRuntimeDispatcher {
         Path projectRoot = agentWorkspace;
         boolean projectWritable = true;
 
-        if (project != null
-                && project.getBaseDirectory() != null
-                && !project.getBaseDirectory().isBlank()) {
+        if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
             Path baseDir =
                     Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
                             .toAbsolutePath()
@@ -230,8 +232,8 @@ public class AgentRuntimeDispatcher {
                 (currentSession != null && currentSession.getUserId() != null)
                         ? currentSession.getUserId()
                         : "";
-        String projectIdStr = project != null ? project.getId() : "default";
-        String projectNameStr = project != null ? project.getName() : "Default";
+        String projectIdStr = project.getId();
+        String projectNameStr = project.getName();
         String osUser = System.getProperty("user.name", "unknown");
         String userHome =
                 AppHomeConstants.HOME_RESOLVED != null
@@ -338,7 +340,7 @@ public class AgentRuntimeDispatcher {
                 }
             }
         }
-        if (project != null && project.getAdditionalDirs() != null) {
+        if (project.getAdditionalDirs() != null) {
             for (String dir : project.getAdditionalDirs().keySet()) {
                 if (dir != null && !dir.isBlank()) {
                     Path p =
@@ -375,27 +377,27 @@ public class AgentRuntimeDispatcher {
 
         // Build PermissionContextState based on execution_level
         PermissionContextState permissionContext = buildPermissionContext(config, agent.getId());
-        ai.emailclaw.emailclaw.service.MergingAgentStateStore stateStore =
-                new ai.emailclaw.emailclaw.service.MergingAgentStateStore(
-                        new JsonFileAgentStateStore(
-                                chatSessionRepository.sessionPath(
-                                        project != null ? project.getId() : "default",
-                                        agent.getId())));
         io.agentscope.harness.agent.middleware.AsyncToolMiddleware asyncToolMiddleware =
                 new io.agentscope.harness.agent.middleware.AsyncToolMiddleware(
-                        messageBusService.getMessageBus(
-                                project != null ? project.getId() : "default"),
+                        messageBusService.getMessageBus(project.getId()),
                         java.time.Duration.ofSeconds(30),
-                        messageBusService.getAsyncToolRegistry(
-                                project != null ? project.getId() : "default"));
+                        messageBusService.getAsyncToolRegistry(project.getId()));
         io.agentscope.harness.agent.middleware.InboxMiddleware inboxMiddleware =
                 new io.agentscope.harness.agent.middleware.InboxMiddleware(
-                        messageBusService.getMessageBus(
-                                project != null ? project.getId() : "default"),
+                        messageBusService.getMessageBus(project.getId()),
                         100,
-                        messageBusService.getAsyncToolRegistry(
-                                project != null ? project.getId() : "default"),
+                        messageBusService.getAsyncToolRegistry(project.getId()),
                         java.time.Duration.ofMinutes(10));
+
+        ExecutionConfig toolExecConfig =
+                ExecutionConfig.builder()
+                        .timeout(
+                                Duration.ofSeconds(
+                                        Math.max(
+                                                config.effectiveTaskExecutionTimeoutSeconds(),
+                                                1800)))
+                        .maxAttempts(1)
+                        .build();
 
         HarnessAgent.Builder builder =
                 HarnessAgent.builder()
@@ -404,7 +406,8 @@ public class AgentRuntimeDispatcher {
                         .sysPrompt(sysPrompt)
                         .model(model)
                         .toolkit(toolkit)
-                        .stateStore(stateStore)
+                        .toolExecutionConfig(toolExecConfig)
+                        .stateStore(repository.agentStateStore())
                         .workspace(agentWorkspace)
                         .abstractFilesystem(sharedFilesystem)
                         .compaction(CompactionConfig.builder().build())
@@ -443,9 +446,20 @@ public class AgentRuntimeDispatcher {
                                 .build());
             }
         }
-        HarnessAgent finalAgent = builder.build();
-        stateStore.agentRef().set(finalAgent);
-        return finalAgent;
+        try {
+            Field innerField = HarnessAgent.Builder.class.getDeclaredField("inner");
+            innerField.setAccessible(true);
+            ReActAgent.Builder innerBuilder = (ReActAgent.Builder) innerField.get(builder);
+            innerBuilder.conflictPolicy(ConflictPolicy.APPEND_MERGE);
+            LOGGER.info("Configured ReActAgent ConflictPolicy to APPEND_MERGE");
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to reflectively configure ConflictPolicy.APPEND_MERGE on HarnessAgent"
+                            + " inner builder",
+                    e);
+        }
+        return builder.build();
     }
 
     private GenerateOptions buildGenerateOptions(ProviderInfo provider, ModelInfo model) {
@@ -494,7 +508,6 @@ public class AgentRuntimeDispatcher {
         ai.emailclaw.emailclaw.model.ProjectInfo found =
                 context.projectService.findById(boundProjectId);
         if (found == ai.emailclaw.emailclaw.service.ProjectService.PROJECT_DEFAULT
-                && fallback != null
                 && !ai.emailclaw.emailclaw.service.ProjectService.PROJECT_ID_DEFAULT.equals(
                         boundProjectId)) {
             return fallback;

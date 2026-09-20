@@ -27,8 +27,8 @@ public class ChatSessionInfo implements TaskDefinition {
     private String agentId = "";
     private String userId = SessionDefaults.LOCAL_USER_ID;
     private String channel = SessionDefaults.DEFAULT_CHANNEL;
-    private String createdAt = "";
-    private String updatedAt = "";
+    private long createdAt = 0L;
+    private long updatedAt = 0L;
     private boolean pinned = false;
     private String kind = KIND_CHAT;
 
@@ -50,11 +50,22 @@ public class ChatSessionInfo implements TaskDefinition {
             return displayName;
         }
 
+        @Override
+        public String toString() {
+            return displayName;
+        }
+
         public static TaskStatus fromString(String text) {
-            if (text == null) return ACTIVE;
+            if (text == null || text.isBlank()) {
+                return ACTIVE;
+            }
+            String trimmed = text.trim();
+            if ("CANCELED".equalsIgnoreCase(trimmed)) {
+                return CANCELLED;
+            }
             for (TaskStatus status : TaskStatus.values()) {
-                if (status.name().equalsIgnoreCase(text)
-                        || status.displayName.equalsIgnoreCase(text)) {
+                if (status.name().equalsIgnoreCase(trimmed)
+                        || status.displayName.equalsIgnoreCase(trimmed)) {
                     return status;
                 }
             }
@@ -98,7 +109,10 @@ public class ChatSessionInfo implements TaskDefinition {
      * @param projectId affiliated project ID
      */
     public void setProjectId(String projectId) {
-        this.projectId = projectId;
+        this.projectId =
+                (projectId == null || projectId.isBlank())
+                        ? ProjectService.PROJECT_ID_DEFAULT
+                        : projectId;
     }
 
     /**
@@ -174,38 +188,38 @@ public class ChatSessionInfo implements TaskDefinition {
     }
 
     /**
-     * Get session creation time.
+     * Get session creation time in UTC epoch milliseconds.
      *
-     * @return session creation time
+     * @return session creation epoch milliseconds
      */
-    public String getCreatedAt() {
+    public long getCreatedAt() {
         return createdAt;
     }
 
     /**
-     * Set session creation time.
+     * Set session creation time in UTC epoch milliseconds.
      *
-     * @param createdAt session creation time
+     * @param createdAt session creation epoch milliseconds
      */
-    public void setCreatedAt(String createdAt) {
+    public void setCreatedAt(long createdAt) {
         this.createdAt = createdAt;
     }
 
     /**
-     * Get session update time.
+     * Get session update time in UTC epoch milliseconds.
      *
-     * @return session update time
+     * @return session update epoch milliseconds
      */
-    public String getUpdatedAt() {
+    public long getUpdatedAt() {
         return updatedAt;
     }
 
     /**
-     * Set session update time.
+     * Set session update time in UTC epoch milliseconds.
      *
-     * @param updatedAt session update time
+     * @param updatedAt session update epoch milliseconds
      */
-    public void setUpdatedAt(String updatedAt) {
+    public void setUpdatedAt(long updatedAt) {
         this.updatedAt = updatedAt;
     }
 

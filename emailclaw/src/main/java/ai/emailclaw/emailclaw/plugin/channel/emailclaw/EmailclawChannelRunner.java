@@ -438,18 +438,16 @@ public class EmailclawChannelRunner {
                             + " contents.";
         }
 
-        // Persist inbound user email message to session history immediately to ensure it is never
-        // lost
+        // Touch session last active time.
+        // Note: Inbound user message persistence is handled by chatService.sendMessage() /
+        // MessagePipeline via AgentScope session state management (with fallback error handling in
+        // MessagePipeline). Manually invoking chatService.appendHistory here would produce
+        // duplicate
+        // user message records in session history.
         try {
-            String now = LocalDateTime.now().toString();
-            chatService.appendHistory(
-                    sessionAgent.getId(),
-                    session.getId(),
-                    new ChatMessageRecord(
-                            ChatMessageRoles.USER, List.of(ChatMessagePart.text(prompt)), now));
             chatService.touchSession(session);
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to persist inbound user email message to history", e);
+            LOGGER.log(Level.WARNING, "Failed to update session active timestamp", e);
         }
 
         final AgentInfo effectiveAgent = sessionAgent;
@@ -922,7 +920,7 @@ public class EmailclawChannelRunner {
         }
         Path targetDir;
         ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
-        if (project != null && notBlank(project.getBaseDirectory())) {
+        if (notBlank(project.getBaseDirectory())) {
             targetDir = Path.of(project.getBaseDirectory()).resolve(ATTACHMENTS_DIR_NAME);
         } else {
             targetDir =
@@ -996,9 +994,7 @@ public class EmailclawChannelRunner {
             return ProjectService.PROJECT_DEFAULT;
         }
         String targetProjectId =
-                session.getProjectId() != null && !session.getProjectId().isBlank()
-                        ? session.getProjectId()
-                        : session.getId();
+                !session.getProjectId().isBlank() ? session.getProjectId() : session.getId();
         return this.projectService.findById(targetProjectId);
     }
 
@@ -1155,10 +1151,14 @@ public class EmailclawChannelRunner {
             }
             String type = ChatMessagePart.normalizeType(part.getType());
             if (ChatMessagePart.TEXT.equals(type)) {
+                String text = part.getText().trim();
+                if (text.startsWith("io.agentscope.")) {
+                    continue;
+                }
                 if (sb.length() > 0) {
                     sb.append("\n\n");
                 }
-                sb.append(part.getText().trim());
+                sb.append(text);
             }
         }
         if (sb.length() > 0) {

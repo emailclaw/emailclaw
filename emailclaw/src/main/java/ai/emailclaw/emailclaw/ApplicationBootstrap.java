@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw;
 
+import ai.emailclaw.emailclaw.channel.ChannelIds;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.AgentRuntimeStatus;
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
@@ -19,6 +20,7 @@ import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.plugin.DefaultPluginContext;
 import ai.emailclaw.emailclaw.plugin.PluginContext;
 import ai.emailclaw.emailclaw.plugin.PluginManager;
+import ai.emailclaw.emailclaw.plugin.PluginRecord;
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.service.AcpService;
 import ai.emailclaw.emailclaw.service.AdaptiveFinalAnswerFilterMiddleware;
@@ -62,6 +64,14 @@ import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
+import ai.emailclaw.emailclaw.storage.sqlite.DatabaseManager;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStateStore;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStatsRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteCronHistoryRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteTokenUsageRepository;
+import ai.emailclaw.emailclaw.util.WebViewUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.bus.BusEntry;
 import io.agentscope.harness.agent.bus.MessageBus;
@@ -163,12 +173,51 @@ public final class ApplicationBootstrap {
         // 1. Parse application main directory
         Path appHome = AppHomeConstants.HOME_RESOLVED;
         LOGGER.log(Level.INFO, "Detected application working directory: {0}", appHome);
+        Path dbDir = AppHomeConstants.DATABASE_FILE.getParent();
+        if (dbDir != null) {
+            try {
+                java.nio.file.Files.createDirectories(dbDir);
+                LOGGER.log(Level.INFO, "Ensured database directory exists: {0}", dbDir);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to create database directory: " + dbDir, e);
+            }
+        }
         // 2. Initialize persistence layer
         AppPaths paths = new AppPaths(appHome);
-        AppContext repository = new AppContext(paths);
+        DatabaseManager databaseManager = new DatabaseManager(AppHomeConstants.DATABASE_FILE);
+        SqliteChatSessionRepository sqliteChatSessionRepository =
+                new SqliteChatSessionRepository(databaseManager);
+        SqliteAgentStateStore sqliteAgentStateStore = new SqliteAgentStateStore(databaseManager);
+        SqliteTokenUsageRepository sqliteTokenUsageRepository =
+                new SqliteTokenUsageRepository(databaseManager);
+        SqliteAgentStatsRepository sqliteAgentStatsRepository =
+                new SqliteAgentStatsRepository(databaseManager);
+        SqliteCronHistoryRepository sqliteCronHistoryRepository =
+                new SqliteCronHistoryRepository(databaseManager);
+        SqliteMemoryRepository sqliteMemoryRepository = new SqliteMemoryRepository(databaseManager);
+
+        ConfigManager configManager =
+                new ConfigManager(
+                        paths,
+                        sqliteChatSessionRepository,
+                        sqliteTokenUsageRepository,
+                        sqliteAgentStatsRepository);
+
+        AppContext repository =
+                new AppContext(
+                        paths,
+                        configManager,
+                        databaseManager,
+                        sqliteChatSessionRepository,
+                        sqliteAgentStateStore,
+                        sqliteTokenUsageRepository,
+                        sqliteAgentStatsRepository,
+                        sqliteCronHistoryRepository,
+                        sqliteMemoryRepository);
         // Ensure directories exist before creating services, preventing WatchService registration
         // failure
         repository.ensureStructure();
+        WebViewUtils.cleanupLegacyDirectory();
         // Seed the schedule default timezone from global configuration and keep it in sync
         // (covers UI saves and external hot reloads of global-config.json)
         CronJobModel.setDefaultTimezone(repository.configManager().getGlobalConfig().getTimeZone());
@@ -193,9 +242,8 @@ public final class ApplicationBootstrap {
         ProjectService projectService = new ProjectService(repository);
         // Message bus and sub-agent registry (prerequisite dependencies for ToolRuntimeContext)
         MessageBusService messageBusService = new MessageBusService(projectService);
-        SpawnRegistryService spawnRegistryService = new SpawnRegistryService(projectService);
-        MemoryService memoryService =
-                new MemoryService(repository.paths().workspaceRoot, projectService);
+        SpawnRegistryService spawnRegistryService = new SpawnRegistryService(databaseManager);
+        MemoryService memoryService = new MemoryService(sqliteMemoryRepository, projectService);
         ToolRuntimeContext toolRuntimeContext =
                 new ToolRuntimeContext(
                         repository,
@@ -206,7 +254,8 @@ public final class ApplicationBootstrap {
                         projectService,
                         memoryService);
         PluginRegistry pluginRegistry = new PluginRegistry();
-        ToolService toolService = new ToolService(repository, pluginRegistry);
+        McpService mcpService = new McpService(repository);
+        ToolService toolService = new ToolService(repository, pluginRegistry, mcpService);
         SkillService skillService = new SkillService(repository);
         GovernanceService governanceService = new GovernanceService(repository);
         RateLimitMiddleware rateLimitMiddleware = new RateLimitMiddleware(Duration.ofMillis(1000));
@@ -223,7 +272,8 @@ public final class ApplicationBootstrap {
         ProactiveMemoryTrigger proactiveTrigger =
                 new ProactiveMemoryTrigger(memoryService, messageBusService, projectService);
         proactiveTrigger.start(allAgentIds);
-        ChatSessionRepository chatSessionRepository = new ChatSessionRepository(projectService);
+        ChatSessionRepository chatSessionRepository =
+                new ChatSessionRepository(projectService, sqliteAgentStateStore);
         ChannelMessageBusIntegration channelMessageBusIntegration =
                 new ChannelMessageBusIntegration(messageBusService);
         SessionTitleGenerator titleGenerator = new SessionTitleGenerator(repository);
@@ -268,7 +318,6 @@ public final class ApplicationBootstrap {
         chatService.setMessagePipeline(messagePipeline);
         // Other modular services
         ChannelService channelService = new ChannelService(repository, pluginRegistry);
-        McpService mcpService = new McpService(repository);
         AcpService acpService = new AcpService(repository);
         SecurityService securityService = new SecurityService(repository);
         BackupService backupService = new BackupService(repository);
@@ -333,10 +382,14 @@ public final class ApplicationBootstrap {
         ProviderService providerService = result.providerService();
         ChatService chatService = result.chatService();
         ChatSessionRepository chatSessionRepository = result.chatSessionRepository();
+        PluginManager pluginManager = result.pluginManager();
         return new WakeupDispatcherService.WakeupTarget() {
 
             @Override
             public boolean isSessionRunning(String projectId, String sessionId) {
+                if (sessionId != null && chatService.isSessionRunning(sessionId)) {
+                    return true;
+                }
                 // Check if agent has running tasks
                 AgentInfo currentAgent = agentService.currentDefault();
                 if (currentAgent != null) {
@@ -347,18 +400,94 @@ public final class ApplicationBootstrap {
             }
 
             @Override
-            public Mono<Object> runWakeup(String projectId, String sessionId, String agentId) {
-                if (agentId == null || agentId.isBlank()) {
-                    LOGGER.log(
-                            Level.WARNING, "Wakeup call missing agentId, sessionId={0}", sessionId);
-                    return Mono.just("wakeup skipped: no agentId");
+            public Mono<Object> runWakeup(
+                    String projectId, String sessionId, String agentId, String userId) {
+                // 1. Check if sessionId is an existing chat session (excluding agent-chat internal
+                // sessions)
+                if (sessionId != null
+                        && !sessionId.isBlank()
+                        && !sessionId.startsWith("agent-chat:")) {
+                    ChatSessionInfo session = chatService.findSession(sessionId);
+                    if (session != null) {
+                        LOGGER.log(
+                                Level.INFO,
+                                "Waking up existing session: session={0}, agent={1}, channel={2}",
+                                new Object[] {
+                                    sessionId, session.getAgentId(), session.getChannel()
+                                });
+                        chatService.resumeSessionWakeup(
+                                session,
+                                new StreamCallback() {
+                                    @Override
+                                    public void onPart(ChatMessagePart part, boolean startsNew) {
+                                        String channelId = session.getChannel();
+                                        if (channelId != null && pluginManager != null) {
+                                            PluginRecord plugin =
+                                                    pluginManager.getPlugin(channelId);
+                                            if (plugin != null
+                                                    && plugin.instance != null
+                                                    && plugin.instance.supportsStreaming()) {
+                                                plugin.instance.streamPartToSession(
+                                                        sessionId, part, startsNew);
+                                            }
+                                        }
+                                    }
+
+                                    @Override
+                                    public void onCompleted(Msg message) {
+                                        String channelId = session.getChannel();
+                                        if (channelId != null
+                                                && !ChannelIds.CONSOLE.equalsIgnoreCase(channelId)
+                                                && pluginManager != null) {
+                                            PluginRecord plugin =
+                                                    pluginManager.getPlugin(channelId);
+                                            if (plugin != null && plugin.instance != null) {
+                                                String replyText =
+                                                        message != null
+                                                                ? message.getTextContent()
+                                                                : "";
+                                                LOGGER.log(
+                                                        Level.INFO,
+                                                        "Delivering wakeup reply to channel {0} for"
+                                                                + " session {1}",
+                                                        new Object[] {channelId, sessionId});
+                                                plugin.instance.replyToSession(
+                                                        sessionId, replyText);
+                                            }
+                                        }
+                                    }
+                                });
+                        return Mono.just("wakeup triggered for session " + sessionId);
+                    }
                 }
+
+                // 2. Otherwise handle inter-agent communication (agent_chat)
+                String effectiveAgentId = agentId;
+                if ((effectiveAgentId == null || effectiveAgentId.isBlank())
+                        && sessionId != null
+                        && sessionId.startsWith("agent-chat:")) {
+                    String[] parts = sessionId.split(":");
+                    if (parts.length >= 2) {
+                        effectiveAgentId = parts[1];
+                    }
+                }
+
+                if (effectiveAgentId == null || effectiveAgentId.isBlank()) {
+                    LOGGER.log(
+                            Level.WARNING,
+                            "Wakeup call missing agentId and not an existing session,"
+                                    + " sessionId={0}",
+                            sessionId);
+                    return Mono.just("wakeup skipped: no target");
+                }
+
                 // Drain inbox to get agent_chat request
                 MessageBus bus = messageBusService.getMessageBus(projectId);
-                String inboxKey = "agentscope:inbox:agent:" + agentId;
+                String inboxKey = "agentscope:inbox:agent:" + effectiveAgentId;
                 List<BusEntry> entries = bus.queueDrain(inboxKey, 1).block();
                 if (entries == null || entries.isEmpty()) {
-                    LOGGER.log(Level.FINE, "Waking up agent={0} but inbox is empty", agentId);
+                    LOGGER.log(
+                            Level.FINE, "Waking up agent={0} but inbox is empty", effectiveAgentId);
                     return Mono.just("wakeup: no pending messages");
                 }
                 Map<String, Object> payload = entries.get(0).payload();
@@ -367,17 +496,19 @@ public final class ApplicationBootstrap {
                 String correlationId = str(payload, "correlationId");
                 if (text == null || text.isBlank()) {
                     LOGGER.log(
-                            Level.WARNING, "agent_chat request missing text, agent={0}", agentId);
+                            Level.WARNING,
+                            "agent_chat request missing text, agent={0}",
+                            effectiveAgentId);
                     return Mono.just("wakeup: empty message");
                 }
                 // Register pending reply context, drainAndReplyAgentChat will be auto-called after
                 // sendMessage completes
-                chatService.registerPendingAgentChatReply(agentId, replyTo, correlationId);
+                chatService.registerPendingAgentChatReply(effectiveAgentId, replyTo, correlationId);
                 // Create new session and trigger inference
-                ChatSessionInfo sessionInfo = chatService.newSession(agentId);
-                AgentInfo agent = agentService.findById(agentId).orElse(null);
+                ChatSessionInfo sessionInfo = chatService.newSession(effectiveAgentId);
+                AgentInfo agent = agentService.findById(effectiveAgentId).orElse(null);
                 if (agent == null) {
-                    LOGGER.log(Level.WARNING, "Agent not found: {0}", agentId);
+                    LOGGER.log(Level.WARNING, "Agent not found: {0}", effectiveAgentId);
                     return Mono.just("wakeup: agent not found");
                 }
                 ProviderInfo provider = providerService.getById(agent.getProviderId()).orElse(null);
@@ -402,8 +533,8 @@ public final class ApplicationBootstrap {
                 LOGGER.log(
                         Level.INFO,
                         "Wakeup inference triggered: agent={0}, correlationId={1}",
-                        new Object[] {agentId, correlationId});
-                return Mono.just("wakeup triggered for agent " + agentId);
+                        new Object[] {effectiveAgentId, correlationId});
+                return Mono.just("wakeup triggered for agent " + effectiveAgentId);
             }
         };
     }

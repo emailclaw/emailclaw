@@ -14,6 +14,7 @@ import ai.emailclaw.emailclaw.model.AgentConfiguration;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.util.WebViewUtils;
 import java.io.File;
 import java.io.IOException;
 import java.io.StringWriter;
@@ -133,6 +134,7 @@ class CodingModePane {
         this.currentProject = currentProject;
         this.chatService = chatService;
         this.callback = callback;
+        WebViewUtils.configureUserDataDirectory(preview);
         initMarkdownRenderer();
     }
 
@@ -316,13 +318,8 @@ class CodingModePane {
         projectHeader.getChildren().clear();
         dirRoot = resolveDefaultProjectRoot();
         String defaultDirStr =
-                dirRoot != null
-                        ? dirRoot.toString()
-                        : (currentProject != null
-                                ? currentProject.getBaseDirectory()
-                                : "No Project");
-        if (currentProject != null
-                && currentProject.getAdditionalDirs() != null
+                dirRoot != null ? dirRoot.toString() : currentProject.getBaseDirectory();
+        if (currentProject.getAdditionalDirs() != null
                 && !currentProject.getAdditionalDirs().isEmpty()) {
             dirCombo = new ComboBox<>();
             dirCombo.getItems().add(currentProject.getBaseDirectory());
@@ -582,8 +579,7 @@ class CodingModePane {
     }
 
     private Path resolveDefaultProjectRoot() {
-        if (currentProject != null
-                && currentProject.getBaseDirectory() != null
+        if (currentProject.getBaseDirectory() != null
                 && !currentProject.getBaseDirectory().isBlank()) {
             LOGGER.info("currentProject.getBaseDirectory()===" + currentProject.getBaseDirectory());
             return Path.of(currentProject.getBaseDirectory()).toAbsolutePath().normalize();

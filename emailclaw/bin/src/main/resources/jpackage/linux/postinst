@@ -1,0 +1,130 @@
+#!/bin/sh
+# postinst script for emailclaw
+#
+# see: dh_installdeb(1)
+
+set -e
+
+case "$1" in
+    configure)
+        # Determine the installing user
+        INSTALL_USER="${SUDO_USER:-}"
+        if [ -z "$INSTALL_USER" ] || [ "$INSTALL_USER" = "root" ]; then
+            INSTALL_USER="$(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $3}' | grep -vx root | sort -u | head -n1)"
+        fi
+        [ -n "$INSTALL_USER" ] || INSTALL_USER="$(getent passwd | awk -F: '$3 >= 1000 {print $1; exit}')"
+
+        USER_HOME="$(eval echo "~$INSTALL_USER" 2>/dev/null || true)"
+        [ -n "$USER_HOME" ] || USER_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+        [ -n "$USER_HOME" ] || USER_HOME="/home/$INSTALL_USER"
+
+        APP_DIR="/opt/emailclaw"
+
+        # 1. Create symlink for user-local access
+        mkdir -p "$USER_HOME/.local/bin" 2>/dev/null || true
+        if [ -x "$APP_DIR/bin/emailclaw" ]; then
+            ln -sf "$APP_DIR/bin/emailclaw" "$USER_HOME/.local/bin/emailclaw" 2>/dev/null || true
+        fi
+
+        # 1.5 Create desktop menu shortcut
+        if [ -f "$APP_DIR/lib/emailclaw-emailclaw.desktop" ]; then
+            mkdir -p "$USER_HOME/.local/share/applications" 2>/dev/null || true
+            ln -sf "$APP_DIR/lib/emailclaw-emailclaw.desktop" \
+                    "$USER_HOME/.local/share/applications/emailclaw-emailclaw.desktop" 2>/dev/null || true
+        fi
+
+        # 2. Register a user-level systemd service
+        if [ -n "$INSTALL_USER" ]; then
+            UNIT_DIR="$USER_HOME/.config/systemd/user"
+            mkdir -p "$UNIT_DIR" 2>/dev/null || true
+
+            cat > "$UNIT_DIR/emailclaw.service" << EOF
+[Unit]
+Description=emailclaw Background Daemon Service
+After=network.target
+
+[Service]
+Type=simple
+Environment="JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC"
+ExecStart=$APP_DIR/bin/emailclaw --service
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=default.target
+EOF
+
+            chown -R "$INSTALL_USER":"$INSTALL_USER" "$USER_HOME/.config/systemd" 2>/dev/null || true
+
+            loginctl enable-linger "$INSTALL_USER" 2>/dev/null || true
+            cat >> "$USER_HOME/.bashrc" << 'EOF'
+            if [ -z "$XDG_RUNTIME_DIR" ] && [ -d "/run/user/$(id -u)" ]; then
+                export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+                export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+            fi
+EOF
+
+            # loginctl enable-linger starts the user's systemd manager
+            # asynchronously, so the user bus socket may not exist yet when
+            # we call systemctl --user right after. Retry until the manager
+            # is reachable (or give up after a few seconds).
+            uid="$(id -u "$INSTALL_USER" 2>/dev/null || true)"
+            if [ -n "$uid" ]; then
+                if command -v runuser >/dev/null 2>&1; then
+                    USER_CMD="runuser -u '$INSTALL_USER' -- sh -c"
+                else
+                    USER_CMD="su -s /bin/sh '$INSTALL_USER' -c"
+                fi
+                CMD="XDG_RUNTIME_DIR=/run/user/$uid systemctl --user daemon-reload && XDG_RUNTIME_DIR=/run/user/$uid systemctl --user enable emailclaw && XDG_RUNTIME_DIR=/run/user/$uid systemctl --user restart emailclaw"
+
+                i=0
+                DAEMON_OK=""
+                while [ "$i" -lt 10 ]; do
+                    if eval "$USER_CMD \"\$CMD\"" >/dev/null 2>&1; then
+                        DAEMON_OK=1
+                        break
+                    fi
+                    i=$((i+1))
+                    sleep 1
+                done
+
+                if [ -z "$DAEMON_OK" ]; then
+                    echo " [emailclaw] Warning: could not start the daemon now."
+                    echo "            Run this in your own terminal once:"
+                    echo "            systemctl --user daemon-reload && systemctl --user enable emailclaw && systemctl --user restart emailclaw"
+                fi
+            fi
+
+            echo "=========================================================="
+            echo " [emailclaw] Daemon configuration successful!"
+            echo " - Binary:      $APP_DIR/bin/emailclaw"
+            echo " - Shortcut:    ~/.local/bin/emailclaw"
+            echo " - Data:        ~/emailclaw (same as the desktop app)"
+            echo " - Config:      ~/emailclaw/.config/channels.json"
+            echo " - Unit file:   ~/.config/systemd/user/emailclaw.service"
+            echo ""
+            echo " Commands (no sudo required):"
+            echo "   systemctl --user start emailclaw"
+            echo "   systemctl --user stop emailclaw"
+            echo "   systemctl --user status emailclaw"
+            echo "   journalctl --user -u emailclaw -f"
+            echo ""
+            echo " Other users can enable their own instance:"
+            echo "   loginctl enable-linger <username>"
+            echo "   systemctl --user enable --now emailclaw"
+            echo "=========================================================="
+        fi
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0

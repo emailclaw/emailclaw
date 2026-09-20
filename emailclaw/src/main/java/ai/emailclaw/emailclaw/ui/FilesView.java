@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.ui;
 
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.util.WebViewUtils;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.file.Files;
@@ -113,6 +114,7 @@ public class FilesView implements ViewPane {
                             updateToggleStyle(previewToggle);
                             refreshRight();
                         });
+        WebViewUtils.configureUserDataDirectory(preview);
         buildUi();
         refresh();
     }

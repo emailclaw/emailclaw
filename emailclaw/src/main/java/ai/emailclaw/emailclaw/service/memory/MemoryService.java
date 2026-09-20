@@ -11,12 +11,7 @@
 package ai.emailclaw.emailclaw.service.memory;
 
 import ai.emailclaw.emailclaw.service.ProjectService;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
-import ai.emailclaw.emailclaw.storage.WorkspacePaths;
-import ai.emailclaw.emailclaw.util.FileNameUtils;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
 import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -24,50 +19,36 @@ import java.util.logging.Logger;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Memory service - provides a CRUD wrapper for structured memory.
+ * Memory service - provides a CRUD wrapper for structured memory, backed by SQLite.
  */
 public class MemoryService {
     private static final Logger LOGGER = Logger.getLogger(MemoryService.class.getName());
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String PROACTIVE_PREFIX = "proactive_";
 
-    private final Path globalWorkspaceRoot;
+    private final SqliteMemoryRepository memoryRepository;
     private final ProjectService projectService;
 
-    public MemoryService(Path globalWorkspaceRoot, ProjectService projectService) {
-        this.globalWorkspaceRoot = globalWorkspaceRoot;
+    public MemoryService(SqliteMemoryRepository memoryRepository, ProjectService projectService) {
+        this.memoryRepository = memoryRepository;
         this.projectService = projectService;
-        LOGGER.info("MemoryService initialization completed");
-    }
-
-    private Path memoryDir(String agentId, MemoryScope scope, String projectId) {
-        Path baseDir;
-        if (scope == MemoryScope.GLOBAL) {
-            baseDir = globalWorkspaceRoot;
-        } else {
-            ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-            String baseDirStr = project.getBaseDirectory();
-            Path base = Path.of(FileNameUtils.expandUserHome(baseDirStr));
-            baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
-        }
-        return baseDir.resolve(agentId).resolve(WorkspacePaths.MEMORY_DIR);
-    }
-
-    private Path noteFile(String agentId, String key, MemoryScope scope, String projectId) {
-        return memoryDir(agentId, scope, projectId).resolve(key + ".json");
+        LOGGER.info("MemoryService initialization completed with SQLite backend");
     }
 
     public void saveMemoryNote(
             String agentId, String key, Object content, MemoryScope scope, String projectId) {
         try {
-            Path dir = memoryDir(agentId, scope, projectId);
-            Files.createDirectories(dir);
-            MAPPER.writeValue(noteFile(agentId, key, scope, projectId).toFile(), content);
+            String jsonStr;
+            if (content instanceof String s) {
+                jsonStr = s;
+            } else {
+                jsonStr = MAPPER.writeValueAsString(content);
+            }
+            memoryRepository.saveMemoryNote(agentId, key, jsonStr, scope, projectId);
             LOGGER.log(
                     Level.FINE,
-                    "Memory saved: agent={0}, key={1}, scope={2}, project={3}",
+                    "Memory saved in SQLite: agent={0}, key={1}, scope={2}, project={3}",
                     new Object[] {agentId, key, scope, projectId});
-        } catch (IOException e) {
+        } catch (Exception e) {
             LOGGER.log(
                     Level.WARNING, "Failed to save memory: agent=" + agentId + ", key=" + key, e);
         }
@@ -75,12 +56,19 @@ public class MemoryService {
 
     public <T> Optional<T> readMemoryNote(
             String agentId, String key, Class<T> type, MemoryScope scope, String projectId) {
-        Path file = noteFile(agentId, key, scope, projectId);
-        if (!Files.exists(file)) {
+        Optional<String> contentOpt =
+                memoryRepository.readMemoryNote(agentId, key, scope, projectId);
+        if (contentOpt.isEmpty()) {
             return Optional.empty();
         }
+        String content = contentOpt.get();
+        if (type == String.class) {
+            @SuppressWarnings("unchecked")
+            T cast = (T) content;
+            return Optional.of(cast);
+        }
         try {
-            return Optional.of(MAPPER.readValue(file.toFile(), type));
+            return Optional.of(MAPPER.readValue(content, type));
         } catch (Exception e) {
             LOGGER.log(
                     Level.WARNING, "Failed to read memory: agent=" + agentId + ", key=" + key, e);
@@ -89,37 +77,17 @@ public class MemoryService {
     }
 
     public List<String> listMemoryNotes(String agentId, MemoryScope scope, String projectId) {
-        Path dir = memoryDir(agentId, scope, projectId);
-        if (!Files.isDirectory(dir)) {
-            return List.of();
-        }
-        try (var files = Files.list(dir)) {
-            List<String> keys =
-                    files.filter(p -> p.toString().endsWith(".json"))
-                            .map(p -> p.getFileName().toString().replace(".json", ""))
-                            .toList();
-            return keys;
-        } catch (IOException e) {
-            LOGGER.log(Level.WARNING, "Failed to list memory: agent=" + agentId, e);
-            return List.of();
-        }
+        return memoryRepository.listMemoryNotes(agentId, scope, projectId);
     }
 
     public void deleteMemoryNote(String agentId, String key, MemoryScope scope, String projectId) {
-        try {
-            Files.deleteIfExists(noteFile(agentId, key, scope, projectId));
-        } catch (IOException e) {
-            LOGGER.log(
-                    Level.WARNING, "Failed to delete memory: agent=" + agentId + ", key=" + key, e);
-        }
+        memoryRepository.deleteMemoryNote(agentId, key, scope, projectId);
     }
 
     /**
      * List memory entry keys marked as "proactive".
      */
     public List<String> listProactiveKeys(String agentId, MemoryScope scope, String projectId) {
-        return listMemoryNotes(agentId, scope, projectId).stream()
-                .filter(k -> k.startsWith(PROACTIVE_PREFIX))
-                .toList();
+        return memoryRepository.listProactiveKeys(agentId, scope, projectId);
     }
 }

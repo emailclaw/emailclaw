@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.tools;
 
 import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.file.ReadFileTool;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -34,6 +35,20 @@ public class ToolRegistry {
         for (EmailclawTool t : tools) {
             t.init(context, enabled);
             toolkit.registerTool(t);
+        }
+
+        boolean viewTextFile = enabled.contains(BuiltInToolNames.VIEW_TEXT_FILE);
+        boolean listDir =
+                enabled.contains(BuiltInToolNames.LIST_DIRECTORY) || enabled.contains("list_dir");
+        if (viewTextFile || listDir) {
+            toolkit.registerTool(new ReadFileTool());
+            if (!viewTextFile) {
+                toolkit.removeTool(BuiltInToolNames.VIEW_TEXT_FILE);
+            }
+            if (!listDir) {
+                toolkit.removeTool(BuiltInToolNames.LIST_DIRECTORY);
+            }
+            LOGGER.fine("Registered ReadFileTool to Toolkit");
         }
     }
 }

@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.ui;
 
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.service.ChatService;
+import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import java.util.List;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -94,16 +95,15 @@ class ChatHistoryDialog {
         HBox header = new HBox();
         header.setAlignment(Pos.CENTER_LEFT);
         header.setPadding(new Insets(16, 16, 12, 16));
-        String kindStr =
-                (currentSession != null
-                                && ChatSessionInfo.KIND_TASK.equals(currentSession.getKind()))
-                        ? "Tasks"
-                        : "Chats";
+        boolean isTask =
+                currentSession != null
+                        && ChatSessionInfo.KIND_TASK.equals(currentSession.getKind());
+        String kindStr = isTask ? "Tasks" : "Chats";
         Label headerTitle = new Label("All " + kindStr);
         headerTitle.getStyleClass().addAll("text-18", "fw-700");
         header.getChildren().add(headerTitle);
-        // --- Create New Chat button ---
-        Button createNewBtn = new Button("Create New Chat");
+        // --- Create New Chat / Task button ---
+        Button createNewBtn = new Button(isTask ? "Create New Task" : "Create New Chat");
         createNewBtn.setMaxWidth(Double.MAX_VALUE);
         createNewBtn.getStyleClass().add("btn-orange-lg");
         VBox btnWrapper = new VBox(createNewBtn);
@@ -119,9 +119,7 @@ class ChatHistoryDialog {
         Runnable refreshList =
                 () -> {
                     String curProjId =
-                            (currentSession != null
-                                            && currentSession.getProjectId() != null
-                                            && !currentSession.getProjectId().isBlank())
+                            (currentSession != null && !currentSession.getProjectId().isBlank())
                                     ? currentSession.getProjectId()
                                     : "default";
                     List<ChatSessionInfo> sessions =
@@ -143,9 +141,7 @@ class ChatHistoryDialog {
                                     .filter(
                                             s -> {
                                                 String sProjId =
-                                                        (s.getProjectId() == null
-                                                                        || s.getProjectId()
-                                                                                .isBlank())
+                                                        s.getProjectId().isBlank()
                                                                 ? "default"
                                                                 : s.getProjectId();
                                                 return curProjId.equals(sProjId);
@@ -173,24 +169,16 @@ class ChatHistoryDialog {
                         Label sessionName =
                                 new Label(
                                         s.getName() == null || s.getName().isBlank()
-                                                ? "New Chat"
+                                                ? (ChatSessionInfo.KIND_TASK.equals(s.getKind())
+                                                        ? "New Task"
+                                                        : "New Chat")
                                                 : s.getName());
                         sessionName.getStyleClass().add("fw-600-14");
                         nameRow.getChildren().addAll(dot, sessionName);
                         HBox metaRow = new HBox(8);
                         metaRow.setAlignment(Pos.CENTER_LEFT);
                         Label dateLabel =
-                                new Label(
-                                        s.getUpdatedAt() == null
-                                                ? ""
-                                                : s.getUpdatedAt()
-                                                        .replace("T", " ")
-                                                        .substring(
-                                                                0,
-                                                                Math.min(
-                                                                        19,
-                                                                        s.getUpdatedAt()
-                                                                                .length())));
+                                new Label(DateTimeUtils.formatEpochMillis(s.getUpdatedAt()));
                         dateLabel.getStyleClass().add("text-12-muted");
                         Label channelLabel =
                                 new Label(

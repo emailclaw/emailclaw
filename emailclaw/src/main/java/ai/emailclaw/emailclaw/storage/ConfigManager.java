@@ -33,6 +33,9 @@ import ai.emailclaw.emailclaw.model.ToolInfo;
 import ai.emailclaw.emailclaw.model.VoiceTranscriptionConfig;
 import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderCatalog;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStatsRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteTokenUsageRepository;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import java.io.IOException;
 import java.nio.file.ClosedWatchServiceException;
@@ -123,15 +126,6 @@ public class ConfigManager {
     private static final TypeReference<List<ToolInfo>> TOOLS_REF =
             new TypeReference<List<ToolInfo>>() {};
 
-    private static final TypeReference<List<ChatSessionInfo>> SESSIONS_REF =
-            new TypeReference<List<ChatSessionInfo>>() {};
-
-    private static final TypeReference<List<TokenUsageRecord>> TOKEN_USAGE_REF =
-            new TypeReference<List<TokenUsageRecord>>() {};
-
-    private static final TypeReference<List<AgentStatRecord>> AGENT_STATS_REF =
-            new TypeReference<List<AgentStatRecord>>() {};
-
     private static final TypeReference<List<ChannelInfo>> CHANNELS_REF =
             new TypeReference<List<ChannelInfo>>() {};
 
@@ -201,12 +195,6 @@ public class ConfigManager {
 
     private final CachedState<List<ToolInfo>> toolsState = new CachedState<>();
 
-    private final CachedState<List<ChatSessionInfo>> sessionsState = new CachedState<>();
-
-    private final CachedState<List<TokenUsageRecord>> tokenUsageState = new CachedState<>();
-
-    private final CachedState<List<AgentStatRecord>> agentStatsState = new CachedState<>();
-
     private final CachedState<List<ChannelInfo>> channelsState = new CachedState<>();
 
     private final CachedState<List<CronJobModel.CronJobSpec>> cronJobsState = new CachedState<>();
@@ -236,8 +224,19 @@ public class ConfigManager {
     private final ConcurrentHashMap<String, CachedState<AgentConfiguration>>
             agentConfigStateByAgent = new ConcurrentHashMap<>();
 
-    public ConfigManager(AppPaths paths) {
+    private final SqliteChatSessionRepository sessionRepository;
+    private final SqliteTokenUsageRepository tokenUsageRepository;
+    private final SqliteAgentStatsRepository agentStatsRepository;
+
+    public ConfigManager(
+            AppPaths paths,
+            SqliteChatSessionRepository sessionRepository,
+            SqliteTokenUsageRepository tokenUsageRepository,
+            SqliteAgentStatsRepository agentStatsRepository) {
         this.paths = paths;
+        this.sessionRepository = sessionRepository;
+        this.tokenUsageRepository = tokenUsageRepository;
+        this.agentStatsRepository = agentStatsRepository;
         this.backupsMetaFile = paths.backupsDir.resolve("backups-meta.json");
         try {
             this.watchService = FileSystems.getDefault().newWatchService();
@@ -248,6 +247,10 @@ public class ConfigManager {
         // runs first, targets not attached yet".
         registerGlobalWatchers();
         Thread.ofVirtual().name("ConfigManager-Watcher").start(this::watchFileChanges);
+    }
+
+    public ConfigManager(AppPaths paths) {
+        this(paths, null, null, null);
     }
 
     /**
@@ -682,65 +685,65 @@ public class ConfigManager {
 
     // ------------------------- Sessions -------------------------
     public List<ChatSessionInfo> getSessions() {
-        synchronized (sessionsState.lock) {
-            if (sessionsState.value == null) {
-                sessionsState.value = readList(paths.sessionsMetaFile, SESSIONS_REF, sessionsState);
-            }
-            return sessionsState.value;
-        }
+        return sessionRepository.loadAll();
     }
 
     public void saveSessions(List<ChatSessionInfo> sessions) {
         LOGGER.info("saveSessions starts...");
         List<ChatSessionInfo> toSave = sessions == null ? new ArrayList<>() : sessions;
-        synchronized (sessionsState.lock) {
-            sessionsState.value = toSave;
-            sessionsState.lastWrittenContent =
-                    writeJson(paths.sessionsMetaFile, toSave, sessionsState.lastWrittenContent);
+        sessionRepository.saveAll(toSave);
+        notifyChange(EVENT_SESSIONS);
+    }
+
+    public void deleteSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
         }
+        sessionRepository.delete(sessionId);
+        notifyChange(EVENT_SESSIONS);
+    }
+
+    public void batchDeleteSessions(List<String> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return;
+        }
+        sessionRepository.batchDelete(sessionIds);
+        notifyChange(EVENT_SESSIONS);
+    }
+
+    public void notifySessionsChanged() {
         notifyChange(EVENT_SESSIONS);
     }
 
     // ------------------------- Token Usage -------------------------
     public List<TokenUsageRecord> getTokenUsageRecords() {
-        synchronized (tokenUsageState.lock) {
-            if (tokenUsageState.value == null) {
-                tokenUsageState.value =
-                        readList(paths.tokenUsageFile, TOKEN_USAGE_REF, tokenUsageState);
-            }
-            return tokenUsageState.value;
-        }
+        return tokenUsageRepository.loadAll();
     }
 
     public void saveTokenUsageRecords(List<TokenUsageRecord> records) {
         LOGGER.info("saveTokenUsageRecords starts...");
         List<TokenUsageRecord> toSave = records == null ? new ArrayList<>() : records;
-        synchronized (tokenUsageState.lock) {
-            tokenUsageState.value = toSave;
-            tokenUsageState.lastWrittenContent = writeJson(paths.tokenUsageFile, toSave);
-        }
+        tokenUsageRepository.saveAll(toSave);
+        notifyChange(EVENT_TOKEN_USAGE);
+    }
+
+    public void notifyTokenUsageChanged() {
         notifyChange(EVENT_TOKEN_USAGE);
     }
 
     // ------------------------- Agent Stats -------------------------
     public List<AgentStatRecord> getAgentStats() {
-        synchronized (agentStatsState.lock) {
-            if (agentStatsState.value == null) {
-                agentStatsState.value =
-                        readList(paths.agentStatsFile, AGENT_STATS_REF, agentStatsState);
-            }
-            return agentStatsState.value;
-        }
+        return agentStatsRepository.loadAll();
     }
 
     public void saveAgentStats(List<AgentStatRecord> records) {
         LOGGER.info("saveAgentStats starts...");
         List<AgentStatRecord> toSave = records == null ? new ArrayList<>() : records;
-        synchronized (agentStatsState.lock) {
-            agentStatsState.value = toSave;
-            agentStatsState.lastWrittenContent =
-                    writeJson(paths.agentStatsFile, toSave, agentStatsState.lastWrittenContent);
-        }
+        agentStatsRepository.saveAll(toSave);
+        notifyChange(EVENT_AGENT_STATS);
+    }
+
+    public void notifyAgentStatsChanged() {
         notifyChange(EVENT_AGENT_STATS);
     }
 
@@ -1162,9 +1165,6 @@ public class ConfigManager {
         registerWatchedFile(paths.agentsFile, this::reloadAgentsFromDisk);
         registerWatchedFile(paths.globalConfigFile, this::reloadGlobalConfigFromDisk);
         registerWatchedFile(paths.toolConfigFile, this::reloadToolsFromDisk);
-        registerWatchedFile(paths.sessionsMetaFile, this::reloadSessionsFromDisk);
-        registerWatchedFile(paths.tokenUsageFile, this::reloadTokenUsageFromDisk);
-        registerWatchedFile(paths.agentStatsFile, this::reloadAgentStatsFromDisk);
         registerWatchedFile(paths.channelsFile, this::reloadChannelsFromDisk);
         registerWatchedFile(paths.cronJobsFile, this::reloadCronJobsFromDisk);
         registerWatchedFile(paths.projectsFile, this::reloadProjectsFromDisk);
@@ -1369,18 +1369,6 @@ public class ConfigManager {
 
     private void reloadToolsFromDisk() {
         reloadListState(paths.toolConfigFile, TOOLS_REF, toolsState, EVENT_TOOLS);
-    }
-
-    private void reloadSessionsFromDisk() {
-        reloadListState(paths.sessionsMetaFile, SESSIONS_REF, sessionsState, EVENT_SESSIONS);
-    }
-
-    private void reloadTokenUsageFromDisk() {
-        reloadListState(paths.tokenUsageFile, TOKEN_USAGE_REF, tokenUsageState, EVENT_TOKEN_USAGE);
-    }
-
-    private void reloadAgentStatsFromDisk() {
-        reloadListState(paths.agentStatsFile, AGENT_STATS_REF, agentStatsState, EVENT_AGENT_STATS);
     }
 
     private void reloadChannelsFromDisk() {

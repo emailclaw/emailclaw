@@ -139,7 +139,7 @@ public class PlanBroadcaster {
                 payload.put("subTaskId", subTaskId);
                 payload.put("subTaskStatus", subTaskStatus);
             }
-            String projectId = plan.getProjectId() != null ? plan.getProjectId() : "default";
+            String projectId = plan.getProjectId().isBlank() ? "default" : plan.getProjectId();
             messageBusService.getMessageBus(projectId).publish(eventType, payload).subscribe();
             LOGGER.log(
                     Level.FINE,

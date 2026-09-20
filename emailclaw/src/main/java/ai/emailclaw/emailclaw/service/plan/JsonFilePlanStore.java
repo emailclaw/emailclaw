@@ -142,7 +142,7 @@ public class JsonFilePlanStore implements PlanStore {
     public List<Plan> listAll() {
         List<Plan> result = new ArrayList<>();
         for (ai.emailclaw.emailclaw.model.ProjectInfo project : projectService.list()) {
-            String baseDir = project != null ? project.getBaseDirectory() : null;
+            String baseDir = project.getBaseDirectory();
             if (baseDir == null || baseDir.isBlank()) {
                 continue;
             }
