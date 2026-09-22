@@ -28,7 +28,7 @@ import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
@@ -705,7 +705,11 @@ public class EmailclawChannelRunner {
             project.setId(session.getId());
             project.setName(session.getName());
             project.setBaseDirectory(
-                    ProjectService.generateBaseDirPath(project.getId(), project.getName())
+                    (this.projectService != null
+                                    ? this.projectService.generateProjectBaseDirPath(
+                                            project.getId(), project.getName())
+                                    : ProjectService.generateBaseDirPath(
+                                            project.getId(), project.getName()))
                             .toString());
             project.setCreatedAt(LocalDateTime.now().toString());
 
@@ -1025,9 +1029,14 @@ public class EmailclawChannelRunner {
             Path projectBaseDir = Path.of(project.getBaseDirectory());
             Path workspaceBaseDir =
                     (agent.getWorkspacePath() == null || agent.getWorkspacePath().isBlank())
-                            ? AppHomeConstants.HOME_RESOLVED
-                                    .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
-                                    .resolve(agent.getId())
+                            ? (this.configManager != null && this.configManager.paths() != null
+                                            ? this.configManager
+                                                    .paths()
+                                                    .workspaceRoot
+                                                    .resolve(agent.getId())
+                                            : AppPaths.fromDefault()
+                                                    .workspaceRoot
+                                                    .resolve(agent.getId()))
                                     .toAbsolutePath()
                                     .normalize()
                             : Path.of(FileNameUtils.expandUserHome(agent.getWorkspacePath()))

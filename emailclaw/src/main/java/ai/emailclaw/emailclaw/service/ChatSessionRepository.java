@@ -10,15 +10,12 @@
  */
 package ai.emailclaw.emailclaw.service;
 
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
-import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -50,16 +47,6 @@ public class ChatSessionRepository {
 
     private AgentStateStore resolveStore() {
         return agentStateStore;
-    }
-
-    public Path sessionPath(String projectId, String agentId) {
-        String aId = (agentId == null || agentId.isBlank()) ? "default" : agentId;
-        ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
-        String baseDir = project.getBaseDirectory();
-        return Path.of(FileNameUtils.expandUserHome(baseDir))
-                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
-                .resolve(aId)
-                .resolve(AppHomeConstants.SESSIONS_DIR);
     }
 
     public List<Msg> loadHistory(String projectId, String agentId, String sessionId) {

@@ -10,23 +10,59 @@
  */
 package ai.emailclaw.emailclaw.storage;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
- * Application path configuration object.
+ * Application path domain model and value object.
  *
- * <p>Centrally manages all configuration, data, and workspace paths derived from the root directory to avoid scattered hardcoding.
+ * <p>Centrally manages all configuration, database, data, and workspace paths derived from the
+ * application root directory, completely adhering to the Pure DI pattern without ambient global state.
  */
 public final class AppPaths {
+    private static final Logger LOGGER = Logger.getLogger(AppPaths.class.getName());
+
+    // Relative directories
+    public static final String AGENT_WORKSPACE_DIR = "agent-workspace";
+    public static final String BACKUPS_DIR = ".backups";
+    public static final String BROWSER_DATA_DIR = ".browser-data";
+    public static final String CONFIG_DIR = ".config";
+    public static final String DATABASE_DIR = ".database";
+    public static final String LOGS_DIR = "logs";
+    public static final String OFFLOADS_DIR = ".offloads";
+    public static final String PLUGINS_DIR = "plugins";
+    public static final String PROJECTS_DIR = "projects";
+    public static final String SKILL_POOL_DIR = "skill-pool";
+    public static final String SECRET_DIR = ".secret";
+    public static final String SECURITY_APPROVALS_DIR = ".security/approvals";
+    public static final String WEBVIEW_DIR = ".webview";
+
+    // Absolute / resolved instance paths
     public final Path root;
+    public final Path workspaceRoot;
+    public final Path backupsDir;
+    public final Path browserDataDir;
     public final Path configDir;
+    public final Path databaseDir;
+    public final Path logsDir;
+    public final Path offloadsDir;
+    public final Path pluginsDir;
+    public final Path projectsRoot;
+    public final Path securityApprovalsDir;
     public final Path secretDir;
-    public final Path providersFile;
-    public final Path agentsFile;
+    public final Path skillsPoolRoot;
+    public final Path webviewDir;
 
     /** Global config file (current Agent / country / language). */
     public final Path globalConfigFile;
 
+    public final Path providersFile;
+    public final Path agentsFile;
+    public final Path databaseFile;
     public final Path toolConfigFile;
     public final Path channelsFile;
     public final Path cronJobsFile;
@@ -36,19 +72,30 @@ public final class AppPaths {
     public final Path envsFile;
     public final Path securityRulesFile;
     public final Path securityConfigFile;
-    public final Path backupsDir;
     public final Path voiceTranscriptionFile;
-    public final Path workspaceRoot;
-    public final Path skillsPoolRoot;
-    public final Path logsDir;
-    public final Path pluginsDir;
-    public final Path projectsRoot;
-    public final Path webviewDir;
 
+    /**
+     * Constructs an {@code AppPaths} value object rooted at the specified base directory.
+     *
+     * @param root the base application root directory, must not be null
+     */
     public AppPaths(Path root) {
-        this.root = root;
-        this.configDir = root.resolve(AppHomeConstants.CONFIG_DIR);
-        this.secretDir = root.resolve(AppHomeConstants.SECRET_DIR);
+        this.root = Objects.requireNonNull(root, "root");
+        this.workspaceRoot = root.resolve(AGENT_WORKSPACE_DIR);
+        this.browserDataDir = root.resolve(BROWSER_DATA_DIR);
+        this.backupsDir = root.resolve(BACKUPS_DIR);
+        this.configDir = root.resolve(CONFIG_DIR);
+        this.databaseDir = root.resolve(DATABASE_DIR);
+        this.logsDir = root.resolve(LOGS_DIR);
+        this.offloadsDir = root.resolve(OFFLOADS_DIR);
+        this.projectsRoot = root.resolve(PROJECTS_DIR);
+        this.pluginsDir = root.resolve(PLUGINS_DIR);
+        this.securityApprovalsDir = root.resolve(SECURITY_APPROVALS_DIR);
+        this.secretDir = root.resolve(SECRET_DIR);
+        this.skillsPoolRoot = root.resolve(SKILL_POOL_DIR);
+        this.webviewDir = root.resolve(WEBVIEW_DIR);
+
+        this.databaseFile = databaseDir.resolve("emailclaw.db");
         this.providersFile = configDir.resolve("providers.json");
         this.agentsFile = configDir.resolve("agents.json");
         this.globalConfigFile = configDir.resolve("global-config.json");
@@ -61,13 +108,52 @@ public final class AppPaths {
         this.envsFile = secretDir.resolve("envs.json");
         this.securityRulesFile = configDir.resolve("security-rules.json");
         this.securityConfigFile = configDir.resolve("security-config.json");
-        this.backupsDir = root.resolve(AppHomeConstants.BACKUPS_DIR);
         this.voiceTranscriptionFile = configDir.resolve("voice-transcription.json");
-        this.workspaceRoot = root.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
-        this.skillsPoolRoot = root.resolve(AppHomeConstants.SKILL_POOL_DIR);
-        this.logsDir = root.resolve(AppHomeConstants.LOGS_DIR);
-        this.pluginsDir = root.resolve(AppHomeConstants.PLUGINS_DIR);
-        this.projectsRoot = root.resolve(AppHomeConstants.PROJECTS_DIR);
-        this.webviewDir = root.resolve(AppHomeConstants.WEBVIEW_DIR);
+    }
+
+    /*
+     * Ensure directories exist before creating services, preventing WatchService registration failure
+     */
+    public void ensureStructure() {
+        try {
+            LOGGER.log(Level.INFO, "Initialize working directory structure: {0}", this.root);
+            Files.createDirectories(this.root);
+            Files.createDirectories(this.workspaceRoot);
+            Files.createDirectories(this.backupsDir);
+            Files.createDirectories(this.browserDataDir);
+            Files.createDirectories(this.configDir);
+            Files.createDirectories(this.databaseDir);
+            Files.createDirectories(this.logsDir);
+            Files.createDirectories(this.offloadsDir);
+            Files.createDirectories(this.pluginsDir);
+            Files.createDirectories(this.projectsRoot);
+            Files.createDirectories(this.securityApprovalsDir);
+            Files.createDirectories(this.secretDir);
+            Files.createDirectories(this.skillsPoolRoot);
+            Files.createDirectories(this.webviewDir);
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Failed to initialize working directory", e);
+            throw new RuntimeException("Failed to initialize workspace", e);
+        }
+    }
+
+    /**
+     * Factory method creating an {@code AppPaths} instance for a specific root.
+     *
+     * @param root the application root directory
+     * @return a new {@code AppPaths} instance
+     */
+    public static AppPaths of(Path root) {
+        return new AppPaths(root);
+    }
+
+    /**
+     * Factory method creating an {@code AppPaths} instance using the default resolved home directory.
+     * Useful for standalone fallback and backward compatibility.
+     *
+     * @return an {@code AppPaths} instance rooted at {@link AppHomeResolver#APP_HOME_RESOLVED}
+     */
+    public static AppPaths fromDefault() {
+        return new AppPaths(AppHomeResolver.APP_HOME_RESOLVED);
     }
 }

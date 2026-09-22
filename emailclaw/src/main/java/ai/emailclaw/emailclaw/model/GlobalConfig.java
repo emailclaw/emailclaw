@@ -24,7 +24,6 @@ import java.util.Locale;
  * <br>3) {@code language}: language code (reserved for future multi-language switching).
  */
 public class GlobalConfig {
-    private String appVersion = "26.9.20";
 
     /** Currently selected Agent ID. If empty, it means not explicitly selected yet. */
     private String currentAgentId = "";
@@ -42,14 +41,6 @@ public class GlobalConfig {
 
     /** Additional skill pool paths; the default skill pool remains fixed to the skills pool in the Emailclaw home directory. */
     private List<String> skillPoolPaths = new ArrayList<>();
-
-    public String getAppVersion() {
-        return appVersion;
-    }
-
-    public void setAppVersion(String _appVersion) {
-        appVersion = _appVersion;
-    }
 
     /**
      * Get currently selected Agent ID.

@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.storage.sqlite;
 
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -77,7 +77,7 @@ public class DatabaseManager implements AutoCloseable {
      */
     public static Path resolveDatabaseFile(Path configuredPath) {
         if (configuredPath == null) {
-            configuredPath = AppHomeConstants.DATABASE_FILE;
+            configuredPath = AppPaths.fromDefault().databaseFile;
         }
         if (Files.isDirectory(configuredPath)) {
             return configuredPath.resolve("emailclaw.db");
@@ -118,10 +118,10 @@ public class DatabaseManager implements AutoCloseable {
     }
 
     /**
-     * Default constructor using AppHomeConstants.DATABASE_FILE.
+     * Default constructor using {@link AppPaths#fromDefault()}'s databaseFile.
      */
     public DatabaseManager() {
-        this(AppHomeConstants.DATABASE_FILE);
+        this(AppPaths.fromDefault().databaseFile);
     }
 
     /**

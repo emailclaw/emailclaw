@@ -305,6 +305,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
      * This is an exact reproduction of the original panel adapted for MailboxAccountConfig.
      */
     private static class SingleMailboxConfigPane extends VBox {
+        private static final String EMAILCLAW_EMAIL = "@emailclaw.email";
         private static final String EMAILCLAW_CHANNEL_AGREEMENT =
 """
 By using the Service, you acknowledge and agree to be bound by the following Emailclaw Channel (Beta) Service Agreement:
@@ -699,7 +700,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
             sysRegistrationEmailField.setText("");
             sysOneTimePasswordField.setText("");
 
-            boolean isSystemEmail = config.emailAddress().endsWith("@emailclaw.email");
+            boolean isSystemEmail = config.emailAddress().endsWith(EMAILCLAW_EMAIL);
             if (isSystemEmail) {
                 sysEmailRadio.setSelected(true);
                 sysAllocatedEmailField.setText(config.emailAddress());

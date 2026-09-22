@@ -66,7 +66,6 @@ public class BootstrapService {
 
     public void initialize() {
         LOGGER.info("Starting bootstrap initialization process");
-        repository.ensureStructure();
         List<AgentInfo> agents = repository.loadAgents();
         repository.loadProviders();
         projectService.list();

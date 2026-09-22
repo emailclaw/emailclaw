@@ -48,9 +48,9 @@ import javafx.stage.Stage;
  *
  * <p>Shares the same initialization logic with {@link ServiceApp}, ensuring consistent behavior between the two startup methods.
  */
-public class App extends Application {
+public class FxApp extends Application {
 
-    private static final Logger LOGGER = Logger.getLogger(App.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(FxApp.class.getName());
 
     /**
      * Application initialization result, used for lifecycle management.
@@ -65,7 +65,7 @@ public class App extends Application {
     @Override
     public void start(Stage stage) {
         ThreadUtils.setFxActive(true);
-        LOGGER.info("Emailclaw application is starting...");
+        LOGGER.info(Launcher.APP_VERSION + " Emailclaw application is starting...");
         // 1. Execute general initialization (shared with ServiceApp)
         bootstrapResult = ApplicationBootstrap.initialize();
         // 2. Initialize wakeup dispatcher service

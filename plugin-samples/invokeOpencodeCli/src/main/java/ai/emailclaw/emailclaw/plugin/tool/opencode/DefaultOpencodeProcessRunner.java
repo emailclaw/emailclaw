@@ -26,8 +26,8 @@ import java.util.logging.Logger;
 /**
  * Industrial-grade default implementation of {@link OpencodeProcessRunner}.
  *
- * <p>Spawns the OpenCode CLI binary via {@link ProcessBuilder} with non-interactive flags
- * ({@code --cwd <path> -p <prompt> -f json -q}), concurrently capturing standard output and error streams
+ * <p>Spawns the OpenCode CLI binary via {@link ProcessBuilder} with {@code run} command
+ * ({@code opencode run [message..]}), concurrently capturing standard output and error streams
  * in non-blocking threads to prevent pipe deadlock, enforcing timeouts and graceful resource destruction.
  */
 public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
@@ -37,35 +37,45 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
 
     public DefaultOpencodeProcessRunner() {}
 
-    @Override
-    public OpencodeExecutionResult execute(
+    /**
+     * Builds the command arguments for opencode run.
+     *
+     * <p>Ensures that the --continue flag is appended if continueLastSession is true,
+     * and the --auto flag is included in non-interactive/automation environments
+     * unless explicitly specified, preventing the CLI from halting on permission prompts.
+     */
+    List<String> buildCommand(
             String cliPath,
             String prompt,
-            Path workingDirectory,
             String model,
-            String format,
-            boolean quiet,
-            int timeoutSeconds,
-            String extraArgs) {
+            String extraArgs,
+            boolean continueLastSession) {
         List<String> command = new ArrayList<>();
         String effectiveCliPath =
                 (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "opencode";
         command.add(effectiveCliPath);
+        command.add("run");
 
-        if (workingDirectory != null) {
-            command.add("--cwd");
-            command.add(workingDirectory.toAbsolutePath().normalize().toString());
+        boolean hasContinue = false;
+        boolean hasAuto = false;
+        List<String> extraTokens = new ArrayList<>();
+
+        if (extraArgs != null && !extraArgs.isBlank()) {
+            for (String token : extraArgs.trim().split("\\s+")) {
+                if (!token.isBlank()) {
+                    if ("--auto".equals(token)) {
+                        hasAuto = true;
+                    }
+                    if ("--continue".equals(token) || "-c".equals(token)) {
+                        hasContinue = true;
+                    }
+                    extraTokens.add(token);
+                }
+            }
         }
 
-        command.add("-p");
-        command.add(prompt != null ? prompt : "");
-
-        String effectiveFormat = (format != null && !format.isBlank()) ? format.trim() : "json";
-        command.add("-f");
-        command.add(effectiveFormat);
-
-        if (quiet) {
-            command.add("-q");
+        if (continueLastSession && !hasContinue) {
+            command.add("--continue");
         }
 
         if (model != null && !model.isBlank()) {
@@ -73,13 +83,28 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
             command.add(model.trim());
         }
 
-        if (extraArgs != null && !extraArgs.isBlank()) {
-            for (String token : extraArgs.trim().split("\\s+")) {
-                if (!token.isBlank()) {
-                    command.add(token);
-                }
-            }
+        if (!hasAuto) {
+            command.add("--auto");
         }
+
+        command.addAll(extraTokens);
+
+        if (prompt != null && !prompt.isBlank()) {
+            command.add(prompt);
+        }
+        return command;
+    }
+
+    @Override
+    public OpencodeExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            int timeoutSeconds,
+            String extraArgs,
+            boolean continueLastSession) {
+        List<String> command = buildCommand(cliPath, prompt, model, extraArgs, continueLastSession);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -89,23 +114,34 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
             }
         }
 
+        // Industrial-grade non-blocking environment:
+        // Redirect stdin from /dev/null so headless CLI tools never block waiting on stdin/input
+        File devNull = new File("/dev/null");
+        if (devNull.exists()) {
+            processBuilder.redirectInput(ProcessBuilder.Redirect.from(devNull));
+        }
+
         processBuilder.environment().put("TERM", "dumb");
-        processBuilder.environment().put("CI", "true");
+        processBuilder.environment().remove("CI");
         processBuilder.environment().put("NO_COLOR", "1");
 
         LOGGER.log(
                 Level.INFO,
-                "Launching OpenCode CLI process: executable={0}, workingDir={1}, timeout={2}s,"
-                        + " format={3}, quiet={4}",
-                new Object[] {effectiveCliPath, workingDirectory, timeoutSeconds, effectiveFormat, quiet});
+                "Launching OpenCode CLI process: command={0}, workingDir={1}, timeout={2}s",
+                new Object[] {command, workingDirectory, timeoutSeconds});
 
         Process process;
         try {
             process = processBuilder.start();
+            try {
+                // Ensure stdin pipe is immediately closed so subprocess receives EOF on stdin
+                process.getOutputStream().close();
+            } catch (IOException ignored) {
+            }
         } catch (IOException e) {
             LOGGER.log(
                     Level.SEVERE,
-                    "Failed to launch OpenCode CLI process: " + effectiveCliPath,
+                    "Failed to launch OpenCode CLI process: " + command.get(0),
                     e);
             return new OpencodeExecutionResult(
                     -1,
@@ -114,7 +150,7 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
                     false,
                     false,
                     "Failed to start OpenCode CLI process ('"
-                            + effectiveCliPath
+                            + command.get(0)
                             + "'): "
                             + e.getMessage());
         }
@@ -169,6 +205,10 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
             Thread.currentThread().interrupt();
             LOGGER.log(Level.WARNING, "OpenCode CLI execution thread was interrupted", e);
             process.destroyForcibly();
+            try {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
+            } catch (Exception ignored) {
+            }
             stdoutFuture.cancel(true);
             stderrFuture.cancel(true);
             return new OpencodeExecutionResult(
@@ -186,6 +226,10 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
                     "OpenCode CLI execution exceeded timeout of {0} seconds, destroying process",
                     timeoutSeconds);
             process.destroyForcibly();
+            try {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
+            } catch (Exception ignored) {
+            }
             stdoutFuture.cancel(true);
             stderrFuture.cancel(true);
             return new OpencodeExecutionResult(

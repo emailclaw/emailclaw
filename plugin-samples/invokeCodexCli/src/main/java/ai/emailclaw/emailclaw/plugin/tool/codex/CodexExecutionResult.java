@@ -8,12 +8,22 @@
  *
  * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package ai.emailclaw;
+package ai.emailclaw.emailclaw.plugin.tool.codex;
 
-// This is a classic and common "Launcher" design pattern in JavaFX 11+ and higher versions (also
-// known as a Fat JAR / Hack technique to bypass module system issues for independent startup)
-public class App {
-    public static void main(String[] args) {
-        ai.emailclaw.emailclaw.App.main(args);
-    }
-}
+/**
+ * Immutable execution result produced by {@link CodexProcessRunner}.
+ *
+ * @param exitCode Subprocess exit code (0 for success, -1 on timeout or spawn failure)
+ * @param stdout Standard output captured from the CLI
+ * @param stderr Standard error output captured from the CLI
+ * @param timedOut Whether the process was forcibly killed due to exceeding the timeout
+ * @param success Whether the execution completed cleanly with exit code 0
+ * @param error Descriptive error message if execution failed, or null on success
+ */
+public record CodexExecutionResult(
+        int exitCode,
+        String stdout,
+        String stderr,
+        boolean timedOut,
+        boolean success,
+        String error) {}

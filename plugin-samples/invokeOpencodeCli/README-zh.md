@@ -1,6 +1,6 @@
 # Invoke OpenCode CLI 插件使用与部署指南
 
-`invokeOpencodeCli` 是专为 Emailclaw 设计的工业级 **Agent 工具插件（Tool Plugin）**。它允许基于 AgentScope Java 构建的智能体（AI Agent）以非交互无头模式（`opencode --cwd <path> -p <prompt> -f json -q`）调用 OpenCode CLI（`opencode`），并在执行完毕后立即退出且返回结构化 JSON 结果。
+`invokeOpencodeCli` 是专为 Emailclaw 设计的工业级 **Agent 工具插件（Tool Plugin）**。它允许基于 AgentScope Java 构建的智能体（AI Agent）调用 OpenCode CLI（`opencode run [message..]`），并在执行完毕后立即退出且返回结构化 JSON 结果。
 
 ---
 
@@ -69,19 +69,19 @@ Copy-Item invokeOpencodeCli\target\emailclaw-plugin-tool-invokeOpencodeCli-1.0.1
 - *“使用 OpenCode CLI 分析当前项目架构并以 JSON 格式输出”*
 - *“调用 invokeOpencodeCli 生成单元测试用例”*
 
-Agent 将自动在后台执行以下命令并获取结构化结果：
+Agent 将自动在后台执行以下命令（工作目录自动设置为当前工程根目录）并获取结构化结果：
 ```bash
-opencode --cwd /path/to/your/project -p "解释一下 main.py 这个文件的作用" -f json -q
+opencode run "解释一下 main.py 这个文件的作用"
 ```
 
 ---
 
 ## 4. 插件配置说明
 
-如果需要自定义 OpenCode CLI 的执行路径、默认超时时间、输出格式或静默模式，可编辑配置文件。
+如果需要自定义 OpenCode CLI 的执行路径或默认超时时间，可编辑配置文件。
 
 ### 4.1 配置文件位置
-- **Linux / macOS**: `~/emailclaw/.config/plugins.json`（或 `tools.json` / `global-config.json`）
+- **Linux / macOS**: `~/emailclaw/.config/plugins.json`（或 `tools.json` / `global-config.json`)
 - **Windows**: `%USERPROFILE%\emailclaw\.config\plugins.json`
 
 ### 4.2 配置示例
@@ -94,9 +94,7 @@ opencode --cwd /path/to/your/project -p "解释一下 main.py 这个文件的作
   "enabled": true,
   "pluginConfig": {
     "cli_path": "opencode",
-    "default_timeout": 300,
-    "default_format": "json",
-    "quiet": true
+    "default_timeout": 300
   }
 }
 ```
@@ -104,8 +102,6 @@ opencode --cwd /path/to/your/project -p "解释一下 main.py 这个文件的作
 ### 4.3 字段说明
 - `cli_path`：OpenCode CLI 可执行文件命令或路径（默认 `"opencode"`；若未配置环境变量可填写绝对路径如 `"/usr/local/bin/opencode"`）。
 - `default_timeout`：默认超时上限（单位：秒，默认 `300`）。
-- `default_format`：输出格式（通过 `-f` 传递，默认 `"json"`）。
-- `quiet`：是否传递 `-q` 抑制终端动画和额外日志（默认 `true`，自动化必备）。
 
 ---
 
@@ -113,14 +109,12 @@ opencode --cwd /path/to/your/project -p "解释一下 main.py 这个文件的作
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **是** | - | 发送给 OpenCode CLI 的任务 Prompt（通过 `-p` 传递）。 |
-| `working_directory` | String | 否 | 当前工程目录 / `.` | CLI 进程执行工作目录（通过 `--cwd` 传递）。 |
+| `prompt` | String | **是** | - | 发送给 OpenCode CLI 的任务 Prompt（通过 `opencode run [message..]` 传递）。 |
 | `cli_path` | String | 否 | `opencode` | 指定 OpenCode CLI 可执行路径。 |
-| `model` | String | 否 | `null` | 指定覆盖的大模型名称（通过 `-m/--model` 传递，如 `openai/gpt-4o`, `anthropic/claude-3-5-sonnet`）。 |
-| `format` | String | 否 | `json` | 输出格式（通过 `-f` 传递，默认 `json`）。 |
-| `quiet` | Boolean | 否 | `true` | 是否静默执行（通过 `-q` 传递）。 |
+| `model` | String | 否 | `null` | 指定覆盖的大模型名称（通过 `-m` 传递，如 `openai/gpt-4o`, `anthropic/claude-3-5-sonnet`）。 |
 | `timeout_seconds` | Integer | 否 | `300` | 单次执行超时时间（秒）。 |
 | `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--auto`）。 |
+| `continue_last_session` | Boolean | 否 | `true` | 是否继续上一个会话（通过 `--continue` 传递）。默认为 `true`。 |
 
 ---
 
@@ -130,9 +124,7 @@ opencode --cwd /path/to/your/project -p "解释一下 main.py 这个文件的作
 ```json
 {
   "prompt": "解释一下 main.py 这个文件的作用",
-  "working_directory": "/path/to/your/project",
-  "format": "json",
-  "quiet": true,
+  "model": "openai/gpt-4o",
   "timeout_seconds": 60
 }
 ```

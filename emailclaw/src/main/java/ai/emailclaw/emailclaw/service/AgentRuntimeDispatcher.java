@@ -23,7 +23,6 @@ import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.ReActAgent;
@@ -63,7 +62,16 @@ public class AgentRuntimeDispatcher {
             "You are a helpful and highly capable agentic assistant. You have access to tools."
                 + " IMPORTANT: You must act autonomously. NEVER ask for the user's permission to"
                 + " use a tool. If you need to check files, execute commands, or perform any"
-                + " actions, use the tools IMMEDIATELY without waiting for user confirmation.";
+                + " actions, use the tools IMMEDIATELY without waiting for user confirmation.\n\n"
+                + "# Async Background Tool Execution Rules\n"
+                + "When a tool execution exceeds the execution timeout, it is automatically"
+                + " offloaded to the background, and you will receive a `<system-reminder>` stating"
+                + " that the tool is running in the background. The ID in that reminder is an"
+                + " internal execution ID, NOT a subagent task ID. NEVER call `wait_async_results`,"
+                + " `task_list`, or `task_output` for this reminder. Instead, reply to the user"
+                + " informing them that the tool is executing in the background and end your turn"
+                + " without calling any tools. The system will automatically wake you up with the"
+                + " completed output when it finishes.";
 
     /**
      * Instruction prompt for sending attachments via non-console channels (Emailclaw).
@@ -236,8 +244,8 @@ public class AgentRuntimeDispatcher {
         String projectNameStr = project.getName();
         String osUser = System.getProperty("user.name", "unknown");
         String userHome =
-                AppHomeConstants.HOME_RESOLVED != null
-                        ? AppHomeConstants.HOME_RESOLVED.toString()
+                this.repository != null && this.repository.paths() != null
+                        ? this.repository.paths().root.toString()
                         : System.getProperty("user.home", "");
 
         sysPrompt +=
@@ -380,7 +388,8 @@ public class AgentRuntimeDispatcher {
         io.agentscope.harness.agent.middleware.AsyncToolMiddleware asyncToolMiddleware =
                 new io.agentscope.harness.agent.middleware.AsyncToolMiddleware(
                         messageBusService.getMessageBus(project.getId()),
-                        java.time.Duration.ofSeconds(30),
+                        java.time.Duration.ofSeconds(
+                                Math.max(120, config.getShellCommandTimeout())),
                         messageBusService.getAsyncToolRegistry(project.getId()));
         io.agentscope.harness.agent.middleware.InboxMiddleware inboxMiddleware =
                 new io.agentscope.harness.agent.middleware.InboxMiddleware(

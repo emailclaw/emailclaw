@@ -61,7 +61,7 @@ import ai.emailclaw.emailclaw.service.plan.PlanStore;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppHomeResolver;
 import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.storage.sqlite.DatabaseManager;
@@ -71,6 +71,7 @@ import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteCronHistoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteTokenUsageRepository;
+import ai.emailclaw.emailclaw.util.PlaywrightManager;
 import ai.emailclaw.emailclaw.util.WebViewUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.bus.BusEntry;
@@ -84,7 +85,7 @@ import java.util.logging.Logger;
 import reactor.core.publisher.Mono;
 
 /**
- * Application Bootstrap: Encapsulates the initialization logic shared by App and ServiceApp. Adheres to Pure DI pattern/principle: ApplicationBootstrap acts as the sole Composition Root.
+ * Application Bootstrap: Encapsulates the initialization logic shared by FxApp and ServiceApp. Adheres to Pure DI pattern/principle: ApplicationBootstrap acts as the sole Composition Root.
  * When adding new functional modules, just follow this process:
  * Write constructors for new classes, and declare all required external dependencies in the parameter list.
  * In the internal logic, never secretly obtain instances via XXX.getInstance() or AppContext.get().
@@ -171,20 +172,17 @@ public final class ApplicationBootstrap {
      */
     public static BootstrapResult initialize() {
         // 1. Parse application main directory
-        Path appHome = AppHomeConstants.HOME_RESOLVED;
+        Path appHome = AppHomeResolver.resolveAppHome();
         LOGGER.log(Level.INFO, "Detected application working directory: {0}", appHome);
-        Path dbDir = AppHomeConstants.DATABASE_FILE.getParent();
-        if (dbDir != null) {
-            try {
-                java.nio.file.Files.createDirectories(dbDir);
-                LOGGER.log(Level.INFO, "Ensured database directory exists: {0}", dbDir);
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Failed to create database directory: " + dbDir, e);
-            }
-        }
+
         // 2. Initialize persistence layer
         AppPaths paths = new AppPaths(appHome);
-        DatabaseManager databaseManager = new DatabaseManager(AppHomeConstants.DATABASE_FILE);
+        // Ensure directories exist before creating services, preventing WatchService registration
+        // failure
+        paths.ensureStructure();
+        DatabaseManager databaseManager = new DatabaseManager(paths.databaseFile);
+        PlaywrightManager.setBrowserDataDir(paths.browserDataDir);
+        WebViewUtils.setWebviewDataDir(paths.webviewDir);
         SqliteChatSessionRepository sqliteChatSessionRepository =
                 new SqliteChatSessionRepository(databaseManager);
         SqliteAgentStateStore sqliteAgentStateStore = new SqliteAgentStateStore(databaseManager);
@@ -214,10 +212,6 @@ public final class ApplicationBootstrap {
                         sqliteAgentStatsRepository,
                         sqliteCronHistoryRepository,
                         sqliteMemoryRepository);
-        // Ensure directories exist before creating services, preventing WatchService registration
-        // failure
-        repository.ensureStructure();
-        WebViewUtils.cleanupLegacyDirectory();
         // Seed the schedule default timezone from global configuration and keep it in sync
         // (covers UI saves and external hot reloads of global-config.json)
         CronJobModel.setDefaultTimezone(repository.configManager().getGlobalConfig().getTimeZone());
@@ -402,139 +396,181 @@ public final class ApplicationBootstrap {
             @Override
             public Mono<Object> runWakeup(
                     String projectId, String sessionId, String agentId, String userId) {
-                // 1. Check if sessionId is an existing chat session (excluding agent-chat internal
-                // sessions)
-                if (sessionId != null
-                        && !sessionId.isBlank()
-                        && !sessionId.startsWith("agent-chat:")) {
-                    ChatSessionInfo session = chatService.findSession(sessionId);
-                    if (session != null) {
-                        LOGGER.log(
-                                Level.INFO,
-                                "Waking up existing session: session={0}, agent={1}, channel={2}",
-                                new Object[] {
-                                    sessionId, session.getAgentId(), session.getChannel()
-                                });
-                        chatService.resumeSessionWakeup(
-                                session,
-                                new StreamCallback() {
-                                    @Override
-                                    public void onPart(ChatMessagePart part, boolean startsNew) {
-                                        String channelId = session.getChannel();
-                                        if (channelId != null && pluginManager != null) {
-                                            PluginRecord plugin =
-                                                    pluginManager.getPlugin(channelId);
-                                            if (plugin != null
-                                                    && plugin.instance != null
-                                                    && plugin.instance.supportsStreaming()) {
-                                                plugin.instance.streamPartToSession(
-                                                        sessionId, part, startsNew);
-                                            }
+                return Mono.<Object>fromCallable(
+                                () -> {
+                                    // 1. Check if sessionId is an existing chat session (excluding
+                                    // agent-chat internal
+                                    // sessions)
+                                    if (sessionId != null
+                                            && !sessionId.isBlank()
+                                            && !sessionId.startsWith("agent-chat:")) {
+                                        ChatSessionInfo session =
+                                                chatService.findSession(sessionId);
+                                        if (session != null) {
+                                            LOGGER.log(
+                                                    Level.INFO,
+                                                    "Waking up existing session: session={0},"
+                                                            + " agent={1}, channel={2}",
+                                                    new Object[] {
+                                                        sessionId,
+                                                        session.getAgentId(),
+                                                        session.getChannel()
+                                                    });
+                                            chatService.resumeSessionWakeup(
+                                                    session,
+                                                    new StreamCallback() {
+                                                        @Override
+                                                        public void onPart(
+                                                                ChatMessagePart part,
+                                                                boolean startsNew) {
+                                                            String channelId = session.getChannel();
+                                                            if (channelId != null
+                                                                    && pluginManager != null) {
+                                                                PluginRecord plugin =
+                                                                        pluginManager.getPlugin(
+                                                                                channelId);
+                                                                if (plugin != null
+                                                                        && plugin.instance != null
+                                                                        && plugin.instance
+                                                                                .supportsStreaming()) {
+                                                                    plugin.instance
+                                                                            .streamPartToSession(
+                                                                                    sessionId, part,
+                                                                                    startsNew);
+                                                                }
+                                                            }
+                                                        }
+
+                                                        @Override
+                                                        public void onCompleted(Msg message) {
+                                                            String channelId = session.getChannel();
+                                                            if (channelId != null
+                                                                    && !ChannelIds.CONSOLE
+                                                                            .equalsIgnoreCase(
+                                                                                    channelId)
+                                                                    && pluginManager != null) {
+                                                                PluginRecord plugin =
+                                                                        pluginManager.getPlugin(
+                                                                                channelId);
+                                                                if (plugin != null
+                                                                        && plugin.instance
+                                                                                != null) {
+                                                                    String replyText =
+                                                                            message != null
+                                                                                    ? message
+                                                                                            .getTextContent()
+                                                                                    : "";
+                                                                    LOGGER.log(
+                                                                            Level.INFO,
+                                                                            "Delivering wakeup"
+                                                                                + " reply to"
+                                                                                + " channel {0} for"
+                                                                                + " session {1}",
+                                                                            new Object[] {
+                                                                                channelId, sessionId
+                                                                            });
+                                                                    plugin.instance.replyToSession(
+                                                                            sessionId, replyText);
+                                                                }
+                                                            }
+                                                        }
+                                                    });
+                                            return "wakeup triggered for session " + sessionId;
                                         }
                                     }
 
-                                    @Override
-                                    public void onCompleted(Msg message) {
-                                        String channelId = session.getChannel();
-                                        if (channelId != null
-                                                && !ChannelIds.CONSOLE.equalsIgnoreCase(channelId)
-                                                && pluginManager != null) {
-                                            PluginRecord plugin =
-                                                    pluginManager.getPlugin(channelId);
-                                            if (plugin != null && plugin.instance != null) {
-                                                String replyText =
-                                                        message != null
-                                                                ? message.getTextContent()
-                                                                : "";
-                                                LOGGER.log(
-                                                        Level.INFO,
-                                                        "Delivering wakeup reply to channel {0} for"
-                                                                + " session {1}",
-                                                        new Object[] {channelId, sessionId});
-                                                plugin.instance.replyToSession(
-                                                        sessionId, replyText);
-                                            }
+                                    // 2. Otherwise handle inter-agent communication (agent_chat)
+                                    String effectiveAgentId = agentId;
+                                    if ((effectiveAgentId == null || effectiveAgentId.isBlank())
+                                            && sessionId != null
+                                            && sessionId.startsWith("agent-chat:")) {
+                                        String[] parts = sessionId.split(":");
+                                        if (parts.length >= 2) {
+                                            effectiveAgentId = parts[1];
                                         }
                                     }
-                                });
-                        return Mono.just("wakeup triggered for session " + sessionId);
-                    }
-                }
 
-                // 2. Otherwise handle inter-agent communication (agent_chat)
-                String effectiveAgentId = agentId;
-                if ((effectiveAgentId == null || effectiveAgentId.isBlank())
-                        && sessionId != null
-                        && sessionId.startsWith("agent-chat:")) {
-                    String[] parts = sessionId.split(":");
-                    if (parts.length >= 2) {
-                        effectiveAgentId = parts[1];
-                    }
-                }
+                                    if (effectiveAgentId == null || effectiveAgentId.isBlank()) {
+                                        LOGGER.log(
+                                                Level.WARNING,
+                                                "Wakeup call missing agentId and not an existing"
+                                                        + " session, sessionId={0}",
+                                                sessionId);
+                                        return "wakeup skipped: no target";
+                                    }
 
-                if (effectiveAgentId == null || effectiveAgentId.isBlank()) {
-                    LOGGER.log(
-                            Level.WARNING,
-                            "Wakeup call missing agentId and not an existing session,"
-                                    + " sessionId={0}",
-                            sessionId);
-                    return Mono.just("wakeup skipped: no target");
-                }
+                                    // Drain inbox to get agent_chat request
+                                    MessageBus bus = messageBusService.getMessageBus(projectId);
+                                    String inboxKey = "agentscope:inbox:agent:" + effectiveAgentId;
+                                    List<BusEntry> entries = bus.queueDrain(inboxKey, 1).block();
+                                    if (entries == null || entries.isEmpty()) {
+                                        LOGGER.log(
+                                                Level.FINE,
+                                                "Waking up agent={0} but inbox is empty",
+                                                effectiveAgentId);
+                                        return "wakeup: no pending messages";
+                                    }
+                                    Map<String, Object> payload = entries.get(0).payload();
+                                    String text = str(payload, "text");
+                                    String replyTo = str(payload, "replyTo");
+                                    String correlationId = str(payload, "correlationId");
+                                    if (text == null || text.isBlank()) {
+                                        LOGGER.log(
+                                                Level.WARNING,
+                                                "agent_chat request missing text, agent={0}",
+                                                effectiveAgentId);
+                                        return "wakeup: empty message";
+                                    }
+                                    // Register pending reply context, drainAndReplyAgentChat will
+                                    // be auto-called after
+                                    // sendMessage completes
+                                    chatService.registerPendingAgentChatReply(
+                                            effectiveAgentId, replyTo, correlationId);
+                                    // Create new session and trigger inference
+                                    ChatSessionInfo sessionInfo =
+                                            chatService.newSession(effectiveAgentId);
+                                    AgentInfo agent =
+                                            agentService.findById(effectiveAgentId).orElse(null);
+                                    if (agent == null) {
+                                        LOGGER.log(
+                                                Level.WARNING,
+                                                "Agent not found: {0}",
+                                                effectiveAgentId);
+                                        return "wakeup: agent not found";
+                                    }
+                                    ProviderInfo provider =
+                                            providerService
+                                                    .getById(agent.getProviderId())
+                                                    .orElse(null);
+                                    chatService.sendMessage(
+                                            agent,
+                                            provider,
+                                            agent.getModelId(),
+                                            sessionInfo,
+                                            text,
+                                            new StreamCallback() {
 
-                // Drain inbox to get agent_chat request
-                MessageBus bus = messageBusService.getMessageBus(projectId);
-                String inboxKey = "agentscope:inbox:agent:" + effectiveAgentId;
-                List<BusEntry> entries = bus.queueDrain(inboxKey, 1).block();
-                if (entries == null || entries.isEmpty()) {
-                    LOGGER.log(
-                            Level.FINE, "Waking up agent={0} but inbox is empty", effectiveAgentId);
-                    return Mono.just("wakeup: no pending messages");
-                }
-                Map<String, Object> payload = entries.get(0).payload();
-                String text = str(payload, "text");
-                String replyTo = str(payload, "replyTo");
-                String correlationId = str(payload, "correlationId");
-                if (text == null || text.isBlank()) {
-                    LOGGER.log(
-                            Level.WARNING,
-                            "agent_chat request missing text, agent={0}",
-                            effectiveAgentId);
-                    return Mono.just("wakeup: empty message");
-                }
-                // Register pending reply context, drainAndReplyAgentChat will be auto-called after
-                // sendMessage completes
-                chatService.registerPendingAgentChatReply(effectiveAgentId, replyTo, correlationId);
-                // Create new session and trigger inference
-                ChatSessionInfo sessionInfo = chatService.newSession(effectiveAgentId);
-                AgentInfo agent = agentService.findById(effectiveAgentId).orElse(null);
-                if (agent == null) {
-                    LOGGER.log(Level.WARNING, "Agent not found: {0}", effectiveAgentId);
-                    return Mono.just("wakeup: agent not found");
-                }
-                ProviderInfo provider = providerService.getById(agent.getProviderId()).orElse(null);
-                chatService.sendMessage(
-                        agent,
-                        provider,
-                        agent.getModelId(),
-                        sessionInfo,
-                        text,
-                        new StreamCallback() {
+                                                @Override
+                                                public void onPart(
+                                                        ChatMessagePart part, boolean startsNew) {
+                                                    // Silent callback: agent-chat doesn't need
+                                                    // streaming output to UI
+                                                }
 
-                            @Override
-                            public void onPart(ChatMessagePart part, boolean startsNew) {
-                                // Silent callback: agent-chat doesn't need streaming output to UI
-                            }
-
-                            @Override
-                            public void onCompleted(Msg message) {
-                                // drainAndReplyAgentChat is automatically called inside sendMessage
-                            }
-                        });
-                LOGGER.log(
-                        Level.INFO,
-                        "Wakeup inference triggered: agent={0}, correlationId={1}",
-                        new Object[] {effectiveAgentId, correlationId});
-                return Mono.just("wakeup triggered for agent " + effectiveAgentId);
+                                                @Override
+                                                public void onCompleted(Msg message) {
+                                                    // drainAndReplyAgentChat is automatically
+                                                    // called inside sendMessage
+                                                }
+                                            });
+                                    LOGGER.log(
+                                            Level.INFO,
+                                            "Wakeup inference triggered: agent={0},"
+                                                    + " correlationId={1}",
+                                            new Object[] {effectiveAgentId, correlationId});
+                                    return "wakeup triggered for agent " + effectiveAgentId;
+                                })
+                        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic());
             }
         };
     }

@@ -1,6 +1,6 @@
 # Invoke OpenCode CLI Plugin Usage & Deployment Guide
 
-The `invokeOpencodeCli` plugin is an industrial-grade **Tool Plugin** designed for Emailclaw. It enables autonomous AI Agents (built with AgentScope Java) to invoke the OpenCode CLI (`opencode`) in non-interactive headless mode (`--cwd <path> -p <prompt> -f json -q`) and return structured JSON results immediately upon task completion.
+The `invokeOpencodeCli` plugin is an industrial-grade **Tool Plugin** designed for Emailclaw. It enables autonomous AI Agents (built with AgentScope Java) to invoke the OpenCode CLI via `opencode run [message..]` and return structured JSON results immediately upon task completion.
 
 ---
 
@@ -71,15 +71,15 @@ During chat sessions or automated agent workflows, prompts that require code ins
 
 The tool executes:
 ```bash
-opencode --cwd /path/to/your/project -p "Explain what main.py does" -f json -q
+opencode run "Explain what main.py does"
 ```
-in the background, extracts clean JSON (supporting JSON objects, arrays, and JSON Lines streams), and returns it directly to the agent.
+in the background with the project working directory set on the process, extracts clean JSON (supporting JSON objects, arrays, and JSON Lines streams), and returns it directly to the agent.
 
 ---
 
 ## 4. Configuration Options
 
-If you wish to customize the executable path, default timeout, default output format, or quiet mode, you can edit Emailclaw's configuration file.
+If you wish to customize the executable path or default timeout, you can edit Emailclaw's configuration file.
 
 ### 4.1 Configuration File Location
 - **Linux / macOS**: `~/emailclaw/.config/plugins.json` (or `tools.json` / `global-config.json`)
@@ -93,9 +93,7 @@ If you wish to customize the executable path, default timeout, default output fo
   "enabled": true,
   "pluginConfig": {
     "cli_path": "opencode",
-    "default_timeout": 300,
-    "default_format": "json",
-    "quiet": true
+    "default_timeout": 300
   }
 }
 ```
@@ -103,8 +101,6 @@ If you wish to customize the executable path, default timeout, default output fo
 ### 4.3 Field Descriptions
 - `cli_path`: The command name or absolute path of the OpenCode CLI binary (default `"opencode"`).
 - `default_timeout`: Execution timeout in seconds (default `300`).
-- `default_format`: Output format flag passed via `-f` (default `"json"`).
-- `quiet`: Whether to pass `-q` to suppress interactive spinner animations and non-essential progress logs (default `true`).
 
 ---
 
@@ -112,14 +108,12 @@ If you wish to customize the executable path, default timeout, default output fo
 
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **Yes** | - | Task description or prompt sent to OpenCode CLI via `-p`. |
+| `prompt` | String | **Yes** | - | Task description or prompt sent to OpenCode CLI via `opencode run [message..]`. |
 | `cli_path` | String | No | `opencode` | Path or binary name for the OpenCode CLI executable. |
-| `working_directory` | String | No | Project Base / `.` | Working directory passed to OpenCode CLI via `--cwd`. |
-| `model` | String | No | `null` | Optional model override passed via `-m/--model` (e.g. `openai/gpt-4o`, `anthropic/claude-3-5-sonnet`). |
-| `format` | String | No | `json` | Output format passed via `-f` (default `json`). |
-| `quiet` | Boolean | No | `true` | Whether to pass `-q` for quiet non-interactive output. |
+| `model` | String | No | `null` | Optional model override passed via `-m` (e.g. `openai/gpt-4o`, `anthropic/claude-3-5-sonnet`). |
 | `timeout_seconds` | Integer | No | `300` | Optional timeout limit in seconds. |
 | `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--auto`). |
+| `continue_last_session` | Boolean | No | `true` | Whether to continue the last active session (`--continue`). Defaults to `true`. |
 
 ---
 
@@ -129,9 +123,7 @@ If you wish to customize the executable path, default timeout, default output fo
 ```json
 {
   "prompt": "解释一下 main.py 这个文件的作用",
-  "working_directory": "/path/to/your/project",
-  "format": "json",
-  "quiet": true,
+  "model": "openai/gpt-4o",
   "timeout_seconds": 60
 }
 ```

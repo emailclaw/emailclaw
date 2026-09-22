@@ -1,0 +1,9 @@
+{
+  "id": "emailclaw-plugin-tool-invokeCodexCli",
+  "name": "Invoke Codex CLI",
+  "version": "1.0.0",
+  "author": "Emailclaw Authors",
+  "type": "tool",
+  "entry_point": "ai.emailclaw.emailclaw.plugin.tool.codex.InvokeCodexCliPlugin",
+  "description": "Plugin adapter for the Codex CLI Tool (executes non-interactively via 'codex exec [PROMPT]')."
+}

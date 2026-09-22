@@ -28,8 +28,8 @@ import java.util.logging.Logger;
  * Execution tool for OpenCode CLI.
  *
  * <p>Exposes the {@code invokeOpencodeCli} tool to AgentScope Java agents, allowing autonomous
- * agents to invoke the OpenCode CLI in non-interactive mode ({@code --cwd <path> -p <prompt> -f json -q})
- * and receive structured JSON output wrapped in a {@link ToolResultBlock}.
+ * agents to invoke the OpenCode CLI via {@code opencode run [message..]} and receive
+ * structured JSON output wrapped in a {@link ToolResultBlock}.
  */
 public class InvokeOpencodeCliTool {
 
@@ -37,14 +37,11 @@ public class InvokeOpencodeCliTool {
 
     public static final String DEFAULT_CLI_PATH = "opencode";
     public static final int DEFAULT_TIMEOUT_SECONDS = 300;
-    public static final String DEFAULT_FORMAT = "json";
 
     private volatile PluginContext context;
     private final OpencodeProcessRunner processRunner;
     private final String defaultCliPath;
     private final int defaultTimeoutSeconds;
-    private final String defaultFormat;
-    private final boolean defaultQuiet;
 
     /**
      * Constructs the tool with the framework plugin context, default process runner, and standard settings.
@@ -52,13 +49,7 @@ public class InvokeOpencodeCliTool {
      * @param context Framework plugin context
      */
     public InvokeOpencodeCliTool(PluginContext context) {
-        this(
-                context,
-                new DefaultOpencodeProcessRunner(),
-                DEFAULT_CLI_PATH,
-                DEFAULT_TIMEOUT_SECONDS,
-                DEFAULT_FORMAT,
-                true);
+        this(context, new DefaultOpencodeProcessRunner(), DEFAULT_CLI_PATH, DEFAULT_TIMEOUT_SECONDS);
     }
 
     /**
@@ -68,16 +59,12 @@ public class InvokeOpencodeCliTool {
      * @param processRunner Strategy runner for executing the CLI process
      * @param defaultCliPath Default executable binary path (defaults to 'opencode')
      * @param defaultTimeoutSeconds Default timeout in seconds (defaults to 300)
-     * @param defaultFormat Default output format flag value (defaults to 'json')
-     * @param defaultQuiet Whether to pass -q flag for quiet non-interactive output by default
      */
     public InvokeOpencodeCliTool(
             PluginContext context,
             OpencodeProcessRunner processRunner,
             String defaultCliPath,
-            int defaultTimeoutSeconds,
-            String defaultFormat,
-            boolean defaultQuiet) {
+            int defaultTimeoutSeconds) {
         this.context = context;
         this.processRunner =
                 processRunner != null ? processRunner : new DefaultOpencodeProcessRunner();
@@ -87,9 +74,6 @@ public class InvokeOpencodeCliTool {
                         : DEFAULT_CLI_PATH;
         this.defaultTimeoutSeconds =
                 defaultTimeoutSeconds > 0 ? defaultTimeoutSeconds : DEFAULT_TIMEOUT_SECONDS;
-        this.defaultFormat =
-                defaultFormat != null && !defaultFormat.isBlank() ? defaultFormat : DEFAULT_FORMAT;
-        this.defaultQuiet = defaultQuiet;
         LOGGER.fine("InvokeOpencodeCliTool initialized");
     }
 
@@ -103,14 +87,11 @@ public class InvokeOpencodeCliTool {
     }
 
     /**
-     * Executes the OpenCode CLI in non-interactive mode and returns a structured {@link ToolResultBlock}.
+     * Executes the OpenCode CLI using {@code opencode run [message..]} and returns a structured {@link ToolResultBlock}.
      *
      * @param prompt The task description or prompt to send to OpenCode CLI
      * @param cliPath Optional executable path for opencode (defaults to 'opencode')
-     * @param workingDirectory Optional working directory where the CLI should execute (passed via {@code --cwd})
      * @param model Optional model name override (passed via {@code -m})
-     * @param format Optional output format (defaults to 'json', passed via {@code -f})
-     * @param quiet Whether to pass {@code -q} flag for quiet output (defaults to true)
      * @param timeoutSeconds Optional execution timeout in seconds (defaults to 300)
      * @param extraArgs Optional additional command-line arguments to pass to the opencode binary
      * @return Structured {@link ToolResultBlock} containing output text, execution state, and metadata
@@ -118,10 +99,9 @@ public class InvokeOpencodeCliTool {
     @Tool(
             name = "invokeOpencodeCli",
             description =
-                    "Invoke OpenCode CLI in headless non-interactive mode (-p) with JSON format"
-                            + " (-f json) and quiet flag (-q) to execute coding tasks, analyze code,"
-                            + " explain files, or apply project modifications, returning structured"
-                            + " JSON results.")
+                    "Invoke OpenCode CLI using 'opencode run [message..]' to execute coding tasks,"
+                            + " analyze code, explain files, or apply project modifications,"
+                            + " returning structured JSON results.")
     public ToolResultBlock invokeOpencodeCli(
             @ToolParam(
                             name = "prompt",
@@ -136,14 +116,6 @@ public class InvokeOpencodeCliTool {
                             required = false)
                     String cliPath,
             @ToolParam(
-                            name = "working_directory",
-                            description =
-                                    "Optional working directory for OpenCode CLI (--cwd). If"
-                                            + " omitted, the current project base directory is"
-                                            + " used.",
-                            required = false)
-                    String workingDirectory,
-            @ToolParam(
                             name = "model",
                             description =
                                     "Optional model name or override to pass to OpenCode CLI via"
@@ -151,19 +123,6 @@ public class InvokeOpencodeCliTool {
                                             + " 'anthropic/claude-3-5-sonnet').",
                             required = false)
                     String model,
-            @ToolParam(
-                            name = "format",
-                            description =
-                                    "Optional output format to pass via -f (default is 'json').",
-                            required = false)
-                    String format,
-            @ToolParam(
-                            name = "quiet",
-                            description =
-                                    "Whether to pass -q flag for quiet non-interactive execution"
-                                            + " (default is true).",
-                            required = false)
-                    Boolean quiet,
             @ToolParam(
                             name = "timeout_seconds",
                             description =
@@ -177,18 +136,19 @@ public class InvokeOpencodeCliTool {
                                     "Optional additional command-line arguments to pass to the"
                                             + " opencode binary.",
                             required = false)
-                    String extraArgs) {
+                    String extraArgs,
+            @ToolParam(
+                            name = "continue_last_session",
+                            description =
+                                    "Whether to continue the last session (--continue). Defaults to"
+                                            + " true.",
+                            required = false)
+                    Boolean continueLastSession) {
+        boolean effectiveContinue = continueLastSession == null || continueLastSession;
         LOGGER.log(
                 Level.INFO,
-                "InvokeOpencodeCli tool call initiated: promptLength={0}, workingDir={1},"
-                        + " model={2}, format={3}, quiet={4}",
-                new Object[] {
-                    prompt != null ? prompt.length() : 0,
-                    workingDirectory,
-                    model,
-                    format,
-                    quiet
-                });
+                "InvokeOpencodeCli tool call initiated: promptLength={0}, model={1}, continueLastSession={2}",
+                new Object[] {prompt != null ? prompt.length() : 0, model, effectiveContinue});
 
         if (prompt == null || prompt.isBlank()) {
             LOGGER.warning("InvokeOpencodeCli tool call rejected: prompt is empty");
@@ -207,28 +167,19 @@ public class InvokeOpencodeCliTool {
                     .build();
         }
 
-        Path targetWorkingDir = resolveWorkingDirectory(workingDirectory);
+        Path targetWorkingDir = getProjectOrWorkspaceBase();
         int effectiveTimeout =
                 (timeoutSeconds != null && timeoutSeconds > 0)
                         ? timeoutSeconds
                         : defaultTimeoutSeconds;
         String actualCliPath =
                 (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : defaultCliPath;
-        String effectiveFormat =
-                (format != null && !format.isBlank()) ? format.trim() : defaultFormat;
-        boolean effectiveQuiet = (quiet != null) ? quiet : defaultQuiet;
 
         LOGGER.log(
                 Level.INFO,
                 "Launching OpenCode CLI tool execution: cliPath={0}, workingDir={1}, timeout={2}s,"
-                        + " format={3}, quiet={4}",
-                new Object[] {
-                    actualCliPath,
-                    targetWorkingDir,
-                    effectiveTimeout,
-                    effectiveFormat,
-                    effectiveQuiet
-                });
+                        + " model={3}, continueLastSession={4}",
+                new Object[] {actualCliPath, targetWorkingDir, effectiveTimeout, model, effectiveContinue});
 
         OpencodeExecutionResult result =
                 processRunner.execute(
@@ -236,10 +187,9 @@ public class InvokeOpencodeCliTool {
                         prompt,
                         targetWorkingDir,
                         model,
-                        effectiveFormat,
-                        effectiveQuiet,
                         effectiveTimeout,
-                        extraArgs);
+                        extraArgs,
+                        effectiveContinue);
 
         LOGGER.log(
                 Level.INFO,
@@ -301,24 +251,6 @@ public class InvokeOpencodeCliTool {
                 .state(ToolResultState.SUCCESS)
                 .metadata(metadata)
                 .build();
-    }
-
-    /**
-     * Resolves the target working directory for execution.
-     *
-     * @param pathInput User-specified working directory path or null
-     * @return Resolved absolute Path
-     */
-    private Path resolveWorkingDirectory(String pathInput) {
-        if (pathInput != null && !pathInput.isBlank()) {
-            Path custom = Paths.get(pathInput.trim());
-            if (custom.isAbsolute()) {
-                return custom.normalize();
-            }
-            Path base = getProjectOrWorkspaceBase();
-            return base.resolve(custom).normalize();
-        }
-        return getProjectOrWorkspaceBase();
     }
 
     /**

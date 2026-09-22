@@ -11,10 +11,13 @@
 package ai.emailclaw.emailclaw;
 
 /**
+ * This is a classic and common "Launcher" design pattern in JavaFX 11+ and higher versions (also known as a Fat JAR / Hack technique to bypass module system issues for independent startup).
  * Only used to solve the bootstrap issue of running JavaFX applications with Maven.
- * The actual application startup logic is in App.java.
+ * The actual application startup logic is in FxApp.java.
  */
 public class Launcher {
+    public static final String APP_VERSION = "v26.9.22";
+
     public static void main(String[] args) {
         boolean isService = false;
         for (String arg : args) {
@@ -26,8 +29,9 @@ public class Launcher {
         if (isService) {
             ServiceApp.main(args);
         } else {
-            // Directly call App's main method, bypassing Maven's default JavaFX bootstrap mechanism
-            App.main(args);
+            // Directly call FxApp's main method, bypassing Maven's default JavaFX bootstrap
+            // mechanism
+            FxApp.main(args);
         }
     }
 }

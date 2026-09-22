@@ -38,10 +38,10 @@ public class AgentInfo {
     private String modelId = "stepfun/step-3.7-flash:free";
 
     /** Fallback provider identifier. */
-    private String fallbackProviderId = "opencode";
+    private String fallbackProviderId = "kilo";
 
     /** Fallback model identifier. */
-    private String fallbackModelId = "big-pickle";
+    private String fallbackModelId = "nvidia/nemotron-3.5-lightning:free";
 
     /** Maximum retries. */
     private int maxRetries = 3;
