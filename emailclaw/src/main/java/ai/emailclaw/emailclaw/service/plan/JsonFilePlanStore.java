@@ -11,7 +11,7 @@
 package ai.emailclaw.emailclaw.service.plan;
 
 import ai.emailclaw.emailclaw.model.plan.Plan;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -52,7 +52,7 @@ public class JsonFilePlanStore implements PlanStore {
         ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
         String baseDir = project.getBaseDirectory();
         Path base = Path.of(FileNameUtils.expandUserHome(baseDir));
-        return base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR).resolve(aId).resolve(PLANS_DIR);
+        return base.resolve(AppPaths.AGENT_WORKSPACE_DIR).resolve(aId).resolve(PLANS_DIR);
     }
 
     /** Get the JSON file path for the specified plan. */
@@ -148,7 +148,7 @@ public class JsonFilePlanStore implements PlanStore {
             }
             Path workspaceDir =
                     Path.of(FileNameUtils.expandUserHome(baseDir))
-                            .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
+                            .resolve(AppPaths.AGENT_WORKSPACE_DIR);
             if (Files.isDirectory(workspaceDir)) {
                 try (Stream<Path> agentDirs = Files.list(workspaceDir)) {
                     List<Path> aDirs = agentDirs.filter(Files::isDirectory).toList();

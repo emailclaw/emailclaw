@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.ui;
 
+import ai.emailclaw.emailclaw.Launcher;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
@@ -330,7 +331,7 @@ public class MainWindow extends BorderPane {
         top.setSpacing(18);
         Label brand = new Label("Emailclaw");
         brand.getStyleClass().add("brand");
-        Label version = new Label("v26.9.20");
+        Label version = new Label(Launcher.APP_VERSION);
         version.getStyleClass().add("muted");
         Label betaBadge = new Label("BETA");
         betaBadge.getStyleClass().add("beta-badge");

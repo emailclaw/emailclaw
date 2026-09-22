@@ -20,7 +20,7 @@ import java.util.logging.Logger;
  * Plugin adapter for the OpenCode CLI Tool.
  *
  * <p>Registers the {@code invokeOpencodeCli} tool into Emailclaw's {@link ai.emailclaw.emailclaw.plugin.PluginRegistry},
- * enabling AI agents to execute non-interactive headless sub-tasks via OpenCode CLI ({@code opencode --cwd <path> -p <prompt> -f json -q})
+ * enabling AI agents to execute sub-tasks via OpenCode CLI ({@code opencode run [message..]})
  * and ingest structured JSON results.
  */
 public class InvokeOpencodeCliPlugin extends AbstractToolPlugin {
@@ -110,21 +110,12 @@ public class InvokeOpencodeCliPlugin extends AbstractToolPlugin {
                         "Default execution timeout in seconds.",
                         "General"),
                 new ConfigFieldDescriptor(
-                        "default_format",
-                        "Default Output Format",
-                        ConfigFieldDescriptor.FieldType.TEXT,
-                        false,
-                        "json",
-                        "Default output format for OpenCode CLI (e.g. 'json').",
-                        "General"),
-                new ConfigFieldDescriptor(
-                        "quiet",
-                        "Quiet Mode",
+                        "continue_last_session",
+                        "Continue Last Session",
                         ConfigFieldDescriptor.FieldType.BOOLEAN,
                         false,
                         true,
-                        "Whether to pass -q to suppress interactive spinners and progress"
-                                + " animations.",
+                        "Whether to continue the last session by default (--continue).",
                         "General"));
     }
 }

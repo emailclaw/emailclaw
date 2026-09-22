@@ -53,9 +53,8 @@ public final class ProviderCatalog {
                         "ghp_",
                         true,
                         false));
-        providers.add(
-                freeTierProvider(
-                        "opencode", "OpenCode", "https://opencode.ai/zen/v1", "", false, false));
+        // providers.add(freeTierProvider("opencode", "OpenCode", "https://opencode.ai/zen/v1", "",
+        // false, false));
         providers.add(
                 freeTierProvider(
                         "kilo", "Kilo Code", "https://api.kilo.ai/api/gateway", "", false, true));
@@ -223,7 +222,7 @@ public final class ProviderCatalog {
         addAliyunModels(byId(providers, "aliyun-codingplan-intl"));
         addAliyunTokenPlanModels(byId(providers, "aliyun-tokenplan"));
         addAliyunTokenPlanModels(byId(providers, "aliyun-tokenplan-intl"));
-        configureOpenCode(byId(providers, "opencode"));
+        // configureOpenCode(byId(providers, "opencode"));
         addKiloModels(byId(providers, "kilo"));
         addGitHubModels(byId(providers, "github-models"));
         addOpenAiModels(byId(providers, "openai"));
@@ -378,21 +377,23 @@ public final class ProviderCatalog {
                                         "value",
                                         "https://opencode.ai/zen/go/v1")));
 
-        ModelInfo bigPickle = new ModelInfo("big-pickle", "Big Pickle", true);
-        bigPickle.setFree(true);
-        p.getModels().add(bigPickle);
-        ModelInfo mimo = new ModelInfo("mimo-v2.5-free", "Mimo V2.5", true);
-        mimo.setFree(true);
-        p.getModels().add(mimo);
-        ModelInfo deepseek = new ModelInfo("deepseek-v4-flash-free", "DeepSeek V4 Flash", true);
-        deepseek.setFree(true);
-        p.getModels().add(deepseek);
-        ModelInfo nemotronUltra = new ModelInfo("nemotron-3-ultra-free", "Nemotron 3 Ultra", true);
-        nemotronUltra.setFree(true);
-        p.getModels().add(nemotronUltra);
-        ModelInfo nemotronSuper = new ModelInfo("nemotron-3-super-free", "Nemotron 3 Super", true);
-        nemotronSuper.setFree(true);
-        p.getModels().add(nemotronSuper);
+        // ModelInfo bigPickle = new ModelInfo("big-pickle", "Big Pickle", true);
+        // bigPickle.setFree(true);
+        // p.getModels().add(bigPickle);
+        // ModelInfo mimo = new ModelInfo("mimo-v2.5-free", "Mimo V2.5", true);
+        // mimo.setFree(true);
+        // p.getModels().add(mimo);
+        // ModelInfo deepseek = new ModelInfo("deepseek-v4-flash-free", "DeepSeek V4 Flash", true);
+        // deepseek.setFree(true);
+        // p.getModels().add(deepseek);
+        // ModelInfo nemotron35 =
+        // new ModelInfo("nemotron-3.5-lightning-free", "nemotron-3.5-lightning-free", true);
+        // nemotron35.setFree(true);
+        // p.getModels().add(nemotron35);
+        // ModelInfo nemotronUltra = new ModelInfo("nemotron-3-ultra-free", "Nemotron 3 Ultra",
+        // true);
+        // nemotronUltra.setFree(true);
+        // p.getModels().add(nemotronUltra);
     }
 
     private static void configureOpenRouter(ProviderInfo p) {
@@ -413,14 +414,15 @@ public final class ProviderCatalog {
     }
 
     private static void addKiloModels(ProviderInfo p) {
-        //        addFreeModel(p, "kilo-auto/free", "Kilo Auto (Free Router)");
-        //        addFreeModel(p, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra
-        // 550B");
-        addFreeModel(p, "nvidia/nemotron-3-super-120b-a12b:free", "Nemotron 3 Super 120B");
-        addFreeModel(p, "poolside/laguna-m.1:free", "Poolside Laguna M.1");
-        addFreeModel(p, "poolside/laguna-xs.2:free", "Poolside Laguna XS.2");
+        // addFreeModel(p, "kilo-auto/free", "Kilo Auto (Free Router)");
+        // addFreeModel(p, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B");
+        // addFreeModel(p, "nvidia/nemotron-3-super-120b-a12b:free", "Nemotron 3 Super 120B");
+        addFreeModel(p, "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning (free)");
+        addFreeModel(p, "poolside/laguna-xs-2.1:free", "Poolside: Laguna XS 2.1 (free)");
+        addFreeModel(p, "poolside/laguna-s-2.1:free", "Poolside: Laguna S 2.1 (free)");
         addFreeModel(p, "stepfun/step-3.7-flash:free", "Step 3.7 Flash");
-        //        addFreeModel(p, "nex-agi/nex-n2-pro:free", "Nex N2 Pro");
+        // addFreeModel(p, "qwen/qwen3.8-27b:free", "Qwen: Qwen3.8 27B (free)");
+        // addFreeModel(p, "z-ai/glm-5.2:free", "Z.ai: GLM 5.2 (free)");
     }
 
     private static void addGitHubModels(ProviderInfo p) {

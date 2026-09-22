@@ -254,6 +254,15 @@ public class ConfigManager {
     }
 
     /**
+     * Gets the associated application paths value object.
+     *
+     * @return the application paths
+     */
+    public AppPaths paths() {
+        return paths;
+    }
+
+    /**
      * Register config change listener.
      *
      * <p>Listeners are triggered after "external file change hot-load successful" and "in-program save successful".

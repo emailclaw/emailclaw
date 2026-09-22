@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.util;
 
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
@@ -28,7 +28,7 @@ import javafx.scene.web.WebView;
  *
  * <p>Centrally enforces custom user data directory paths ({@code ~/emailclaw/.webview})
  * to prevent JavaFX from generating default directories under the user's home directory
- * (such as {@code ~/.ai.emailclaw.emailclaw.App/webview/localstorage}).
+ * (such as {@code ~/.ai.emailclaw.emailclaw.FxApp/webview/localstorage}).
  */
 public final class WebViewUtils {
 
@@ -49,6 +49,29 @@ public final class WebViewUtils {
         }
     }
 
+    private static volatile Path webviewDataDir = null;
+
+    /**
+     * Sets the root WebView user data directory.
+     *
+     * @param dir the webview data root directory
+     */
+    public static void setWebviewDataDir(Path dir) {
+        webviewDataDir = dir;
+    }
+
+    /**
+     * Gets the root WebView user data directory, falling back to default AppPaths if unconfigured.
+     *
+     * @return the webview data root directory
+     */
+    public static Path getWebviewDataDir() {
+        if (webviewDataDir == null) {
+            return AppPaths.fromDefault().webviewDir;
+        }
+        return webviewDataDir;
+    }
+
     /**
      * Configures the user data directory for the given {@link WebEngine} instance.
      *
@@ -59,7 +82,7 @@ public final class WebViewUtils {
             return;
         }
         try {
-            Path targetDir = AppHomeConstants.WEBVIEW_DATA_PATH;
+            Path targetDir = getWebviewDataDir();
             if (!Files.exists(targetDir)) {
                 Files.createDirectories(targetDir);
             }
@@ -68,26 +91,6 @@ public final class WebViewUtils {
             LOGGER.log(Level.FINE, "Configured WebEngine userDataDirectory to: {0}", targetDir);
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to configure WebEngine userDataDirectory", e);
-        }
-    }
-
-    /**
-     * Cleans up legacy default WebEngine directory {@code ~/.ai.emailclaw.emailclaw.App}
-     * if it exists, to eliminate unwanted artifacts in the user's home directory.
-     */
-    public static void cleanupLegacyDirectory() {
-        try {
-            String userHome = AppHomeConstants.USER_HOME_VALUE;
-            if (userHome != null && !userHome.isBlank()) {
-                Path legacyDir = Path.of(userHome, ".ai.emailclaw.emailclaw.App");
-                if (Files.exists(legacyDir)) {
-                    LOGGER.log(
-                            Level.INFO, "Cleaning up legacy WebEngine directory: {0}", legacyDir);
-                    deleteDirectoryRecursively(legacyDir);
-                }
-            }
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to clean up legacy WebEngine directory", e);
         }
     }
 

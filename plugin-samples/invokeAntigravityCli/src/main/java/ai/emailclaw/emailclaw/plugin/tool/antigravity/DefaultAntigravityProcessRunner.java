@@ -75,18 +75,27 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             }
         }
 
+        File devNull = new File("/dev/null");
+        if (devNull.exists()) {
+            processBuilder.redirectInput(ProcessBuilder.Redirect.from(devNull));
+        }
+
         processBuilder.environment().put("TERM", "dumb");
-        processBuilder.environment().put("CI", "true");
+        processBuilder.environment().remove("CI");
         processBuilder.environment().put("NO_COLOR", "1");
 
         LOGGER.log(
                 Level.INFO,
-                "Launching Antigravity CLI process: executable={0}, workingDir={1}, timeout={2}s",
-                new Object[] {effectiveCliPath, workingDirectory, timeoutSeconds});
+                "Launching Antigravity CLI process: command={0}, workingDir={1}, timeout={2}s",
+                new Object[] {command, workingDirectory, timeoutSeconds});
 
         Process process;
         try {
             process = processBuilder.start();
+            try {
+                process.getOutputStream().close();
+            } catch (IOException ignored) {
+            }
         } catch (IOException e) {
             LOGGER.log(
                     Level.SEVERE,
@@ -154,6 +163,10 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             Thread.currentThread().interrupt();
             LOGGER.log(Level.WARNING, "Antigravity CLI execution thread was interrupted", e);
             process.destroyForcibly();
+            try {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
+            } catch (Exception ignored) {
+            }
             stdoutFuture.cancel(true);
             stderrFuture.cancel(true);
             return new AntigravityExecutionResult(
@@ -171,6 +184,10 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                     "Antigravity CLI execution exceeded timeout of {0} seconds, destroying process",
                     timeoutSeconds);
             process.destroyForcibly();
+            try {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
+            } catch (Exception ignored) {
+            }
             stdoutFuture.cancel(true);
             stderrFuture.cancel(true);
             return new AntigravityExecutionResult(

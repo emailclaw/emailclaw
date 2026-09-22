@@ -35,8 +35,6 @@ import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteTokenUsageRepository;
 import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import ai.emailclaw.emailclaw.util.UuidUtils;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.logging.Level;
@@ -65,7 +63,7 @@ public class AppContext implements AutoCloseable {
     private final SqliteMemoryRepository memoryRepository;
 
     public AppContext(AppPaths paths) {
-        this(paths, new DatabaseManager(AppHomeConstants.DATABASE_FILE));
+        this(paths, new DatabaseManager(paths.databaseFile));
     }
 
     public AppContext(AppPaths paths, DatabaseManager databaseManager) {
@@ -129,28 +127,6 @@ public class AppContext implements AutoCloseable {
 
     public ConfigManager configManager() {
         return configManager;
-    }
-
-    public void ensureStructure() {
-        try {
-            LOGGER.log(Level.INFO, "Initialize working directory structure: {0}", paths.root);
-            Files.createDirectories(paths.root);
-            Files.createDirectories(paths.configDir);
-            Files.createDirectories(paths.secretDir);
-            Files.createDirectories(paths.workspaceRoot);
-            Files.createDirectories(paths.skillsPoolRoot);
-            Files.createDirectories(paths.backupsDir);
-            Files.createDirectories(paths.logsDir);
-            Files.createDirectories(paths.pluginsDir);
-            Files.createDirectories(paths.webviewDir);
-            Path dbDir = AppHomeConstants.DATABASE_FILE.getParent();
-            if (dbDir != null) {
-                Files.createDirectories(dbDir);
-            }
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to initialize working directory", e);
-            throw new RuntimeException("Failed to initialize workspace", e);
-        }
     }
 
     // --- Providers ---

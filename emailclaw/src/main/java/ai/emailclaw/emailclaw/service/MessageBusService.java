@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.service;
 
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.harness.agent.bus.AsyncToolRecord;
 import io.agentscope.harness.agent.bus.AsyncToolRegistry;
@@ -59,7 +59,7 @@ public class MessageBusService {
                 id -> {
                     ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(id);
                     Path base = Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()));
-                    Path agentDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
+                    Path agentDir = base.resolve(AppPaths.AGENT_WORKSPACE_DIR);
                     LocalFilesystem filesystem = new LocalFilesystem(agentDir);
                     return new WorkspaceMessageBus(filesystem, "message-bus");
                 });
@@ -71,7 +71,7 @@ public class MessageBusService {
                 id -> {
                     ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(id);
                     Path base = Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()));
-                    Path agentDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
+                    Path agentDir = base.resolve(AppPaths.AGENT_WORKSPACE_DIR);
                     LocalFilesystem filesystem = new LocalFilesystem(agentDir);
                     return new WorkspaceAsyncToolRegistry(filesystem, "async-tools");
                 });

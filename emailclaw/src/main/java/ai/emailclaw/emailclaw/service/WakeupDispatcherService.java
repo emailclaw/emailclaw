@@ -13,6 +13,8 @@ package ai.emailclaw.emailclaw.service;
 import io.agentscope.harness.agent.bus.BusEntry;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -45,6 +47,9 @@ public class WakeupDispatcherService implements AutoCloseable {
 
     /** Wakeup signal subscription, used for unsubscribing. */
     private volatile Disposable subscription;
+
+    /** Dedicated virtual thread executor for asynchronous wakeup executions. */
+    private final ExecutorService wakeupExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     /** Whether the service has started. */
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -135,6 +140,7 @@ public class WakeupDispatcherService implements AutoCloseable {
             d.dispose();
         }
         subscription = null;
+        wakeupExecutor.shutdown();
         started.set(false);
         LOGGER.log(Level.INFO, "Wakeup dispatcher stopped");
     }
@@ -207,20 +213,25 @@ public class WakeupDispatcherService implements AutoCloseable {
                 "Waking up idle session: session={0}, agent={1}, user={2}",
                 new Object[] {effectiveSessionId, effectiveAgentId, userId});
 
-        // Trigger wakeup run
-        wakeupTarget
-                .runWakeup(projectId, effectiveSessionId, effectiveAgentId, userId)
-                .subscribe(
-                        msg ->
-                                LOGGER.log(
-                                        Level.FINE,
-                                        "Wakeup run complete: session={0}",
-                                        effectiveSessionId),
-                        err ->
-                                LOGGER.log(
-                                        Level.WARNING,
-                                        "Wakeup run failed: session=" + effectiveSessionId,
-                                        err));
+        // Trigger wakeup run asynchronously on a virtual thread to avoid blocking the interval
+        // timer
+        // and to avoid Reactor's non-blocking scheduler threads (e.g. parallel-1) throwing
+        // IllegalStateException on blockLast().
+        wakeupExecutor.execute(
+                () -> {
+                    try {
+                        wakeupTarget
+                                .runWakeup(projectId, effectiveSessionId, effectiveAgentId, userId)
+                                .block();
+                        LOGGER.log(
+                                Level.FINE, "Wakeup run complete: session={0}", effectiveSessionId);
+                    } catch (Throwable err) {
+                        LOGGER.log(
+                                Level.WARNING,
+                                "Wakeup run failed: session=" + effectiveSessionId,
+                                err);
+                    }
+                });
     }
 
     /**

@@ -15,7 +15,6 @@ import ai.emailclaw.emailclaw.model.security.ApprovalDecision;
 import ai.emailclaw.emailclaw.model.security.PendingApproval;
 import ai.emailclaw.emailclaw.model.security.ToolGuardResult;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.storage.AppPaths;
 import io.agentscope.core.permission.PermissionEngine;
 import java.io.IOException;
@@ -163,8 +162,7 @@ public class GovernanceService {
     public GovernanceService(AppContext appContext) {
         this.appContext = appContext;
         this.appPaths = appContext.paths();
-        this.approvalHistoryDir =
-                this.appPaths.root.resolve(AppHomeConstants.SECURITY_APPROVALS_DIR);
+        this.approvalHistoryDir = this.appPaths.securityApprovalsDir;
         try {
             Files.createDirectories(this.approvalHistoryDir);
         } catch (IOException e) {

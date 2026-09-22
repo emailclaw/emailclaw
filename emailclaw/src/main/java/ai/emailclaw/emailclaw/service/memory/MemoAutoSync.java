@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.service.memory;
 
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.io.IOException;
@@ -61,7 +61,7 @@ public class MemoAutoSync {
             ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
             String baseDirStr = project.getBaseDirectory();
             Path base = Path.of(FileNameUtils.expandUserHome(baseDirStr));
-            Path baseDir = base.resolve(AppHomeConstants.AGENT_WORKSPACE_DIR);
+            Path baseDir = base.resolve(AppPaths.AGENT_WORKSPACE_DIR);
             Path memoryMd = baseDir.resolve(agentId).resolve(WorkspacePaths.MEMORY_MD);
             Files.createDirectories(memoryMd.getParent());
 

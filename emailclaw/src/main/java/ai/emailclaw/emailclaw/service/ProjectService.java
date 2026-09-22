@@ -13,7 +13,7 @@ package ai.emailclaw.emailclaw.service;
 import ai.emailclaw.emailclaw.model.GlobalConfig;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.io.IOException;
@@ -202,10 +202,16 @@ public class ProjectService {
     }
 
     public static Path generateBaseDirPath(String projectId, String projecctName) {
-        return AppHomeConstants.HOME_RESOLVED
-                .resolve(AppHomeConstants.PROJECTS_DIR)
-                .resolve(generateBaseDirName(projectId, projecctName))
-                .toAbsolutePath();
+        return generateBaseDirPath(AppPaths.fromDefault().projectsRoot, projectId, projecctName);
+    }
+
+    public static Path generateBaseDirPath(
+            Path projectsRoot, String projectId, String projecctName) {
+        return projectsRoot.resolve(generateBaseDirName(projectId, projecctName)).toAbsolutePath();
+    }
+
+    public Path generateProjectBaseDirPath(String projectId, String projecctName) {
+        return generateBaseDirPath(this.repository.paths().projectsRoot, projectId, projecctName);
     }
 
     public static String generateBaseDirName(String projectId, String projecctName) {

@@ -22,16 +22,17 @@ import java.util.logging.Logger;
  * <p>Used to start independently in a server or background environment without a graphical interface,
  * activating channels such as DingTalk and Emailclaw to provide automated services.
  *
- * <p>Shares the same initialization logic with {@link App} to ensure consistent behavior in both startup modes.
+ * <p>Shares the same initialization logic with {@link FxApp} to ensure consistent behavior in both startup modes.
  */
 public class ServiceApp {
 
     private static final Logger LOGGER = Logger.getLogger(ServiceApp.class.getName());
 
     public static void main(String[] args) {
-        LOGGER.info("====================================================");
-        LOGGER.info(" Emailclaw Service (Headless Daemon Mode) is starting...");
-        LOGGER.info("====================================================");
+        LOGGER.info("=".repeat(60));
+        LOGGER.info(
+                Launcher.APP_VERSION + " Emailclaw Service (Headless Daemon Mode) is starting...");
+        LOGGER.info("=".repeat(60));
 
         // Explicitly declare to disable JavaFX UI thread mechanism scheduling
         ThreadUtils.setFxActive(false);
@@ -46,7 +47,7 @@ public class ServiceApp {
                             + ChromeBrowserSupport.LOCAL_CHROME_EDGE_EXECUTABLE);
         }
 
-        // 1. Execute general initialization (shared with App)
+        // 1. Execute general initialization (shared with FxApp)
         ApplicationBootstrap.BootstrapResult result = ApplicationBootstrap.initialize();
 
         // 2. Initialize wakeup dispatcher service

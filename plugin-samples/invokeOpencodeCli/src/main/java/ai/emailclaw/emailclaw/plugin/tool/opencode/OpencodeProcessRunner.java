@@ -24,13 +24,12 @@ public interface OpencodeProcessRunner {
      * Executes the OpenCode CLI process with the specified command arguments.
      *
      * @param cliPath Path or binary name of the OpenCode CLI (default 'opencode')
-     * @param prompt The prompt passed to the CLI via the {@code -p} flag
-     * @param workingDirectory The directory in which the process should execute (passed via {@code --cwd})
+     * @param prompt The message to run with OpenCode CLI (passed as opencode run [message..])
+     * @param workingDirectory The directory in which the process should execute
      * @param model Optional model override parameter passed via {@code -m}
-     * @param format Optional output format passed via {@code -f} (default 'json')
-     * @param quiet Whether to pass {@code -q} to suppress interactive spinners and progress animations
      * @param timeoutSeconds Execution timeout limit in seconds
      * @param extraArgs Optional additional CLI flags or arguments
+     * @param continueLastSession Whether to continue the last active session (--continue)
      * @return An immutable {@link OpencodeExecutionResult} capturing the execution status and output
      */
     OpencodeExecutionResult execute(
@@ -38,8 +37,7 @@ public interface OpencodeProcessRunner {
             String prompt,
             Path workingDirectory,
             String model,
-            String format,
-            boolean quiet,
             int timeoutSeconds,
-            String extraArgs);
+            String extraArgs,
+            boolean continueLastSession);
 }

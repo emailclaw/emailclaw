@@ -10,7 +10,7 @@
  */
 package ai.emailclaw.emailclaw.util;
 
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
@@ -37,6 +37,29 @@ public class PlaywrightManager {
             new ConcurrentHashMap<>();
 
     private static final ConcurrentMap<String, Page> activePageMap = new ConcurrentHashMap<>();
+
+    private static volatile Path browserDataDir = null;
+
+    /**
+     * Sets the root browser user data directory.
+     *
+     * @param dir the browser data root directory
+     */
+    public static void setBrowserDataDir(Path dir) {
+        browserDataDir = dir;
+    }
+
+    /**
+     * Gets the root browser user data directory, falling back to default AppPaths if unconfigured.
+     *
+     * @return the browser data root directory
+     */
+    public static Path getBrowserDataDir() {
+        if (browserDataDir == null) {
+            return AppPaths.fromDefault().browserDataDir;
+        }
+        return browserDataDir;
+    }
 
     public static synchronized void initPlaywrightIfNeeded(String agentId) {
         if (playwright == null) {
@@ -71,7 +94,7 @@ public class PlaywrightManager {
         }
         if (!browserContextMap.containsKey(agentId)) {
             String executablePath = ChromeBrowserSupport.LOCAL_CHROME_EDGE_EXECUTABLE;
-            Path userDataDir = AppHomeConstants.BROWSER_DATA_PATH.resolve(agentId);
+            Path userDataDir = getBrowserDataDir().resolve(agentId);
 
             boolean headless =
                     System.getenv("EMAILCLAW_BROWSER_HEADLESS") != null

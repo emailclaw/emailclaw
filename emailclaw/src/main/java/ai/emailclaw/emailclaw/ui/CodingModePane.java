@@ -13,7 +13,6 @@ package ai.emailclaw.emailclaw.ui;
 import ai.emailclaw.emailclaw.model.AgentConfiguration;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ChatService;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
 import ai.emailclaw.emailclaw.util.WebViewUtils;
 import java.io.File;
 import java.io.IOException;
@@ -243,8 +242,7 @@ class CodingModePane {
         Button newFileBtn = new Button("New File");
         newFileBtn.setOnAction(e -> createFile());
         filesHeader.getChildren().addAll(filesLabel, fSpacer, refreshBtn, newFileBtn);
-        TreeItem<Path> rootItem =
-                new PathTreeItem(dirRoot != null ? dirRoot : AppHomeConstants.HOME_RESOLVED);
+        TreeItem<Path> rootItem = new PathTreeItem(dirRoot != null ? dirRoot : defaultRoot());
         rootItem.setExpanded(true);
         if (dirRoot != null) {
             populateTree(rootItem, dirRoot);
@@ -514,7 +512,7 @@ class CodingModePane {
         if (initial != null && Files.exists(initial)) {
             chooser.setInitialDirectory(initial.toFile());
         } else {
-            chooser.setInitialDirectory(AppHomeConstants.HOME_RESOLVED.toFile());
+            chooser.setInitialDirectory(defaultRoot().toFile());
         }
         Window window = pane.getScene() != null ? pane.getScene().getWindow() : null;
         File selected = chooser.showDialog(window);
@@ -587,13 +585,18 @@ class CodingModePane {
         return null;
     }
 
+    private Path defaultRoot() {
+        return chatService != null && chatService.paths() != null
+                ? chatService.paths().root
+                : Path.of(System.getProperty("user.home"));
+    }
+
     // ======================== File Tree ========================
     void refreshTree() {
         if (fileTree == null) {
             return;
         }
-        TreeItem<Path> rootItem =
-                new PathTreeItem(dirRoot != null ? dirRoot : AppHomeConstants.HOME_RESOLVED);
+        TreeItem<Path> rootItem = new PathTreeItem(dirRoot != null ? dirRoot : defaultRoot());
         rootItem.setExpanded(true);
         if (dirRoot != null) {
             populateTree(rootItem, dirRoot);

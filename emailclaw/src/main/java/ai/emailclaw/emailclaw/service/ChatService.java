@@ -22,7 +22,7 @@ import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.storage.AppHomeConstants;
+import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
@@ -273,8 +273,7 @@ public class ChatService {
     private static final int TOOL_RESULT_OFFLOAD_THRESHOLD = 10000;
 
     /** Directory for temporarily caching offloaded files. */
-    private static final Path OFFLOAD_DIR =
-            AppHomeConstants.HOME_RESOLVED.resolve(AppHomeConstants.OFFLOADS_DIR);
+    private final Path offloadDir;
 
     private final AppContext repository;
 
@@ -317,6 +316,7 @@ public class ChatService {
             GovernanceService governanceService,
             AgentRuntimeDispatcher agentRuntimeDispatcher) {
         this.repository = repository;
+        this.offloadDir = repository.paths().offloadsDir;
         this.agentService = agentService;
         this.providerService = providerService;
         this.toolRuntimeContext = toolRuntimeContext;
@@ -337,6 +337,13 @@ public class ChatService {
      */
     public AppContext repository() {
         return repository;
+    }
+
+    /**
+     * Get the application paths value object.
+     */
+    public AppPaths paths() {
+        return repository.paths();
     }
 
     public ToolRuntimeContext toolRuntimeContext() {
@@ -881,7 +888,7 @@ public class ChatService {
         ProjectInfo project = toolRuntimeContext.projectService.findById(projectId);
         String baseDir = project.getBaseDirectory();
         return Path.of(baseDir)
-                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+                .resolve(AppPaths.AGENT_WORKSPACE_DIR)
                 .resolve(aId)
                 .resolve(WorkspacePaths.SESSIONS_DIR);
     }
@@ -935,7 +942,7 @@ public class ChatService {
      * <p>We no longer encode special blocks into body tags here, to avoid polluting the UI chunk protocol when the model naturally outputs tag text.
      */
     public List<ChatMessagePart> partsOf(Msg msg) {
-        return partsOfStatic(msg);
+        return partsOfStatic(msg, this.offloadDir);
     }
 
     /**
@@ -944,6 +951,14 @@ public class ChatService {
      * <p>Static method for StreamingEventHandler to call.
      */
     static List<ChatMessagePart> partsOfStatic(Msg msg) {
+        return partsOfStatic(msg, AppPaths.fromDefault().offloadsDir);
+    }
+
+    static List<ChatMessagePart> partsOfStatic(Msg msg, Path effectiveOffloadDir) {
+        Path targetOffloadDir =
+                effectiveOffloadDir != null
+                        ? effectiveOffloadDir
+                        : AppPaths.fromDefault().offloadsDir;
         List<ChatMessagePart> parts = new ArrayList<>();
         if (msg == null || msg.getContent() == null) {
             return parts;
@@ -992,9 +1007,9 @@ public class ChatService {
                 if (fullText.length() > TOOL_RESULT_OFFLOAD_THRESHOLD) {
                     // Oversized payload, trigger offload
                     String uuid = UuidUtils.randomUUIDv7().toString();
-                    Path offloadPath = OFFLOAD_DIR.resolve(uuid + ".txt");
+                    Path offloadPath = targetOffloadDir.resolve(uuid + ".txt");
                     try {
-                        Files.createDirectories(OFFLOAD_DIR);
+                        Files.createDirectories(targetOffloadDir);
                         Files.writeString(offloadPath, fullText, StandardCharsets.UTF_8);
                         String summary =
                                 String.format(
@@ -1318,7 +1333,7 @@ public class ChatService {
                         toolRuntimeContext.projectService.findById(pId);
                 Path workspace =
                         Path.of(project.getBaseDirectory())
-                                .resolve(AppHomeConstants.AGENT_WORKSPACE_DIR)
+                                .resolve(AppPaths.AGENT_WORKSPACE_DIR)
                                 .resolve(agent.getId());
                 String relative = workspace.relativize(dest).toString().replace('\\', '/');
                 staged.add(new StagedAttachment(dest, relative, originalName));

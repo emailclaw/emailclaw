@@ -15,33 +15,22 @@ import java.nio.file.Path;
 /**
  * Application home directory resolution related system properties, environment variables, and default directory name constants. The exact location is combined by AppPaths.resolveHome() and the following constants.
  */
-public final class AppHomeConstants {
+public final class AppHomeResolver {
     public static final String USER_HOME_VALUE = System.getProperty("user.home");
     public static final String SYS_PROP_HOME = "emailclaw.home";
     public static final String ENV_HOME = "EMAILCLAW_HOME";
     public static final String DEFAULT_HOME_DIR_NAME = "emailclaw";
-    public static final Path HOME_RESOLVED = resolveHome();
+    public static final Path APP_HOME_RESOLVED = resolveAppHome();
 
-    public static final String AGENT_WORKSPACE_DIR = "agent-workspace";
-    public static final String BACKUPS_DIR = ".backups";
-    public static final String CONFIG_DIR = ".config";
-    public static final String LOGS_DIR = "logs";
-    public static final String OFFLOADS_DIR = ".offloads";
-    public static final String PLUGINS_DIR = "plugins";
-    public static final String PROJECTS_DIR = "projects";
-    public static final String SKILL_POOL_DIR = "skill-pool";
-    public static final String SECRET_DIR = ".secret";
-    public static final String SECURITY_APPROVALS_DIR = ".security/approvals";
-    public static final String SESSIONS_DIR = "sessions";
-    public static final String WEBVIEW_DIR = ".webview";
-    public static final Path BROWSER_DATA_PATH = HOME_RESOLVED.resolve(".browser-data");
-    public static final Path WEBVIEW_DATA_PATH = HOME_RESOLVED.resolve(WEBVIEW_DIR);
-    public static final Path DATABASE_FILE =
-            HOME_RESOLVED.resolve(".database").resolve("emailclaw.db");
+    private AppHomeResolver() {}
 
-    private AppHomeConstants() {}
-
-    private static Path resolveHome() {
+    /**
+     * Resolves the application root home directory from system properties, environment variables,
+     * or default user home directory.
+     *
+     * @return the resolved application root home directory
+     */
+    public static Path resolveAppHome() {
         String sysProp = System.getProperty(SYS_PROP_HOME);
         if (sysProp != null && !sysProp.isBlank()) {
             return Path.of(sysProp);
