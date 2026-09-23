@@ -33,6 +33,7 @@ import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
 import ai.emailclaw.emailclaw.service.ToolService;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import java.awt.Desktop;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,9 +106,11 @@ public class MainWindow extends BorderPane {
 
     private final ToggleGroup projectToggleGroup = new ToggleGroup();
 
-    private final VBox projectsBox = new VBox(4);
+    private final VBox projectsList = new VBox(2);
 
-    private final ScrollPane projectsScrollPane = new ScrollPane(projectsBox);
+    private final Button toggleAllProjectsBtn = new Button("Show All");
+
+    private boolean projectsExpanded = false;
 
     private final Button codeModeButton = new Button("Code");
 
@@ -198,24 +201,19 @@ public class MainWindow extends BorderPane {
                                 chatService,
                                 cronJobService,
                                 currentAgent,
-                                ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_CHAT,
+                                ChatSessionInfo.KIND_CHAT,
                                 currentProject));
         factories.put(ViewIds.INBOX, () -> new InboxView(messageBusService));
         factories.put(
                 ViewIds.SESSIONS_TASK,
-                () -> {
-                    SessionsView sv =
-                            new SessionsView(
-                                    chatService,
-                                    channelService,
-                                    currentAgent,
-                                    ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK,
-                                    session -> {
-                                        showTaskView(session);
-                                    });
-                    sv.onProjectChanged(currentProject);
-                    return sv;
-                });
+                () ->
+                        new SessionsView(
+                                chatService,
+                                channelService,
+                                currentAgent,
+                                currentProject,
+                                ChatSessionInfo.KIND_TASK,
+                                this::showTaskView));
         factories.put(
                 ViewIds.TASK,
                 () ->
@@ -233,27 +231,24 @@ public class MainWindow extends BorderPane {
                                 }));
         factories.put(
                 ViewIds.SESSIONS_CHAT,
-                () -> {
-                    SessionsView sv =
-                            new SessionsView(
-                                    chatService,
-                                    channelService,
-                                    currentAgent,
-                                    ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_CHAT,
-                                    session -> {
-                                        ChatView chatView =
-                                                (ChatView)
-                                                        views.computeIfAbsent(
-                                                                ViewIds.CHAT,
-                                                                id -> factories.get(id).get());
-                                        chatView.onAgentChanged(currentAgent);
-                                        chatView.onProjectChanged(currentProject);
-                                        chatView.loadSession(session);
-                                        showView(ViewIds.CHAT);
-                                    });
-                    sv.onProjectChanged(currentProject);
-                    return sv;
-                });
+                () ->
+                        new SessionsView(
+                                chatService,
+                                channelService,
+                                currentAgent,
+                                currentProject,
+                                ChatSessionInfo.KIND_CHAT,
+                                session -> {
+                                    ChatView chatView =
+                                            (ChatView)
+                                                    views.computeIfAbsent(
+                                                            ViewIds.CHAT,
+                                                            id -> factories.get(id).get());
+                                    chatView.onAgentChanged(currentAgent);
+                                    chatView.onProjectChanged(currentProject);
+                                    chatView.loadSession(session);
+                                    showView(ViewIds.CHAT);
+                                }));
         factories.put(ViewIds.FILES, () -> new FilesView(repository, currentAgent));
         factories.put(ViewIds.PROJECTS, () -> new ProjectsView(repository, projectService));
         factories.put(ViewIds.SKILLS, () -> new SkillsView(repository, skillService, currentAgent));
@@ -543,48 +538,28 @@ public class MainWindow extends BorderPane {
         currentProjectBox = new VBox(8);
         Label title = new Label("Current Project: ");
         title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #333333;");
-        Button addProjectBtn = new Button("+");
-        addProjectBtn.getStyleClass().add("link-btn");
-        addProjectBtn.setStyle(
-                "-fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand; -fx-padding: 0 4;");
-        addProjectBtn.setOnAction(
-                e -> {
-                    ProjectsView pv =
-                            (ProjectsView)
-                                    views.computeIfAbsent(
-                                            ViewIds.PROJECTS, id -> factories.get(id).get());
-                    pv.showCreateEditDialog(null)
-                            .ifPresent(
-                                    project -> {
-                                        LOGGER.log(
-                                                Level.INFO,
-                                                "Successfully created new Project: {0} ({1})",
-                                                new Object[] {project.getName(), project.getId()});
-                                        projectService.setCurrentProject(project.getId());
-                                        currentProject = project;
-                                        projectService.save(project);
-                                    });
-                });
         Button settingsProjectBtn = new Button("⚙");
         settingsProjectBtn.getStyleClass().add("link-btn");
         settingsProjectBtn.setStyle("-fx-font-size: 14px; -fx-cursor: hand; -fx-padding: 0 4;");
         settingsProjectBtn.setOnAction(e -> showView(ViewIds.PROJECTS));
+
+        toggleAllProjectsBtn.getStyleClass().add("link-btn");
+        toggleAllProjectsBtn.setStyle("-fx-font-size: 11px; -fx-cursor: hand; -fx-padding: 0 4;");
+        toggleAllProjectsBtn.managedProperty().bind(toggleAllProjectsBtn.visibleProperty());
+        toggleAllProjectsBtn.setOnAction(
+                e -> {
+                    projectsExpanded = !projectsExpanded;
+                    renderProjectsList();
+                });
+
         HBox titleSpacer = new HBox();
         HBox.setHgrow(titleSpacer, Priority.ALWAYS);
-        HBox titleBox = new HBox(4, title, titleSpacer, addProjectBtn, settingsProjectBtn);
+        HBox titleBox = new HBox(4, title, titleSpacer, settingsProjectBtn, toggleAllProjectsBtn);
         titleBox.setAlignment(Pos.CENTER_LEFT);
         titleBox.setMaxWidth(Double.MAX_VALUE);
 
-        projectsBox.setSpacing(4);
-        projectsBox.setStyle("-fx-background-color: transparent;");
-
-        projectsScrollPane.getStyleClass().add("left-scroll");
-        projectsScrollPane.setFitToWidth(true);
-        projectsScrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        projectsScrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        projectsScrollPane.setMaxHeight(85);
-        projectsScrollPane.setStyle(
-                "-fx-background-color: transparent; -fx-background: transparent; -fx-padding: 0;");
+        projectsList.setSpacing(2);
+        projectsList.setStyle("-fx-background-color: transparent;");
 
         projectToggleGroup
                 .selectedToggleProperty()
@@ -628,7 +603,7 @@ public class MainWindow extends BorderPane {
         VBox topSection = new VBox(8);
         topSection.getChildren().add(menuButton("Dashboard", ViewIds.DASHBOARD));
         topSection.getChildren().add(new Separator());
-        topSection.getChildren().addAll(titleBox, projectsScrollPane);
+        topSection.getChildren().addAll(titleBox, projectsList);
         topSection.getChildren().add(menuButton("Scheduled", ViewIds.CRON_JOBS));
         topSection
                 .getChildren()
@@ -991,7 +966,14 @@ public class MainWindow extends BorderPane {
                         new Button(t.name() == null || t.name().isBlank() ? "(unnamed)" : t.name());
                 tBtn.setMaxWidth(Double.MAX_VALUE);
                 tBtn.setAlignment(Pos.CENTER_LEFT);
+                tBtn.setTextOverrun(OverrunStyle.ELLIPSIS);
+                tBtn.setTooltip(
+                        new Tooltip(
+                                t.name() == null || t.name().isBlank() ? "(unnamed)" : t.name()));
                 tBtn.getStyleClass().add("menu-btn");
+                tBtn.setStyle(
+                        "-fx-font-size: 13px; -fx-cursor: hand; -fx-padding: 2 8;"
+                                + " -fx-background-radius: 4;");
                 tBtn.setOnAction(e -> showTaskView(t));
                 HBox.setHgrow(tBtn, Priority.ALWAYS);
                 HBox row = new HBox(2);
@@ -1011,7 +993,7 @@ public class MainWindow extends BorderPane {
                 }
                 tasksList.getChildren().add(row);
             }
-            toggleAllBtn.setText(tasksExpanded ? "Collapse" : "Expand");
+            toggleAllBtn.setText(tasksExpanded ? "Collapse" : "Show All");
             toggleAllBtn.setVisible(projectTasks.size() > 5);
         }
     }
@@ -1032,8 +1014,7 @@ public class MainWindow extends BorderPane {
             for (int i = currentIndex - 1; i >= 0; i--) {
                 ChatSessionInfo s = allSessions.get(i);
                 String sProjId = s.getProjectId().isBlank() ? "default" : s.getProjectId();
-                if (ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(s.getKind())
-                        && curProjId.equals(sProjId)) {
+                if (ChatSessionInfo.KIND_TASK.equals(s.getKind()) && curProjId.equals(sProjId)) {
                     targetIndex = i;
                     break;
                 }
@@ -1042,8 +1023,7 @@ public class MainWindow extends BorderPane {
             for (int i = currentIndex + 1; i < allSessions.size(); i++) {
                 ChatSessionInfo s = allSessions.get(i);
                 String sProjId = s.getProjectId().isBlank() ? "default" : s.getProjectId();
-                if (ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_TASK.equals(s.getKind())
-                        && curProjId.equals(sProjId)) {
+                if (ChatSessionInfo.KIND_TASK.equals(s.getKind()) && curProjId.equals(sProjId)) {
                     targetIndex = i;
                     break;
                 }
@@ -1120,9 +1100,12 @@ public class MainWindow extends BorderPane {
 
     private void renderProjectsList() {
         List<ProjectInfo> projects = projectService.list();
-        projectsBox.getChildren().clear();
+        projectsList.getChildren().clear();
         RadioButton toSelect = null;
-        for (ProjectInfo p : projects) {
+        RadioButton firstRadioButton = null;
+        int limit = projectsExpanded ? projects.size() : Math.min(5, projects.size());
+        for (int i = 0; i < limit; i++) {
+            ProjectInfo p = projects.get(i);
             RadioButton rb = new RadioButton(p.getName());
             rb.setToggleGroup(projectToggleGroup);
             rb.setUserData(p);
@@ -1132,17 +1115,73 @@ public class MainWindow extends BorderPane {
             rb.setStyle(
                     "-fx-font-size: 13px; -fx-text-fill: #1d1d1f; -fx-cursor: hand; -fx-padding: 2"
                             + " 4;");
+            if (firstRadioButton == null) {
+                firstRadioButton = rb;
+            }
             if (p.getId().equals(currentProject.getId())) {
                 toSelect = rb;
             }
-            projectsBox.getChildren().add(rb);
+            HBox.setHgrow(rb, Priority.ALWAYS);
+            HBox row = new HBox(2);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.getChildren().add(rb);
+            if (projects.size() > 1 && i > 0) {
+                Button upBtn = new Button("↑");
+                upBtn.setStyle("-fx-font-size: 10px; -fx-padding: 2 4; -fx-cursor: hand;");
+                upBtn.setOnAction(e -> moveProject(p, "up", projects));
+                row.getChildren().add(upBtn);
+            }
+            if (projects.size() > 1 && i < projects.size() - 1) {
+                Button downBtn = new Button("↓");
+                downBtn.setStyle("-fx-font-size: 10px; -fx-padding: 2 4; -fx-cursor: hand;");
+                downBtn.setOnAction(e -> moveProject(p, "down", projects));
+                row.getChildren().add(downBtn);
+            }
+            projectsList.getChildren().add(row);
         }
         if (toSelect != null) {
             toSelect.setSelected(true);
-        } else if (!projectsBox.getChildren().isEmpty()) {
-            RadioButton first = (RadioButton) projectsBox.getChildren().get(0);
-            first.setSelected(true);
-            currentProject = (ProjectInfo) first.getUserData();
+        } else if (firstRadioButton != null
+                && projects.stream().noneMatch(p -> p.getId().equals(currentProject.getId()))) {
+            firstRadioButton.setSelected(true);
+            currentProject = (ProjectInfo) firstRadioButton.getUserData();
+        }
+        toggleAllProjectsBtn.setText(projectsExpanded ? "Collapse" : "Show All");
+        toggleAllProjectsBtn.setVisible(projects.size() > 5);
+    }
+
+    private void moveProject(ProjectInfo project, String action, List<ProjectInfo> projects) {
+        List<ProjectInfo> allProjects = new ArrayList<>(projectService.list());
+        int currentIndex = -1;
+        for (int i = 0; i < allProjects.size(); i++) {
+            if (allProjects.get(i).getId().equals(project.getId())) {
+                currentIndex = i;
+                break;
+            }
+        }
+        if (currentIndex < 0) {
+            return;
+        }
+        int targetIndex = -1;
+        if ("up".equals(action)) {
+            if (currentIndex > 0) {
+                targetIndex = currentIndex - 1;
+            }
+        } else if ("down".equals(action)) {
+            if (currentIndex < allProjects.size() - 1) {
+                targetIndex = currentIndex + 1;
+            }
+        }
+        if (targetIndex != -1) {
+            LOGGER.log(
+                    Level.INFO,
+                    "Moving project {0} from index {1} to {2}",
+                    new Object[] {project.getId(), currentIndex, targetIndex});
+            ProjectInfo temp = allProjects.get(currentIndex);
+            allProjects.set(currentIndex, allProjects.get(targetIndex));
+            allProjects.set(targetIndex, temp);
+            projectService.saveAll(allProjects);
+            renderProjectsList();
         }
     }
 }
