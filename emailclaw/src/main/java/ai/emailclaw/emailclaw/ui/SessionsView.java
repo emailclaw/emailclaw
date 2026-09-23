@@ -16,6 +16,7 @@ import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.util.DateTimeUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import javafx.beans.property.BooleanProperty;
@@ -101,20 +103,61 @@ public class SessionsView implements ViewPane {
 
     private ProjectInfo currentProject;
 
+    /**
+     * Constructs a new SessionsView with the specified services, agent, project, kind, and session
+     * callback.
+     *
+     * @param chatService the chat service for session operations
+     * @param channelService the channel service for channel configurations
+     * @param agent the current agent
+     * @param project the current project
+     * @param kind the session kind (e.g., chat or task)
+     * @param openSessionCallback callback invoked when opening a session
+     */
+    public SessionsView(
+            ChatService chatService,
+            ChannelService channelService,
+            AgentInfo agent,
+            ProjectInfo project,
+            String kind,
+            Consumer<ChatSessionInfo> openSessionCallback) {
+        LOGGER.log(
+                Level.INFO,
+                "Initializing SessionsView, agent: {0}, project: {1}, kind: {2}",
+                new Object[] {agent != null ? agent.getId() : "null", project.getId(), kind});
+        this.chatService = chatService;
+        this.channelService = channelService;
+        this.agent = agent;
+        this.currentProject = project;
+        this.kind = kind;
+        this.openSessionCallback = openSessionCallback;
+        buildUi();
+        refreshChannelOptions();
+        refresh();
+    }
+
+    /**
+     * Constructs a new SessionsView defaulting to the default project.
+     *
+     * @param chatService the chat service for session operations
+     * @param channelService the channel service for channel configurations
+     * @param agent the current agent
+     * @param kind the session kind (e.g., chat or task)
+     * @param openSessionCallback callback invoked when opening a session
+     */
     public SessionsView(
             ChatService chatService,
             ChannelService channelService,
             AgentInfo agent,
             String kind,
             Consumer<ChatSessionInfo> openSessionCallback) {
-        this.chatService = chatService;
-        this.channelService = channelService;
-        this.agent = agent;
-        this.kind = kind;
-        this.openSessionCallback = openSessionCallback;
-        buildUi();
-        refreshChannelOptions();
-        refresh();
+        this(
+                chatService,
+                channelService,
+                agent,
+                ProjectService.PROJECT_DEFAULT,
+                kind,
+                openSessionCallback);
     }
 
     private void buildUi() {
@@ -441,6 +484,7 @@ public class SessionsView implements ViewPane {
                         + " session(s)? This action cannot be undone.");
         alert.initOwner(table.getScene() != null ? table.getScene().getWindow() : null);
         if (alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            LOGGER.log(Level.INFO, "Batch deleting sessions: {0}", selectedIds);
             chatService.batchDeleteSessions(selectedIds);
             selectedIds.forEach(selectionById::remove);
             refresh();
@@ -455,6 +499,7 @@ public class SessionsView implements ViewPane {
                 "Are you sure you want to delete this session? This action cannot be undone.");
         alert.initOwner(getDialogOwner());
         if (alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            LOGGER.log(Level.INFO, "Deleting session: {0}", session.getId());
             chatService.deleteSession(session.getId());
             selectionById.remove(session.getId());
             refresh();
@@ -516,6 +561,7 @@ public class SessionsView implements ViewPane {
         dialog.showAndWait()
                 .ifPresent(
                         updatedSession -> {
+                            LOGGER.log(Level.INFO, "Updating session: {0}", updatedSession.getId());
                             chatService.updateSession(updatedSession);
                             refresh();
                         });
@@ -539,12 +585,17 @@ public class SessionsView implements ViewPane {
 
     @Override
     public void onAgentChanged(AgentInfo agent) {
+        LOGGER.log(
+                Level.INFO,
+                "SessionsView agent changed: {0}",
+                agent != null ? agent.getId() : "null");
         this.agent = agent;
         refresh();
     }
 
     @Override
     public void onProjectChanged(ProjectInfo project) {
+        LOGGER.log(Level.INFO, "SessionsView project changed: {0}", project.getId());
         this.currentProject = project;
         if (root.getScene() != null) {
             refresh();

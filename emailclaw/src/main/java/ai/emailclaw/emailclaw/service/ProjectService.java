@@ -156,6 +156,20 @@ public class ProjectService {
     }
 
     /**
+     * Save the entire project list (e.g. after reordering).
+     *
+     * @param projects the updated list of projects
+     */
+    public void saveAll(List<ProjectInfo> projects) {
+        LOGGER.log(
+                Level.INFO,
+                "Save all projects ({0} items)",
+                projects != null ? projects.size() : 0);
+        configManager.saveProjects(projects);
+        notifyListeners();
+    }
+
+    /**
      * Delete the specified project (default project cannot be deleted).
      *
      * @param project Project object to delete

@@ -223,7 +223,7 @@ public class EmailclawChannelRunner {
                                 sleepSeconds = Math.max(5, minInterval);
                                 for (MailboxAccountConfig mailbox : mailboxes) {
                                     if (mailbox.isRunnable()) {
-                                        pollMailboxInbox(channel, mailbox);
+                                        pollInbox(channel, mailbox);
                                     } else {
                                         LOGGER.fine(
                                                 () ->
@@ -269,7 +269,7 @@ public class EmailclawChannelRunner {
     }
 
     // ======================== Polling & Ingestion ========================
-    private void pollMailboxInbox(ChannelInfo channel, MailboxAccountConfig mailbox) {
+    private void pollInbox(ChannelInfo channel, MailboxAccountConfig mailbox) {
         LOGGER.info(
                 () -> "Polling mailbox: " + mailbox.emailAddress() + " (id=" + mailbox.id() + ")");
         List<EmailEnvelope> mails = fetchUnreadEmails(mailbox);
