@@ -8,30 +8,22 @@
  *
  * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package ai.emailclaw.emailclaw;
+package ai.emailclaw.emailclaw.plugin.tool.claude;
 
 /**
- * This is a classic and common "Launcher" design pattern in JavaFX 11+ and higher versions (also known as a Fat JAR / Hack technique to bypass module system issues for independent startup).
- * Only used to solve the bootstrap issue of running JavaFX applications with Maven.
- * The actual application startup logic is in FxApp.java.
+ * Immutable execution result produced by {@link ClaudeCodeProcessRunner}.
+ *
+ * @param exitCode Subprocess exit code (0 for success, -1 on timeout or spawn failure)
+ * @param stdout Standard output captured from the CLI
+ * @param stderr Standard error output captured from the CLI
+ * @param timedOut Whether the process was forcibly killed due to exceeding the timeout
+ * @param success Whether the execution completed cleanly with exit code 0
+ * @param error Descriptive error message if execution failed, or null on success
  */
-public class Launcher {
-    public static final String APP_VERSION = "v26.9.27";
-
-    public static void main(String[] args) {
-        boolean isService = false;
-        for (String arg : args) {
-            if ("--service".equalsIgnoreCase(arg) || "-s".equalsIgnoreCase(arg)) {
-                isService = true;
-                break;
-            }
-        }
-        if (isService) {
-            ServiceApp.main(args);
-        } else {
-            // Directly call FxApp's main method, bypassing Maven's default JavaFX bootstrap
-            // mechanism
-            FxApp.main(args);
-        }
-    }
-}
+public record ClaudeCodeExecutionResult(
+        int exitCode,
+        String stdout,
+        String stderr,
+        boolean timedOut,
+        boolean success,
+        String error) {}

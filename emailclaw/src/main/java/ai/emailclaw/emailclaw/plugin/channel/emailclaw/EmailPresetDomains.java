@@ -20,7 +20,7 @@ import java.util.Set;
  */
 public final class EmailPresetDomains {
 
-    public static final String EMAILCLAW = "emailclaw.email";
+    public static final String EMAILCLAW_EMAIL = "emailclaw.email";
     public static final String GMAIL = "gmail.com";
     public static final String OUTLOOK = "outlook.com";
     public static final String HOTMAIL = "hotmail.com";
@@ -41,7 +41,7 @@ public final class EmailPresetDomains {
     /** All supported one-click preset email domains (lowercase). */
     public static final Set<String> ALL =
             Set.of(
-                    EMAILCLAW,
+                    EMAILCLAW_EMAIL,
                     GMAIL,
                     OUTLOOK,
                     HOTMAIL,
@@ -60,4 +60,11 @@ public final class EmailPresetDomains {
                     PROTONMAIL);
 
     private EmailPresetDomains() {}
+
+    public static boolean isSystemProvided(String email) {
+        if (email == null || !email.contains("@") || email.endsWith("@")) {
+            return false;
+        }
+        return EMAILCLAW_EMAIL.equalsIgnoreCase(email.substring(email.lastIndexOf('@') + 1).trim());
+    }
 }

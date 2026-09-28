@@ -291,7 +291,7 @@ public class EmailclawChannelRunner {
                 continue;
             }
             processedSet.add(mail.uid());
-            markMailAsRead(mailbox, mail.uid());
+            markMailAsReadOrDelete(mailbox, mail.uid());
             dispatchMailHandling(channel, mailbox, mail);
         }
     }
@@ -1299,7 +1299,22 @@ public class EmailclawChannelRunner {
         }
     }
 
-    private void markMailAsRead(MailboxAccountConfig mailbox, long uid) {
+    /**
+     * Marks an incoming email message as read or permanently deletes it based on mailbox domain type.
+     *
+     * <p>For system-provided mailboxes (such as the built-in {@code emailclaw.email} domain evaluated
+     * via {@link EmailPresetDomains#isSystemProvided(String)}), incoming messages are ephemeral and
+     * disposable. To prevent mailbox quota exhaustion and reduce storage footprint on the server, the
+     * message is marked with {@link Flags.Flag#DELETED} and immediately expunged from the folder.
+     *
+     * <p>For user-managed external mailboxes (e.g., Gmail, Outlook, NetEase, QQ), emails are treated as
+     * personal user data and preserved indefinitely. Messages are marked with {@link Flags.Flag#SEEN}
+     * so that subsequent polling cycles ignore them without modifying the user's remote mailbox content.
+     *
+     * @param mailbox the configuration and credentials of the mailbox account containing the message
+     * @param uid the IMAP Unique Identifier (UID) of the message to process
+     */
+    private void markMailAsReadOrDelete(MailboxAccountConfig mailbox, long uid) {
         Store store = null;
         Folder folder = null;
         try {
@@ -1315,19 +1330,34 @@ public class EmailclawChannelRunner {
             if (folder instanceof UIDFolder uidFolder) {
                 Message msg = uidFolder.getMessageByUID(uid);
                 if (msg != null) {
-                    msg.setFlag(Flags.Flag.SEEN, true);
-                    LOGGER.fine(
-                            () ->
-                                    "Marked email as read: mailbox="
-                                            + mailbox.emailAddress()
-                                            + ", uid="
-                                            + uid);
+                    if (EmailPresetDomains.isSystemProvided(mailbox.emailAddress())) {
+                        // System-provided mailboxes (e.g. emailclaw.email) are managed;
+                        // permanently delete the processed email to prevent mailbox overflow.
+                        msg.setFlag(Flags.Flag.DELETED, true);
+                        folder.expunge();
+                        LOGGER.info(
+                                "Deleted email from system-provided mailbox: mailbox="
+                                        + mailbox.emailAddress()
+                                        + ", uid="
+                                        + uid);
+                    } else {
+                        // For external personal mailboxes, preserve the email and mark it as seen.
+                        msg.setFlag(Flags.Flag.SEEN, true);
+                        LOGGER.fine(
+                                "Marked email as read: mailbox="
+                                        + mailbox.emailAddress()
+                                        + ", uid="
+                                        + uid);
+                    }
                 }
             }
         } catch (Exception e) {
             LOGGER.log(
                     Level.WARNING,
-                    "Failed to mark email as read for " + mailbox.emailAddress() + ", uid=" + uid,
+                    "Failed to mark email as read or delete for "
+                            + mailbox.emailAddress()
+                            + ", uid="
+                            + uid,
                     e);
         } finally {
             closeFolder(folder);

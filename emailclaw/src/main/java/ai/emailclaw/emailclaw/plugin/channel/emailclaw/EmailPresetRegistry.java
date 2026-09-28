@@ -34,13 +34,10 @@ public final class EmailPresetRegistry {
      * @return Configuration if preset is found, otherwise null
      */
     public static EmailMailPreset presetOf(String email) {
-        if (email == null) {
+        if (email == null || !email.contains("@") || email.endsWith("@")) {
             return null;
         }
         int at = email.lastIndexOf('@');
-        if (at < 0 || at >= email.length() - 1) {
-            return null;
-        }
         String domain = email.substring(at + 1).trim().toLowerCase(Locale.ROOT);
         return PRESETS.get(domain);
     }
@@ -51,9 +48,9 @@ public final class EmailPresetRegistry {
     private static Map<String, EmailMailPreset> createPresets() {
         Map<String, EmailMailPreset> map = new HashMap<>();
         map.put(
-                EmailPresetDomains.EMAILCLAW,
+                EmailPresetDomains.EMAILCLAW_EMAIL,
                 new EmailMailPreset(
-                        EmailPresetDomains.EMAILCLAW,
+                        EmailPresetDomains.EMAILCLAW_EMAIL,
                         "imap.emailclaw.email",
                         993,
                         true,
