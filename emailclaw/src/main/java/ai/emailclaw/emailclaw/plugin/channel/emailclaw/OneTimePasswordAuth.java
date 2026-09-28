@@ -15,7 +15,7 @@ import java.util.logging.Logger;
 // One-time Password Authentication
 public class OneTimePasswordAuth {
     private static final String OTP_API = "https://platform.emailclaw.email/api/v1/email-user/otp";
-    private static final String EMAILCLAW_EMAIL = "@emailclaw.email";
+    private static final String AT_EMAILCLAW_EMAIL = "@emailclaw.email";
     private static final Logger LOG = Logger.getLogger(OneTimePasswordAuth.class.getName());
 
     public static EmailAndPassword oneTimePasswordAuth(
@@ -55,16 +55,14 @@ public class OneTimePasswordAuth {
             }
 
             AuthResult authResult = mapper.readValue(responseBody, AuthResult.class);
-            if (authResult.success()) {
-                String emailAddress = authResult.username() + EMAILCLAW_EMAIL;
+            if (authResult.success() && authResult.refreshToken() != null) {
+                String emailAddress = authResult.username() + AT_EMAILCLAW_EMAIL;
 
-                String emailPwd = "";
                 String refreshToken = authResult.refreshToken();
-                if (refreshToken != null && refreshToken.length() >= 32) {
-                    emailPwd = refreshToken.substring(refreshToken.length() - 32);
-                } else if (refreshToken != null) {
-                    emailPwd = refreshToken;
-                }
+                String emailPwd =
+                        refreshToken.length() >= 32
+                                ? refreshToken.substring(refreshToken.length() - 32)
+                                : refreshToken;
 
                 LOG.info("System mode registration validation successful, email: " + emailAddress);
                 return new EmailAndPassword(emailAddress, emailPwd);

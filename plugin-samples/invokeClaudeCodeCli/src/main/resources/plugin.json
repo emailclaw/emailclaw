@@ -1,0 +1,9 @@
+{
+  "id": "emailclaw-plugin-tool-invokeClaudeCodeCli",
+  "name": "Invoke Claude Code CLI",
+  "version": "1.0.0",
+  "author": "Emailclaw Authors",
+  "type": "tool",
+  "entry_point": "ai.emailclaw.emailclaw.plugin.tool.claude.InvokeClaudeCodeCliPlugin",
+  "description": "Plugin adapter for the Claude Code CLI Tool (executes non-interactively via 'claude -p [PROMPT]')."
+}
