@@ -8,30 +8,32 @@
  *
  * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package ai.emailclaw.emailclaw;
+package ai.emailclaw.emailclaw.tools.fetch;
 
 /**
- * This is a classic and common "Launcher" design pattern in JavaFX 11+ and higher versions (also known as a Fat JAR / Hack technique to bypass module system issues for independent startup).
- * Only used to solve the bootstrap issue of running JavaFX applications with Maven.
- * The actual application startup logic is in FxApp.java.
+ * Strategy interface for remote web fetch providers.
  */
-public class Launcher {
-    public static final String APP_VERSION = "v26.10.5";
+public interface RemoteWebFetchProvider {
 
-    public static void main(String[] args) {
-        boolean isService = false;
-        for (String arg : args) {
-            if ("--service".equalsIgnoreCase(arg) || "-s".equalsIgnoreCase(arg)) {
-                isService = true;
-                break;
-            }
-        }
-        if (isService) {
-            ServiceApp.main(args);
-        } else {
-            // Directly call FxApp's main method, bypassing Maven's default JavaFX bootstrap
-            // mechanism
-            FxApp.main(args);
-        }
-    }
+    /**
+     * Gets the unique provider identifier (e.g. "Parallel_MCP", "Exa_MCP").
+     *
+     * @return provider name
+     */
+    String getProviderName();
+
+    /**
+     * Checks if this provider is currently available (e.g. not tripped by circuit breaker).
+     *
+     * @return true if available
+     */
+    boolean isAvailable();
+
+    /**
+     * Fetches the web page content as markdown or cleaned text.
+     *
+     * @param url target URL to fetch
+     * @return extracted content, or null if fetch failed or was blocked
+     */
+    String fetch(String url);
 }
