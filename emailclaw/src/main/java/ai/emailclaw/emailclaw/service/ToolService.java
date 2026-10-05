@@ -176,22 +176,50 @@ public class ToolService {
                 continue;
             }
             McpServerConfig cfg = new McpServerConfig();
-            cfg.setTransport("stdio");
-            cfg.setCommand(client.command());
-            if (client.args() != null && !client.args().isEmpty()) {
-                cfg.setArgs(client.args());
-            }
-            if (client.envJson() != null && !client.envJson().isBlank()) {
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, String> env =
-                            JsonUtils.getJsonCodec().fromJson(client.envJson(), Map.class);
-                    cfg.setEnv(env);
-                } catch (Exception e) {
-                    LOGGER.log(
-                            Level.WARNING,
-                            "Failed to parse envJson for MCP client: " + client.key(),
-                            e);
+            String rawCmd = client.command().trim();
+            boolean isRemoteHttp =
+                    rawCmd.startsWith("http://")
+                            || rawCmd.startsWith("https://")
+                            || "Remote".equalsIgnoreCase(client.sourceType())
+                            || "http".equalsIgnoreCase(client.sourceType())
+                            || "sse".equalsIgnoreCase(client.sourceType());
+
+            if (isRemoteHttp) {
+                String transport = "sse".equalsIgnoreCase(client.sourceType()) ? "sse" : "http";
+                cfg.setTransport(transport);
+                cfg.setUrl(rawCmd);
+                if (client.envJson() != null && !client.envJson().isBlank()) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, String> headers =
+                                JsonUtils.getJsonCodec().fromJson(client.envJson(), Map.class);
+                        cfg.setHeaders(headers);
+                    } catch (Exception e) {
+                        LOGGER.log(
+                                Level.WARNING,
+                                "Failed to parse headers/envJson for remote MCP client: "
+                                        + client.key(),
+                                e);
+                    }
+                }
+            } else {
+                cfg.setTransport("stdio");
+                cfg.setCommand(rawCmd);
+                if (client.args() != null && !client.args().isEmpty()) {
+                    cfg.setArgs(client.args());
+                }
+                if (client.envJson() != null && !client.envJson().isBlank()) {
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, String> env =
+                                JsonUtils.getJsonCodec().fromJson(client.envJson(), Map.class);
+                        cfg.setEnv(env);
+                    } catch (Exception e) {
+                        LOGGER.log(
+                                Level.WARNING,
+                                "Failed to parse envJson for MCP client: " + client.key(),
+                                e);
+                    }
                 }
             }
             if (client.toolWhitelistEnabled()

@@ -11,8 +11,8 @@
 package ai.emailclaw.emailclaw.tools;
 
 import ai.emailclaw.emailclaw.service.ToolService;
+import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import ai.emailclaw.emailclaw.util.PlaywrightManager;
-import ai.emailclaw.emailclaw.util.WebExtractUtils;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.WaitUntilState;
@@ -30,7 +30,18 @@ public class NetworkFetchTool extends BaseEmailclawTool {
 
     private static final Logger LOGGER = Logger.getLogger(NetworkFetchTool.class.getName());
 
-    public NetworkFetchTool() {}
+    private final WebFetchFallbackCoordinator fallbackCoordinator;
+
+    public NetworkFetchTool() {
+        this(new WebFetchFallbackCoordinator());
+    }
+
+    public NetworkFetchTool(WebFetchFallbackCoordinator fallbackCoordinator) {
+        this.fallbackCoordinator =
+                fallbackCoordinator != null
+                        ? fallbackCoordinator
+                        : new WebFetchFallbackCoordinator();
+    }
 
     /**
      * Detect a browser connection-level failure (browser process died or IPC pipe broken). Such
@@ -71,20 +82,20 @@ public class NetworkFetchTool extends BaseEmailclawTool {
         String guardCheck = checkGuard(BuiltInToolNames.WEB_FETCH, params);
         if (guardCheck != null) return guardCheck;
 
-        WebExtractUtils.HttpExtractResult fast = WebExtractUtils.tryFastHttpExtract(url);
-        if (fast.ok()
-                && !fast.dynamicLikely()
-                && fast.text() != null
-                && fast.text().length() >= 200) {
-            LOGGER.log(
-                    Level.INFO,
-                    "web_fetch fast HTTP path succeeded: url={0}, textLen={1}",
-                    new Object[] {url, fast.text().length()});
-            return fast.text();
-        }
+        return fallbackCoordinator.fetch(url, this::executePlaywrightFetch);
+    }
 
+    /**
+     * Executes headless browser navigation and text extraction via Playwright.
+     *
+     * @param url target URL
+     * @return extracted visible text
+     */
+    private String executePlaywrightFetch(String url) {
         String agentId =
-                this.context.currentAgent != null ? this.context.currentAgent.getId() : "default";
+                this.context != null && this.context.currentAgent != null
+                        ? this.context.currentAgent.getId()
+                        : "default";
         synchronized (BrowserAutomationTool.class) {
             PlaywrightManager.initPlaywrightIfNeeded(agentId);
         }
