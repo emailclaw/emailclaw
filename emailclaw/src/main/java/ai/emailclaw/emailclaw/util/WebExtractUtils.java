@@ -17,6 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,7 +30,11 @@ import org.jsoup.Jsoup;
  */
 public class WebExtractUtils {
 
-    private static final HttpClient HTTP = HttpClient.newBuilder().build();
+    private static final HttpClient HTTP =
+            HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(3))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
 
     public record HttpExtractResult(
             boolean ok,
@@ -40,13 +45,22 @@ public class WebExtractUtils {
             String contentType) {}
 
     /**
-     * Attempt to directly fetch and extract visible text from web page via HttpClient.
+     * Attempt to directly fetch and extract visible text from web page via HttpClient with default 4s timeout.
      */
     public static HttpExtractResult tryFastHttpExtract(String url) {
+        return tryFastHttpExtract(url, Duration.ofSeconds(4));
+    }
+
+    /**
+     * Attempt to directly fetch and extract visible text from web page via HttpClient with custom timeout.
+     */
+    public static HttpExtractResult tryFastHttpExtract(String url, Duration timeout) {
+        Duration effectiveTimeout = timeout != null ? timeout : Duration.ofSeconds(4);
         try {
             HttpRequest request =
                     HttpRequest.newBuilder()
                             .uri(URI.create(url))
+                            .timeout(effectiveTimeout)
                             .header(
                                     "User-Agent",
                                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"

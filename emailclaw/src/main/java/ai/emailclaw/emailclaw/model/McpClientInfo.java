@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.model;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * MCP client configuration object.
@@ -30,7 +31,11 @@ public record McpClientInfo(
         List<String> allowedToolNames,
         String authType,
         String oauthRedirectUri,
-        String oauthScope) {
+        String oauthScope,
+        String transport,
+        String url,
+        String headersJson) {
+
     public McpClientInfo {
         key = key != null ? key : "";
         name = name != null ? name : "";
@@ -44,6 +49,74 @@ public record McpClientInfo(
         authType = authType != null ? authType : "Local";
         oauthRedirectUri = oauthRedirectUri != null ? oauthRedirectUri : "";
         oauthScope = oauthScope != null ? oauthScope : "";
+
+        // Backward compatibility normalization for transport, url, and headersJson
+        if (transport == null || transport.isBlank()) {
+            boolean isUrl = command.startsWith("http://") || command.startsWith("https://");
+            if ("sse".equalsIgnoreCase(sourceType)) {
+                transport = "sse";
+            } else if ("Remote".equalsIgnoreCase(sourceType)
+                    || "http".equalsIgnoreCase(sourceType)
+                    || isUrl) {
+                transport = "http";
+            } else {
+                transport = "stdio";
+            }
+        } else {
+            transport = transport.trim().toLowerCase(Locale.ROOT);
+        }
+
+        if (url == null || url.isBlank()) {
+            url =
+                    (command.startsWith("http://") || command.startsWith("https://"))
+                            ? command.trim()
+                            : "";
+        } else {
+            url = url.trim();
+        }
+
+        if (headersJson == null || headersJson.isBlank()) {
+            headersJson = ("http".equals(transport) || "sse".equals(transport)) ? envJson : "";
+        } else {
+            headersJson = headersJson.trim();
+        }
+    }
+
+    public McpClientInfo(
+            String key,
+            String name,
+            boolean builtIn,
+            boolean enabled,
+            String sourceType,
+            String description,
+            String command,
+            List<String> args,
+            String envJson,
+            List<String> toolNames,
+            boolean toolWhitelistEnabled,
+            List<String> allowedToolNames,
+            String authType,
+            String oauthRedirectUri,
+            String oauthScope) {
+        this(
+                key,
+                name,
+                builtIn,
+                enabled,
+                sourceType,
+                description,
+                command,
+                args,
+                envJson,
+                toolNames,
+                toolWhitelistEnabled,
+                allowedToolNames,
+                authType,
+                oauthRedirectUri,
+                oauthScope,
+                null,
+                null,
+                null);
     }
 
     public McpClientInfo() {
@@ -72,7 +145,10 @@ public record McpClientInfo(
                 allowedToolNames,
                 authType,
                 oauthRedirectUri,
-                oauthScope);
+                oauthScope,
+                transport,
+                url,
+                headersJson);
     }
 
     public McpClientInfo withToolWhitelistEnabled(boolean toolWhitelistEnabled) {
@@ -91,7 +167,10 @@ public record McpClientInfo(
                 allowedToolNames,
                 authType,
                 oauthRedirectUri,
-                oauthScope);
+                oauthScope,
+                transport,
+                url,
+                headersJson);
     }
 
     public McpClientInfo withAllowedToolNames(List<String> allowedToolNames) {
@@ -110,7 +189,10 @@ public record McpClientInfo(
                 allowedToolNames,
                 authType,
                 oauthRedirectUri,
-                oauthScope);
+                oauthScope,
+                transport,
+                url,
+                headersJson);
     }
 
     public McpClientInfo withToolNames(List<String> toolNames) {
@@ -129,6 +211,9 @@ public record McpClientInfo(
                 allowedToolNames,
                 authType,
                 oauthRedirectUri,
-                oauthScope);
+                oauthScope,
+                transport,
+                url,
+                headersJson);
     }
 }

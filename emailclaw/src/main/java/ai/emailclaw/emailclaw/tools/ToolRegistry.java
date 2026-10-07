@@ -11,8 +11,10 @@
 package ai.emailclaw.emailclaw.tools;
 
 import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
+import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
+import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -20,13 +22,17 @@ public class ToolRegistry {
     private static final Logger LOGGER = Logger.getLogger(ToolRegistry.class.getName());
 
     public static void registerAll(
-            Toolkit toolkit, ToolRuntimeContext context, Set<String> enabled) {
+            Toolkit toolkit,
+            ToolRuntimeContext context,
+            Set<String> enabled,
+            WebFetchFallbackCoordinator webFetchCoordinator) {
         LOGGER.info("Registering unified tools...");
+        Objects.requireNonNull(webFetchCoordinator, "webFetchCoordinator must not be null");
 
         EmailclawTool[] tools =
                 new EmailclawTool[] {
                     new BrowserAutomationTool(),
-                    new NetworkFetchTool(),
+                    new NetworkFetchTool(webFetchCoordinator),
                     new SystemCommandTool(),
                     new AgentManagementTool(),
                     new MemoryTools()
