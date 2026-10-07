@@ -71,6 +71,13 @@ import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteCronHistoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteTokenUsageRepository;
+import ai.emailclaw.emailclaw.tools.fetch.DefaultLocalHttpFetcher;
+import ai.emailclaw.emailclaw.tools.fetch.ExaMcpFetchProvider;
+import ai.emailclaw.emailclaw.tools.fetch.GenericMcpFetchProvider;
+import ai.emailclaw.emailclaw.tools.fetch.LocalHttpFetcher;
+import ai.emailclaw.emailclaw.tools.fetch.ParallelMcpFetchProvider;
+import ai.emailclaw.emailclaw.tools.fetch.RemoteMcpProviderConfig;
+import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import ai.emailclaw.emailclaw.util.PlaywrightManager;
 import ai.emailclaw.emailclaw.util.WebViewUtils;
 import io.agentscope.core.message.Msg;
@@ -150,7 +157,8 @@ public final class ApplicationBootstrap {
             CronJobService cronJobService,
             MessageBusService messageBusService,
             ChatSessionRepository chatSessionRepository,
-            AppPaths paths) {}
+            AppPaths paths,
+            WebFetchFallbackCoordinator webFetchCoordinator) {}
 
     /**
      * Execute the complete core application initialization and assembly process.
@@ -249,7 +257,65 @@ public final class ApplicationBootstrap {
                         memoryService);
         PluginRegistry pluginRegistry = new PluginRegistry();
         McpService mcpService = new McpService(repository);
-        ToolService toolService = new ToolService(repository, pluginRegistry, mcpService);
+
+        // Assemble WebFetchFallbackCoordinator with Pure DI and privacy controls
+        boolean remoteFetchEnabled =
+                Boolean.parseBoolean(
+                        System.getProperty(
+                                "emailclaw.webfetch.remote.enabled",
+                                System.getenv("EMAILCLAW_WEBFETCH_REMOTE_ENABLED") != null
+                                        ? System.getenv("EMAILCLAW_WEBFETCH_REMOTE_ENABLED")
+                                        : "false"));
+
+        String parallelUrl =
+                System.getProperty(
+                        "emailclaw.mcp.parallel.url",
+                        System.getenv("PARALLEL_MCP_URL") != null
+                                ? System.getenv("PARALLEL_MCP_URL")
+                                : ParallelMcpFetchProvider.DEFAULT_ENDPOINT);
+        String parallelKey =
+                System.getProperty("emailclaw.mcp.parallel.key", System.getenv("PARALLEL_API_KEY"));
+
+        String exaUrl =
+                System.getProperty(
+                        "emailclaw.mcp.exa.url",
+                        System.getenv("EXA_MCP_URL") != null
+                                ? System.getenv("EXA_MCP_URL")
+                                : ExaMcpFetchProvider.DEFAULT_ENDPOINT);
+        String exaKey = System.getProperty("emailclaw.mcp.exa.key", System.getenv("EXA_API_KEY"));
+
+        RemoteMcpProviderConfig parallelConfig =
+                new RemoteMcpProviderConfig(
+                        "Parallel_MCP",
+                        parallelUrl,
+                        "web_fetch",
+                        (parallelKey != null && !parallelKey.isBlank()) ? "Authorization" : null,
+                        (parallelKey != null && !parallelKey.isBlank())
+                                ? "Bearer " + parallelKey.trim()
+                                : null,
+                        Duration.ofSeconds(10),
+                        true);
+        RemoteMcpProviderConfig exaConfig =
+                new RemoteMcpProviderConfig(
+                        "Exa_MCP",
+                        exaUrl,
+                        "web_fetch_exa",
+                        (exaKey != null && !exaKey.isBlank()) ? "x-api-key" : null,
+                        (exaKey != null && !exaKey.isBlank()) ? exaKey.trim() : null,
+                        Duration.ofSeconds(10),
+                        true);
+
+        LocalHttpFetcher localHttpFetcher = new DefaultLocalHttpFetcher();
+        GenericMcpFetchProvider parallelProvider = new GenericMcpFetchProvider(parallelConfig);
+        GenericMcpFetchProvider exaProvider = new GenericMcpFetchProvider(exaConfig);
+        WebFetchFallbackCoordinator webFetchCoordinator =
+                new WebFetchFallbackCoordinator(
+                        localHttpFetcher,
+                        List.of(parallelProvider, exaProvider),
+                        remoteFetchEnabled);
+
+        ToolService toolService =
+                new ToolService(repository, pluginRegistry, mcpService, webFetchCoordinator);
         SkillService skillService = new SkillService(repository);
         GovernanceService governanceService = new GovernanceService(repository);
         RateLimitMiddleware rateLimitMiddleware = new RateLimitMiddleware(Duration.ofMillis(1000));
@@ -359,7 +425,8 @@ public final class ApplicationBootstrap {
                 cronJobService,
                 messageBusService,
                 chatSessionRepository,
-                paths);
+                paths,
+                webFetchCoordinator);
     }
 
     /**
@@ -587,6 +654,9 @@ public final class ApplicationBootstrap {
         LOGGER.info("Closing application, executing cleanup tasks...");
         if (result.cronJobService() != null) {
             result.cronJobService().stop();
+        }
+        if (result.webFetchCoordinator() != null) {
+            result.webFetchCoordinator().close();
         }
         if (result.pluginManager() != null) {
             result.pluginManager().shutdownAll();

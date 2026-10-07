@@ -36,15 +36,44 @@ class AntiBotDetectionFilterTest {
     }
 
     @Test
+    @DisplayName(
+            "Legitimate technical article discussing Turnstile or access denied should NOT be"
+                    + " false-positived")
+    void testLegitimateArticleWithKeywordsNotBlocked() {
+        String technicalArticle =
+                "In this comprehensive blog post, we discuss modern cybersecurity techniques."
+                    + " Cloudflare Turnstile provides an innovative alternative to traditional"
+                    + " CAPTCHAs. Rather than showing a generic 'access denied' prompt, modern"
+                    + " systems use invisible proof of work to authenticate users without"
+                    + " frustrating interactions. Turnstile is widely praised for its balance of"
+                    + " security and usability.";
+        assertFalse(AntiBotDetectionFilter.isBotBlockedText(technicalArticle));
+        assertFalse(AntiBotDetectionFilter.isBotBlocked(200, technicalArticle));
+    }
+
+    @Test
+    @DisplayName("Cloudflare interstitial challenge HTML should be detected as blocked")
+    void testCloudflareChallengeHtml() {
+        String cfHtml =
+                "<html><head><title>Just a moment...</title><script"
+                    + " src=\"/cdn-cgi/challenge-platform/h/b/orchestrate/chl_api/v1\"></script></head><body><div"
+                    + " class=\"cf-browser-verification\">Checking your browser before"
+                    + " accessing...</div></body></html>";
+        assertTrue(AntiBotDetectionFilter.isBotBlocked(200, cfHtml));
+        assertTrue(AntiBotDetectionFilter.isBotBlockedText(cfHtml));
+    }
+
+    @Test
     @DisplayName("Cloudflare interstitial challenge text should be detected as blocked")
     void testCloudflareChallengeText() {
         String cfText =
-                "Just a moment... Please verify you are human to continue. Cloudflare Ray ID:"
-                        + " 89ab32c";
+                "Please verify you are human to continue. Cloudflare Ray ID: 89ab32c. Security"
+                        + " verification.";
         assertTrue(AntiBotDetectionFilter.isBotBlocked(200, cfText));
         assertTrue(AntiBotDetectionFilter.isBotBlockedText(cfText));
 
-        String turnstileText = "Verifying you are human... Turnstile challenge running";
+        String turnstileText =
+                "Checking your browser before accessing... Turnstile challenge-running";
         assertTrue(AntiBotDetectionFilter.isBotBlockedText(turnstileText));
     }
 

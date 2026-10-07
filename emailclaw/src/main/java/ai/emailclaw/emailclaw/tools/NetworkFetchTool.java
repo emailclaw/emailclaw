@@ -20,6 +20,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,15 +33,9 @@ public class NetworkFetchTool extends BaseEmailclawTool {
 
     private final WebFetchFallbackCoordinator fallbackCoordinator;
 
-    public NetworkFetchTool() {
-        this(new WebFetchFallbackCoordinator());
-    }
-
     public NetworkFetchTool(WebFetchFallbackCoordinator fallbackCoordinator) {
         this.fallbackCoordinator =
-                fallbackCoordinator != null
-                        ? fallbackCoordinator
-                        : new WebFetchFallbackCoordinator();
+                Objects.requireNonNull(fallbackCoordinator, "fallbackCoordinator must not be null");
     }
 
     /**
@@ -64,9 +59,8 @@ public class NetworkFetchTool extends BaseEmailclawTool {
     @Tool(
             name = BuiltInToolNames.WEB_FETCH,
             description =
-                    "Fetch a web page and return its text content as simplified text (HTML stripped"
-                        + " to readable text). Use for web pages only. For APIs, use http_request"
-                        + " instead.")
+                    "Fetch a web page and return its text content as simplified readable text or"
+                        + " markdown. Use for web pages only. For APIs, use http_request instead.")
     public String webFetch(
             @ToolParam(name = "url", description = "URL to browse and extract text from")
                     String url) {

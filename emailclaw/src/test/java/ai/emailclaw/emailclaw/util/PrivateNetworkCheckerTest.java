@@ -25,6 +25,10 @@ class PrivateNetworkCheckerTest {
         assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://127.0.0.1:3000/api"));
         assertTrue(
                 PrivateNetworkChecker.isPrivateOrLocalAddress("http://service.local/index.html"));
+        assertTrue(
+                PrivateNetworkChecker.isPrivateOrLocalAddress(
+                        "http://internal-app.internal/status"));
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://database.lan:5432"));
     }
 
     @Test
@@ -33,13 +37,37 @@ class PrivateNetworkCheckerTest {
         assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://10.0.0.1/status"));
         assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://192.168.1.100/config"));
         assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://172.16.0.1/admin"));
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://172.31.255.255/admin"));
     }
 
     @Test
-    @DisplayName("Public internet domain names should not be detected as private/local")
-    void testPublicDomains() {
-        assertFalse(PrivateNetworkChecker.isPrivateOrLocalAddress("https://example.com"));
-        assertFalse(PrivateNetworkChecker.isPrivateOrLocalAddress("https://docs.oracle.com/java"));
+    @DisplayName("CGNAT 100.64.0.0/10 and Link-Local 169.254.0.0/16 should be detected as private")
+    void testCgnatAndLinkLocal() {
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://100.64.0.1/status"));
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://100.127.255.254/status"));
+        // 100.128.0.1 is outside the CGNAT 100.64.0.0/10 block
+        assertFalse(PrivateNetworkChecker.isPrivateOrLocalAddress("http://100.128.0.1/status"));
+
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://169.254.1.1/metadata"));
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://0.0.0.0:8080/"));
+    }
+
+    @Test
+    @DisplayName("IPv6 loopback, link-local, and ULA should be detected as private")
+    void testIpv6PrivateRanges() {
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://[::1]:8080/"));
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://[fe80::1]:8080/"));
+        assertTrue(PrivateNetworkChecker.isPrivateOrLocalAddress("http://[fc00::1]:8080/"));
+        assertTrue(
+                PrivateNetworkChecker.isPrivateOrLocalAddress("http://[fd12:3456:789a::1]:8080/"));
+    }
+
+    @Test
+    @DisplayName("Public literal IP addresses should not be detected as private/local")
+    void testPublicIps() {
+        assertFalse(PrivateNetworkChecker.isPrivateOrLocalAddress("http://8.8.8.8/dns"));
+        assertFalse(PrivateNetworkChecker.isPrivateOrLocalAddress("http://1.1.1.1/dns"));
+        assertFalse(PrivateNetworkChecker.isPrivateOrLocalAddress("http://93.184.216.34/"));
     }
 
     @Test

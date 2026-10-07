@@ -16,25 +16,27 @@ import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.tools.ToolRegistry;
+import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.mcp.McpClientBuilder;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.util.JsonUtils;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
+import io.agentscope.harness.agent.tools.McpServerRegistrationResult;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * Tool toggle and registry service.
- *
- * <p>After refactoring, it no longer holds a tools snapshot, all provided by ConfigManager.
- *
- * <p>Supports custom default vision model config, used for multi-modal tools (like view_image).
+ * Tool toggle and registry service adhering strictly to Pure Dependency Injection principles.
  */
 public class ToolService {
     private static final Logger LOGGER = Logger.getLogger(ToolService.class.getName());
@@ -43,6 +45,7 @@ public class ToolService {
     private final ConfigManager configManager;
     private final PluginRegistry pluginRegistry;
     private final McpService mcpService;
+    private final WebFetchFallbackCoordinator webFetchCoordinator;
 
     /** Default vision model name, used for multi-modal tools. */
     private String defaultVisionModel = "gpt-4o";
@@ -50,16 +53,19 @@ public class ToolService {
     /** Fixed prompt text returned to the model when the tool is disabled. */
     public static final String TOOL_DISABLED_MESSAGE = "Tool disabled.";
 
-    public ToolService(AppContext repository, PluginRegistry pluginRegistry) {
-        this(repository, pluginRegistry, new McpService(repository));
-    }
-
     public ToolService(
-            AppContext repository, PluginRegistry pluginRegistry, McpService mcpService) {
-        this.configManager = repository.configManager();
-        this.pluginRegistry = pluginRegistry;
-        this.mcpService = mcpService;
-        LOGGER.info("ToolService initialized");
+            AppContext repository,
+            PluginRegistry pluginRegistry,
+            McpService mcpService,
+            WebFetchFallbackCoordinator webFetchCoordinator) {
+        this.configManager =
+                Objects.requireNonNull(repository, "repository must not be null").configManager();
+        this.pluginRegistry =
+                Objects.requireNonNull(pluginRegistry, "pluginRegistry must not be null");
+        this.mcpService = Objects.requireNonNull(mcpService, "mcpService must not be null");
+        this.webFetchCoordinator =
+                Objects.requireNonNull(webFetchCoordinator, "webFetchCoordinator must not be null");
+        LOGGER.info("ToolService initialized with singleton WebFetchFallbackCoordinator");
     }
 
     public List<ToolInfo> list() {
@@ -68,7 +74,6 @@ public class ToolService {
         for (String pluginToolName : pluginRegistry.getTools().keySet()) {
             if (!storedNames.contains(pluginToolName)) {
                 LOGGER.info("Discovered new plugin tool: " + pluginToolName);
-                // By default enabled if it's the first time being discovered
                 stored.add(
                         new ToolInfo(pluginToolName, "Plugin tool: " + pluginToolName, true, true));
             }
@@ -111,20 +116,10 @@ public class ToolService {
         }
     }
 
-    /**
-     * Get default vision model name.
-     *
-     * @return default vision model name
-     */
     public String getDefaultVisionModel() {
         return defaultVisionModel;
     }
 
-    /**
-     * Set default vision model name.
-     *
-     * @param defaultVisionModel default vision model name
-     */
     public void setDefaultVisionModel(String defaultVisionModel) {
         if (defaultVisionModel != null && !defaultVisionModel.isBlank()) {
             this.defaultVisionModel = defaultVisionModel;
@@ -140,7 +135,7 @@ public class ToolService {
                         .map(item -> item.name())
                         .collect(Collectors.toSet());
         Toolkit toolkit = new Toolkit();
-        ToolRegistry.registerAll(toolkit, context, enabled);
+        ToolRegistry.registerAll(toolkit, context, enabled, webFetchCoordinator);
 
         for (Map.Entry<String, Object> entry : pluginRegistry.getTools().entrySet()) {
             if (enabled.contains(entry.getKey())) {
@@ -149,7 +144,7 @@ public class ToolService {
             }
         }
 
-        // Register enabled MCP servers with McpServerRegistrationListener
+        // Register configured MCP servers
         registerMcpServers(toolkit);
 
         LOGGER.log(Level.FINE, "Build Toolkit, enabled tool count: {0}", enabled.size());
@@ -157,7 +152,7 @@ public class ToolService {
     }
 
     /**
-     * Registers configured and enabled MCP servers into the Toolkit with registration result tracking.
+     * Registers configured and enabled MCP servers into the Toolkit with initialization safeguards.
      */
     private void registerMcpServers(Toolkit toolkit) {
         if (mcpService == null) {
@@ -167,42 +162,32 @@ public class ToolService {
         if (clients == null || clients.isEmpty()) {
             return;
         }
-        Map<String, McpServerConfig> servers = new HashMap<>();
+
+        Map<String, McpServerConfig> stdioServers = new HashMap<>();
+
         for (McpClientInfo client : clients) {
             if (!client.enabled()) {
                 continue;
             }
-            if (client.command() == null || client.command().isBlank()) {
-                continue;
-            }
-            McpServerConfig cfg = new McpServerConfig();
-            String rawCmd = client.command().trim();
-            boolean isRemoteHttp =
-                    rawCmd.startsWith("http://")
-                            || rawCmd.startsWith("https://")
-                            || "Remote".equalsIgnoreCase(client.sourceType())
-                            || "http".equalsIgnoreCase(client.sourceType())
-                            || "sse".equalsIgnoreCase(client.sourceType());
 
-            if (isRemoteHttp) {
-                String transport = "sse".equalsIgnoreCase(client.sourceType()) ? "sse" : "http";
-                cfg.setTransport(transport);
-                cfg.setUrl(rawCmd);
-                if (client.envJson() != null && !client.envJson().isBlank()) {
-                    try {
-                        @SuppressWarnings("unchecked")
-                        Map<String, String> headers =
-                                JsonUtils.getJsonCodec().fromJson(client.envJson(), Map.class);
-                        cfg.setHeaders(headers);
-                    } catch (Exception e) {
-                        LOGGER.log(
-                                Level.WARNING,
-                                "Failed to parse headers/envJson for remote MCP client: "
-                                        + client.key(),
-                                e);
-                    }
-                }
+            String transport = client.transport();
+            String rawCmd = client.command().trim();
+            String url = !client.url().isBlank() ? client.url().trim() : rawCmd;
+
+            boolean isRemote =
+                    "http".equalsIgnoreCase(transport)
+                            || "sse".equalsIgnoreCase(transport)
+                            || url.startsWith("http://")
+                            || url.startsWith("https://")
+                            || "Remote".equalsIgnoreCase(client.sourceType());
+
+            if (isRemote) {
+                registerRemoteMcpClient(toolkit, client, url);
             } else {
+                if (rawCmd.isBlank()) {
+                    continue;
+                }
+                McpServerConfig cfg = new McpServerConfig();
                 cfg.setTransport("stdio");
                 cfg.setCommand(rawCmd);
                 if (client.args() != null && !client.args().isEmpty()) {
@@ -221,18 +206,93 @@ public class ToolService {
                                 e);
                     }
                 }
+                if (client.toolWhitelistEnabled()
+                        && client.allowedToolNames() != null
+                        && !client.allowedToolNames().isEmpty()) {
+                    cfg.setEnableTools(client.allowedToolNames());
+                }
+                cfg.setTimeout(Duration.ofSeconds(10));
+                cfg.setInitializationTimeout(Duration.ofSeconds(8));
+                stdioServers.put(client.key(), cfg);
             }
+        }
+
+        if (!stdioServers.isEmpty()) {
+            LOGGER.log(Level.INFO, "Registering {0} stdio MCP server(s)...", stdioServers.size());
+            McpServerRegistrar.register(
+                    toolkit, stdioServers, result -> mcpService.recordRegistrationResult(result));
+        }
+    }
+
+    private void registerRemoteMcpClient(Toolkit toolkit, McpClientInfo client, String url) {
+        String transport = "sse".equalsIgnoreCase(client.transport()) ? "sse" : "http";
+        LOGGER.log(
+                Level.INFO,
+                "Registering remote MCP server: key={0}, transport={1}, url={2}",
+                new Object[] {client.key(), transport, url});
+
+        McpClientWrapper wrapper = null;
+        try {
+            McpClientBuilder builder =
+                    McpClientBuilder.create(client.key())
+                            .protocolVersions("2024-11-05", "2025-03-26", "2025-06-18")
+                            .timeout(Duration.ofSeconds(10))
+                            .initializationTimeout(Duration.ofSeconds(8));
+
+            if ("sse".equalsIgnoreCase(transport)) {
+                builder.sseTransport(url);
+            } else {
+                builder.streamableHttpTransport(url);
+            }
+
+            String headersJson =
+                    !client.headersJson().isBlank() ? client.headersJson() : client.envJson();
+            if (headersJson != null && !headersJson.isBlank()) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> headers =
+                            JsonUtils.getJsonCodec().fromJson(headersJson, Map.class);
+                    if (headers != null) {
+                        builder.headers(headers);
+                    }
+                } catch (Exception e) {
+                    LOGGER.log(
+                            Level.WARNING,
+                            "Failed to parse headersJson for remote MCP client: " + client.key(),
+                            e);
+                }
+            }
+
+            wrapper = builder.buildSync();
+            wrapper.initialize().block(Duration.ofSeconds(8));
+
+            Toolkit.ToolRegistration reg = toolkit.registration().mcpClient(wrapper);
             if (client.toolWhitelistEnabled()
                     && client.allowedToolNames() != null
                     && !client.allowedToolNames().isEmpty()) {
-                cfg.setEnableTools(client.allowedToolNames());
+                reg.enableTools(client.allowedToolNames());
             }
-            servers.put(client.key(), cfg);
-        }
-        if (!servers.isEmpty()) {
-            LOGGER.log(Level.INFO, "Registering {0} MCP server(s)...", servers.size());
-            McpServerRegistrar.register(
-                    toolkit, servers, result -> mcpService.recordRegistrationResult(result));
+            reg.apply();
+
+            mcpService.recordRegistrationResult(
+                    McpServerRegistrationResult.success(client.key(), transport));
+            LOGGER.log(Level.INFO, "Successfully registered remote MCP server: {0}", client.key());
+        } catch (Throwable t) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to register remote MCP server: key="
+                            + client.key()
+                            + ", cause="
+                            + t.getMessage(),
+                    t);
+            if (wrapper != null) {
+                try {
+                    wrapper.close();
+                } catch (Exception ignored) {
+                }
+            }
+            mcpService.recordRegistrationResult(
+                    McpServerRegistrationResult.failed(client.key(), transport, t));
         }
     }
 }

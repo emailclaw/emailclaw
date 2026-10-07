@@ -8,30 +8,18 @@
  *
  * THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-package ai.emailclaw.emailclaw;
+package ai.emailclaw.emailclaw.tools.fetch;
+
+import ai.emailclaw.emailclaw.util.WebExtractUtils;
+import java.time.Duration;
 
 /**
- * This is a classic and common "Launcher" design pattern in JavaFX 11+ and higher versions (also known as a Fat JAR / Hack technique to bypass module system issues for independent startup).
- * Only used to solve the bootstrap issue of running JavaFX applications with Maven.
- * The actual application startup logic is in FxApp.java.
+ * Default implementation of {@link LocalHttpFetcher} using Java HttpClient and HTML parsing.
  */
-public class Launcher {
-    public static final String APP_VERSION = "v26.10.7";
+public class DefaultLocalHttpFetcher implements LocalHttpFetcher {
 
-    public static void main(String[] args) {
-        boolean isService = false;
-        for (String arg : args) {
-            if ("--service".equalsIgnoreCase(arg) || "-s".equalsIgnoreCase(arg)) {
-                isService = true;
-                break;
-            }
-        }
-        if (isService) {
-            ServiceApp.main(args);
-        } else {
-            // Directly call FxApp's main method, bypassing Maven's default JavaFX bootstrap
-            // mechanism
-            FxApp.main(args);
-        }
+    @Override
+    public WebExtractUtils.HttpExtractResult fetch(String url, Duration timeout) {
+        return WebExtractUtils.tryFastHttpExtract(url, timeout);
     }
 }

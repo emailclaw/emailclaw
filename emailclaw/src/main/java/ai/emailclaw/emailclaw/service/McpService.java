@@ -196,51 +196,19 @@ public class McpService {
 
     /**
      * Creates a predefined remote Parallel AI Search MCP client configuration.
-     * Whitelists "web_search" so real-time search is enabled without conflicting with web_fetch.
      *
      * @return pre-configured McpClientInfo for Parallel Search
      */
     public static McpClientInfo createParallelSearchPreset() {
-        return new McpClientInfo(
-                "parallel-search",
-                "Parallel AI Web Search",
-                false,
-                true,
-                "Remote",
-                "High-performance real-time web search powered by Parallel AI",
-                "https://search.parallel.ai/mcp",
-                List.of(),
-                "",
-                List.of("web_search"),
-                true,
-                List.of("web_search"),
-                "Local",
-                "",
-                "");
+        return ai.emailclaw.emailclaw.service.mcp.McpPresetCatalog.parallelSearchPreset();
     }
 
     /**
      * Creates a predefined remote Exa AI Search MCP client configuration.
-     * Whitelists "web_search_exa" for semantic web search.
      *
      * @return pre-configured McpClientInfo for Exa Search
      */
     public static McpClientInfo createExaSearchPreset() {
-        return new McpClientInfo(
-                "exa-search",
-                "Exa AI Web Search",
-                false,
-                true,
-                "Remote",
-                "Semantic web search powered by Exa AI",
-                "https://mcp.exa.ai/mcp?tools=web_search_exa",
-                List.of(),
-                "",
-                List.of("web_search_exa"),
-                true,
-                List.of("web_search_exa"),
-                "Local",
-                "",
-                "");
+        return ai.emailclaw.emailclaw.service.mcp.McpPresetCatalog.exaSearchPreset();
     }
 }

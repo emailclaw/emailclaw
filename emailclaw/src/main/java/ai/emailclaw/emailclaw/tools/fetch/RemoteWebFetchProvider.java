@@ -13,7 +13,7 @@ package ai.emailclaw.emailclaw.tools.fetch;
 /**
  * Strategy interface for remote web fetch providers.
  */
-public interface RemoteWebFetchProvider {
+public interface RemoteWebFetchProvider extends AutoCloseable {
 
     /**
      * Gets the unique provider identifier (e.g. "Parallel_MCP", "Exa_MCP").
@@ -36,4 +36,12 @@ public interface RemoteWebFetchProvider {
      * @return extracted content, or null if fetch failed or was blocked
      */
     String fetch(String url);
+
+    /**
+     * Closes and releases client connections and resources.
+     */
+    @Override
+    default void close() {
+        // default no-op
+    }
 }

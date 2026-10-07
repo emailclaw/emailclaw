@@ -15,11 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,9 @@ class ReadFileToolIntegrationTest {
 
     @TempDir Path tempDir;
 
+    private static final WebFetchFallbackCoordinator DUMMY_COORDINATOR =
+            new WebFetchFallbackCoordinator((url, timeout) -> null, List.of(), false);
+
     @Test
     @DisplayName("ToolRegistry registers view_text_file and list_directory when enabled")
     void testToolRegistryRegistersReadFileTool() {
@@ -36,7 +41,7 @@ class ReadFileToolIntegrationTest {
         Set<String> enabled =
                 Set.of(BuiltInToolNames.VIEW_TEXT_FILE, BuiltInToolNames.LIST_DIRECTORY);
 
-        ToolRegistry.registerAll(toolkit, null, enabled);
+        ToolRegistry.registerAll(toolkit, null, enabled, DUMMY_COORDINATOR);
 
         assertNotNull(toolkit.getTool(BuiltInToolNames.VIEW_TEXT_FILE));
         assertNotNull(toolkit.getTool(BuiltInToolNames.LIST_DIRECTORY));
@@ -48,7 +53,7 @@ class ReadFileToolIntegrationTest {
         Toolkit toolkit = new Toolkit();
         Set<String> enabled = Set.of(BuiltInToolNames.VIEW_TEXT_FILE);
 
-        ToolRegistry.registerAll(toolkit, null, enabled);
+        ToolRegistry.registerAll(toolkit, null, enabled, DUMMY_COORDINATOR);
 
         assertNotNull(toolkit.getTool(BuiltInToolNames.VIEW_TEXT_FILE));
         assertNull(toolkit.getTool(BuiltInToolNames.LIST_DIRECTORY));
