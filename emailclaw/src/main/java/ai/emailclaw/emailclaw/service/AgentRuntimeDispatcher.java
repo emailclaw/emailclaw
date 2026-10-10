@@ -468,7 +468,12 @@ public class AgentRuntimeDispatcher {
                             + " inner builder",
                     e);
         }
-        return builder.build();
+        HarnessAgent harnessAgent = builder.build();
+        io.agentscope.core.tool.Toolkit agentToolkit = harnessAgent.getToolkit();
+        if (agentToolkit != null) {
+            toolService.reconcileAgentToolkit(agentToolkit, toolRuntimeContext);
+        }
+        return harnessAgent;
     }
 
     private GenerateOptions buildGenerateOptions(ProviderInfo provider, ModelInfo model) {

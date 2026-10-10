@@ -16,7 +16,7 @@ package ai.emailclaw.emailclaw;
  * The actual application startup logic is in FxApp.java.
  */
 public class Launcher {
-    public static final String APP_VERSION = "v26.10.7";
+    public static final String APP_VERSION = "v26.10.10";
 
     public static void main(String[] args) {
         boolean isService = false;

@@ -62,7 +62,7 @@ public class WebFetchFallbackCoordinator implements AutoCloseable {
 
     private final LocalHttpFetcher localHttpFetcher;
     private final List<RemoteWebFetchProvider> remoteProviders;
-    private final boolean remoteFallbackEnabled;
+    private volatile boolean remoteFallbackEnabled;
     private final Duration overallBudget;
     private final WebFetchMetrics metrics;
 
@@ -98,6 +98,14 @@ public class WebFetchFallbackCoordinator implements AutoCloseable {
 
     public boolean isRemoteFallbackEnabled() {
         return remoteFallbackEnabled;
+    }
+
+    public void setRemoteFallbackEnabled(boolean remoteFallbackEnabled) {
+        this.remoteFallbackEnabled = remoteFallbackEnabled;
+        LOGGER.log(
+                Level.INFO,
+                "WebFetchFallbackCoordinator remoteFallbackEnabled updated to: {0}",
+                remoteFallbackEnabled);
     }
 
     public List<RemoteWebFetchProvider> getRemoteProviders() {

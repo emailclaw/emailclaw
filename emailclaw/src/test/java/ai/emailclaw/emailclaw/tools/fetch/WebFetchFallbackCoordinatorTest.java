@@ -292,4 +292,100 @@ class WebFetchFallbackCoordinatorTest {
         assertTrue(result.contains("TestMcp: Returned null or blocked content"));
         assertTrue(result.contains("Tier 4 (Playwright): Page read timeout"));
     }
+
+    @Test
+    @DisplayName("Dynamically toggling remote fallback setting should take effect immediately")
+    void testDynamicRemoteFallbackToggle() {
+        AtomicBoolean providerCalled = new AtomicBoolean(false);
+        RemoteWebFetchProvider mockProvider =
+                new RemoteWebFetchProvider() {
+                    @Override
+                    public String getProviderName() {
+                        return "MockProvider";
+                    }
+
+                    @Override
+                    public boolean isAvailable() {
+                        return true;
+                    }
+
+                    @Override
+                    public String fetch(String url) {
+                        providerCalled.set(true);
+                        return "remote dynamic content";
+                    }
+                };
+
+        WebFetchFallbackCoordinator coordinator =
+                new WebFetchFallbackCoordinator(FAILING_HTTP_FETCHER, List.of(mockProvider), false);
+
+        assertFalse(coordinator.isRemoteFallbackEnabled());
+        String initialResult =
+                coordinator.fetch("https://target.com/article", url -> "browser content");
+        assertEquals("browser content", initialResult);
+        assertFalse(providerCalled.get(), "Provider should not be called while disabled");
+
+        // Dynamically enable
+        coordinator.setRemoteFallbackEnabled(true);
+        assertTrue(coordinator.isRemoteFallbackEnabled());
+
+        String toggledResult =
+                coordinator.fetch("https://target.com/article", url -> "browser content");
+        assertEquals("remote dynamic content", toggledResult);
+        assertTrue(providerCalled.get(), "Provider should be called after enabling");
+    }
+
+    @Test
+    @DisplayName("Disabled remote provider should be skipped in fallback cascade")
+    void testDisabledProviderSkipped() {
+        AtomicBoolean disabledCalled = new AtomicBoolean(false);
+        AtomicBoolean activeCalled = new AtomicBoolean(false);
+
+        RemoteWebFetchProvider disabledProvider =
+                new RemoteWebFetchProvider() {
+                    @Override
+                    public String getProviderName() {
+                        return "DisabledProvider";
+                    }
+
+                    @Override
+                    public boolean isAvailable() {
+                        return false;
+                    }
+
+                    @Override
+                    public String fetch(String url) {
+                        disabledCalled.set(true);
+                        return "disabled content";
+                    }
+                };
+
+        RemoteWebFetchProvider activeProvider =
+                new RemoteWebFetchProvider() {
+                    @Override
+                    public String getProviderName() {
+                        return "ActiveProvider";
+                    }
+
+                    @Override
+                    public boolean isAvailable() {
+                        return true;
+                    }
+
+                    @Override
+                    public String fetch(String url) {
+                        activeCalled.set(true);
+                        return "active content";
+                    }
+                };
+
+        WebFetchFallbackCoordinator coordinator =
+                new WebFetchFallbackCoordinator(
+                        FAILING_HTTP_FETCHER, List.of(disabledProvider, activeProvider), true);
+
+        String result = coordinator.fetch("https://target.com/article", url -> "browser content");
+        assertEquals("active content", result);
+        assertFalse(disabledCalled.get(), "Disabled provider should not be called");
+        assertTrue(activeCalled.get(), "Active provider should be called");
+    }
 }

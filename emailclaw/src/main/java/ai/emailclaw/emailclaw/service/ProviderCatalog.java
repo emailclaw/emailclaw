@@ -11,8 +11,10 @@
 package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.model.ModelInfo;
+import ai.emailclaw.emailclaw.model.ModelReplacement;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -420,7 +422,8 @@ public final class ProviderCatalog {
         addFreeModel(p, "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning (free)");
         addFreeModel(p, "poolside/laguna-xs-2.1:free", "Poolside: Laguna XS 2.1 (free)");
         addFreeModel(p, "poolside/laguna-s-2.1:free", "Poolside: Laguna S 2.1 (free)");
-        addFreeModel(p, "stepfun/step-3.7-flash:free", "Step 3.7 Flash");
+        addFreeModel(p, "stepfun/step-5-preview-free", "StepFun: Step 5 Preview (free)");
+        //        addFreeModel(p, "stepfun/step-3.7-flash:free", "Step 3.7 Flash");
         // addFreeModel(p, "qwen/qwen3.8-27b:free", "Qwen: Qwen3.8 27B (free)");
         // addFreeModel(p, "z-ai/glm-5.2:free", "Z.ai: GLM 5.2 (free)");
     }
@@ -680,5 +683,57 @@ public final class ProviderCatalog {
 
         model.setSupportsImage(model.isSupportsImage() || image);
         model.setSupportsVideo(model.isSupportsVideo() || video);
+    }
+
+    /**
+     * Returns the list of built-in model upgrade and replacement rules.
+     *
+     * <p>When built-in models are superseded during software upgrades, rules declared here
+     * allow the configuration subsystem to automatically migrate agents and clean up legacy models.
+     *
+     * @return an unmodifiable list of built-in model replacement rules
+     */
+    public static List<ModelReplacement> builtinModelReplacements() {
+        List<ModelReplacement> replacements = new ArrayList<>();
+        replacements.add(
+                new ModelReplacement(
+                        "kilo",
+                        "stepfun/step-3.7-flash:free",
+                        "stepfun/step-5-preview-free",
+                        "Kilo free tier model upgrade: step-3.7-flash superseded by"
+                                + " step-5-preview"));
+        return Collections.unmodifiableList(replacements);
+    }
+
+    /**
+     * Resolves the target replacement model ID for a given provider and current model ID.
+     *
+     * <p>Supports chained migrations (e.g., A -> B -> C) with cycle detection.
+     *
+     * @param providerId the provider ID
+     * @param currentModelId the current model ID
+     * @return the resolved model ID if any replacement rule matched, or the original model ID
+     */
+    public static String resolveReplacement(String providerId, String currentModelId) {
+        if (currentModelId == null || currentModelId.isBlank()) {
+            return currentModelId;
+        }
+        String resolved = currentModelId;
+        List<ModelReplacement> rules = builtinModelReplacements();
+        int maxHops = 10;
+        while (maxHops-- > 0) {
+            String next = null;
+            for (ModelReplacement rule : rules) {
+                if (rule.matches(providerId, resolved)) {
+                    next = rule.newModelId();
+                    break;
+                }
+            }
+            if (next == null || next.equals(resolved)) {
+                break;
+            }
+            resolved = next;
+        }
+        return resolved;
     }
 }
