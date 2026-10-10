@@ -265,7 +265,7 @@ public final class ApplicationBootstrap {
                                 "emailclaw.webfetch.remote.enabled",
                                 System.getenv("EMAILCLAW_WEBFETCH_REMOTE_ENABLED") != null
                                         ? System.getenv("EMAILCLAW_WEBFETCH_REMOTE_ENABLED")
-                                        : "false"));
+                                        : "true"));
 
         String parallelUrl =
                 System.getProperty(
@@ -284,17 +284,16 @@ public final class ApplicationBootstrap {
                                 : ExaMcpFetchProvider.DEFAULT_ENDPOINT);
         String exaKey = System.getProperty("emailclaw.mcp.exa.key", System.getenv("EXA_API_KEY"));
 
+        boolean parallelEnabled = parallelKey != null && !parallelKey.isBlank();
         RemoteMcpProviderConfig parallelConfig =
                 new RemoteMcpProviderConfig(
                         "Parallel_MCP",
                         parallelUrl,
                         "web_fetch",
-                        (parallelKey != null && !parallelKey.isBlank()) ? "Authorization" : null,
-                        (parallelKey != null && !parallelKey.isBlank())
-                                ? "Bearer " + parallelKey.trim()
-                                : null,
+                        parallelEnabled ? "Authorization" : null,
+                        parallelEnabled ? "Bearer " + parallelKey.trim() : null,
                         Duration.ofSeconds(10),
-                        true);
+                        parallelEnabled);
         RemoteMcpProviderConfig exaConfig =
                 new RemoteMcpProviderConfig(
                         "Exa_MCP",

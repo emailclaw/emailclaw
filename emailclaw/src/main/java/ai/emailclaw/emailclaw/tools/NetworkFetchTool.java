@@ -63,7 +63,12 @@ public class NetworkFetchTool extends BaseEmailclawTool {
                         + " markdown. Use for web pages only. For APIs, use http_request instead.")
     public String webFetch(
             @ToolParam(name = "url", description = "URL to browse and extract text from")
-                    String url) {
+                    String url,
+            @ToolParam(
+                            name = "max_chars",
+                            description = "Max characters to return (default 50000)",
+                            required = false)
+                    Integer maxChars) {
         if (off(BuiltInToolNames.WEB_FETCH)) {
             return ToolService.TOOL_DISABLED_MESSAGE;
         }
@@ -72,11 +77,32 @@ public class NetworkFetchTool extends BaseEmailclawTool {
         }
         Map<String, Object> params = new HashMap<>();
         params.put("url", url);
+        if (maxChars != null) {
+            params.put("max_chars", maxChars);
+        }
 
         String guardCheck = checkGuard(BuiltInToolNames.WEB_FETCH, params);
         if (guardCheck != null) return guardCheck;
 
-        return fallbackCoordinator.fetch(url, this::executePlaywrightFetch);
+        String content = fallbackCoordinator.fetch(url, this::executePlaywrightFetch);
+        if (content != null && maxChars != null && maxChars > 0 && content.length() > maxChars) {
+            content =
+                    content.substring(0, maxChars)
+                            + "\n\n[Content truncated at "
+                            + maxChars
+                            + " characters by Emailclaw]";
+        }
+        return content;
+    }
+
+    /**
+     * Overload for Java callers without max_chars limit.
+     *
+     * @param url target URL
+     * @return extracted web content
+     */
+    public String webFetch(String url) {
+        return webFetch(url, null);
     }
 
     /**

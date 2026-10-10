@@ -35,7 +35,7 @@ public class AgentInfo {
     private String providerId = "kilo";
 
     /** Bound model identifier. */
-    private String modelId = "stepfun/step-3.7-flash:free";
+    private String modelId = "stepfun/step-5-preview-free"; // "stepfun/step-3.7-flash:free";
 
     /** Fallback provider identifier. */
     private String fallbackProviderId = "kilo";

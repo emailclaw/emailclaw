@@ -15,6 +15,8 @@ import ai.emailclaw.emailclaw.model.ToolInfo;
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
+import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
+import ai.emailclaw.emailclaw.tools.NetworkFetchTool;
 import ai.emailclaw.emailclaw.tools.ToolRegistry;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import io.agentscope.core.tool.Toolkit;
@@ -149,6 +151,45 @@ public class ToolService {
 
         LOGGER.log(Level.FINE, "Build Toolkit, enabled tool count: {0}", enabled.size());
         return toolkit;
+    }
+
+    /**
+     * Gets the singleton coordinator for multi-tier web fetch fallbacks.
+     *
+     * @return fallback coordinator instance
+     */
+    public WebFetchFallbackCoordinator getWebFetchCoordinator() {
+        return webFetchCoordinator;
+    }
+
+    /**
+     * Reconciles the agent toolkit after HarnessAgent construction to ensure Emailclaw's
+     * industrial-grade tools (such as NetworkFetchTool with 4-tier fallback) take precedence
+     * over AgentScope HarnessAgent's naive built-in tools (such as WebTools.WebFetchTool).
+     *
+     * @param agentToolkit active toolkit from the built agent
+     * @param context tool runtime context
+     */
+    public void reconcileAgentToolkit(Toolkit agentToolkit, ToolRuntimeContext context) {
+        if (agentToolkit == null) {
+            return;
+        }
+        LOGGER.info(
+                "Reconciling agent toolkit: ensuring Emailclaw unified tools override HarnessAgent"
+                        + " defaults");
+        Set<String> enabled =
+                list().stream()
+                        .filter(ToolInfo::enabled)
+                        .map(ToolInfo::name)
+                        .collect(Collectors.toSet());
+        if (enabled.contains(BuiltInToolNames.WEB_FETCH) && webFetchCoordinator != null) {
+            NetworkFetchTool networkFetchTool = new NetworkFetchTool(webFetchCoordinator);
+            networkFetchTool.init(context, enabled);
+            agentToolkit.registerTool(networkFetchTool);
+            LOGGER.info(
+                    "Successfully re-registered Emailclaw NetworkFetchTool onto agent toolkit,"
+                            + " replacing default AgentScope WebFetchTool.");
+        }
     }
 
     /**

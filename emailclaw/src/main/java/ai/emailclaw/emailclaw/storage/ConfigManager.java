@@ -24,6 +24,7 @@ import ai.emailclaw.emailclaw.model.GlobalConfig;
 import ai.emailclaw.emailclaw.model.HeartbeatConfig;
 import ai.emailclaw.emailclaw.model.McpClientInfo;
 import ai.emailclaw.emailclaw.model.ModelInfo;
+import ai.emailclaw.emailclaw.model.ModelReplacement;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.SecurityRule;
@@ -50,6 +51,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -392,6 +394,25 @@ public class ConfigManager {
             }
             return true;
         }
+        List<ModelReplacement> replacements = ProviderCatalog.builtinModelReplacements();
+        Iterator<ModelInfo> iterator = existing.getModels().iterator();
+        while (iterator.hasNext()) {
+            ModelInfo model = iterator.next();
+            if (model != null && model.isBuiltIn()) {
+                for (ModelReplacement rule : replacements) {
+                    if (rule.matches(existing.getId(), model.getId())) {
+                        LOGGER.log(
+                                Level.INFO,
+                                "Removed superseded built-in model {0} from provider [{1}]",
+                                new Object[] {model.getId(), existing.getId()});
+                        iterator.remove();
+                        existingModelsById.remove(model.getId());
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
         for (ModelInfo builtinModel : builtin.getModels()) {
             if (builtinModel == null || builtinModel.getId() == null) {
                 continue;
@@ -483,6 +504,8 @@ public class ConfigManager {
             if (agentsState.value.isEmpty()) {
                 agentsState.value = buildDefaultAgents();
                 changed = true;
+            } else {
+                changed = migrateLegacyAgentModels(agentsState.value);
             }
             if (changed) {
                 agentsState.lastWrittenContent =
@@ -592,6 +615,58 @@ public class ConfigManager {
         agents.add(synthesizer);
 
         return agents;
+    }
+
+    /**
+     * Migrates legacy or obsolete models configured on agents to their successors.
+     *
+     * <p>Both primary and fallback model bindings are checked and migrated if a matching
+     * {@link ModelReplacement} rule is defined in {@link ProviderCatalog#builtinModelReplacements()}.
+     *
+     * @param agents the list of agents to inspect and update
+     * @return {@code true} if any agent configuration was updated, {@code false} otherwise
+     */
+    private boolean migrateLegacyAgentModels(List<AgentInfo> agents) {
+        if (agents == null || agents.isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        for (AgentInfo agent : agents) {
+            if (agent == null) {
+                continue;
+            }
+            // Check and migrate primary model
+            String currentPrimary = agent.getModelId();
+            if (currentPrimary != null && !currentPrimary.isBlank()) {
+                String replacementPrimary =
+                        ProviderCatalog.resolveReplacement(agent.getProviderId(), currentPrimary);
+                if (!currentPrimary.equals(replacementPrimary)) {
+                    agent.setModelId(replacementPrimary);
+                    changed = true;
+                    LOGGER.log(
+                            Level.INFO,
+                            "Migrated agent [{0}] primary model from {1} to {2}",
+                            new Object[] {agent.getId(), currentPrimary, replacementPrimary});
+                }
+            }
+
+            // Check and migrate fallback model
+            String currentFallback = agent.getFallbackModelId();
+            if (currentFallback != null && !currentFallback.isBlank()) {
+                String replacementFallback =
+                        ProviderCatalog.resolveReplacement(
+                                agent.getFallbackProviderId(), currentFallback);
+                if (!currentFallback.equals(replacementFallback)) {
+                    agent.setFallbackModelId(replacementFallback);
+                    changed = true;
+                    LOGGER.log(
+                            Level.INFO,
+                            "Migrated agent [{0}] fallback model from {1} to {2}",
+                            new Object[] {agent.getId(), currentFallback, replacementFallback});
+                }
+            }
+        }
+        return changed;
     }
 
     // ------------------------- Global Config -------------------------
@@ -1346,6 +1421,17 @@ public class ConfigManager {
 
     private void reloadAgentsFromDisk() {
         reloadListState(paths.agentsFile, AGENTS_REF, agentsState, EVENT_AGENTS);
+
+        synchronized (agentsState.lock) {
+            if (agentsState.value != null && migrateLegacyAgentModels(agentsState.value)) {
+                agentsState.lastWrittenContent =
+                        writeJson(
+                                paths.agentsFile,
+                                agentsState.value,
+                                agentsState.lastWrittenContent);
+                notifyChange(EVENT_AGENTS);
+            }
+        }
     }
 
     private void reloadGlobalConfigFromDisk() {
