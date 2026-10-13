@@ -85,6 +85,66 @@ class WebFetchFallbackCoordinatorTest {
     }
 
     @Test
+    @DisplayName("Tier 1 Fast HTTP should accept RSS/XML feeds directly without cascading")
+    void testTier1FastHttpRssFeedSuccess() {
+        String rssContent =
+                "# TechCrunch Feed\n\n### OpenAI News\nDate: Mon, 12 Oct 2026\nAI breakthroughs.";
+        LocalHttpFetcher rssHttpFetcher =
+                (url, timeout) ->
+                        new WebExtractUtils.HttpExtractResult(
+                                true,
+                                false,
+                                rssContent,
+                                "ok",
+                                200,
+                                "application/rss+xml; charset=UTF-8");
+
+        AtomicBoolean remoteCalled = new AtomicBoolean(false);
+        RemoteWebFetchProvider remoteProvider =
+                new RemoteWebFetchProvider() {
+                    @Override
+                    public String getProviderName() {
+                        return "Remote_Provider";
+                    }
+
+                    @Override
+                    public boolean isAvailable() {
+                        return true;
+                    }
+
+                    @Override
+                    public String fetch(String url) {
+                        remoteCalled.set(true);
+                        return "remote text";
+                    }
+                };
+
+        WebFetchFallbackCoordinator coordinator =
+                new WebFetchFallbackCoordinator(
+                        rssHttpFetcher,
+                        List.of(remoteProvider),
+                        true,
+                        Duration.ofSeconds(10),
+                        new WebFetchMetrics());
+
+        AtomicBoolean browserCalled = new AtomicBoolean(false);
+        String result =
+                coordinator.fetch(
+                        "https://techcrunch.com/feed/",
+                        url -> {
+                            browserCalled.set(true);
+                            return "browser text";
+                        });
+
+        assertEquals(rssContent, result);
+        assertFalse(
+                remoteCalled.get(), "Remote provider must not be called for successful RSS feed");
+        assertFalse(
+                browserCalled.get(), "Browser fallback must not be called for successful RSS feed");
+        assertEquals(1, coordinator.getMetrics().getFastHttpSuccesses());
+    }
+
+    @Test
     @DisplayName("Private network URLs should bypass remote providers and route to local fetch")
     void testPrivateNetworkBypass() {
         AtomicBoolean providerCalled = new AtomicBoolean(false);

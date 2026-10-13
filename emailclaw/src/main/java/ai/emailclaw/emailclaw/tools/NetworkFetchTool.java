@@ -116,41 +116,42 @@ public class NetworkFetchTool extends BaseEmailclawTool {
                 this.context != null && this.context.currentAgent != null
                         ? this.context.currentAgent.getId()
                         : "default";
-        synchronized (BrowserAutomationTool.class) {
+        synchronized (PlaywrightManager.PLAYWRIGHT_MUTEX) {
             PlaywrightManager.initPlaywrightIfNeeded(agentId);
-        }
-        Page page = null;
-        try {
-            page = PlaywrightManager.createEphemeralPage(agentId);
-            LOGGER.log(Level.INFO, "Playwright preparing to open URL: {0}", url);
-            page.navigate(
-                    url,
-                    new Page.NavigateOptions()
-                            .setWaitUntil(WaitUntilState.NETWORKIDLE)
-                            .setTimeout(15000));
-            return BrowserAutomationTool.extractVisibleTextFromPage(page);
-        } catch (TimeoutError e) {
+            Page page = null;
             try {
-                if (page != null && !page.isClosed()) {
-                    String text = BrowserAutomationTool.extractVisibleTextFromPage(page);
-                    if (!text.isBlank()) return text;
-                }
-            } catch (Exception ex) {
-                LOGGER.log(Level.WARNING, "Playwright text extraction failed", ex);
-                if (isConnectionFailure(ex)) {
-                    PlaywrightManager.reset(agentId);
-                }
-            }
-            return "Page read timeout and failed to extract text.";
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Playwright page read failed", e);
-            return "Page read failed: " + e.getMessage();
-        } finally {
-            if (page != null) {
+                page = PlaywrightManager.createEphemeralPage(agentId);
+                LOGGER.log(Level.INFO, "Playwright preparing to open URL: {0}", url);
+                page.navigate(
+                        url,
+                        new Page.NavigateOptions()
+                                .setWaitUntil(WaitUntilState.NETWORKIDLE)
+                                .setTimeout(15000));
+                return BrowserAutomationTool.extractVisibleTextFromPage(page);
+            } catch (TimeoutError e) {
                 try {
-                    page.close();
-                } catch (Exception closeErr) {
-                    LOGGER.log(Level.FINE, "Failed to close ephemeral Playwright page", closeErr);
+                    if (page != null && !page.isClosed()) {
+                        String text = BrowserAutomationTool.extractVisibleTextFromPage(page);
+                        if (!text.isBlank()) return text;
+                    }
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, "Playwright text extraction failed", ex);
+                    if (isConnectionFailure(ex)) {
+                        PlaywrightManager.reset(agentId);
+                    }
+                }
+                return "Page read timeout and failed to extract text.";
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Playwright page read failed", e);
+                return "Page read failed: " + e.getMessage();
+            } finally {
+                if (page != null) {
+                    try {
+                        page.close();
+                    } catch (Exception closeErr) {
+                        LOGGER.log(
+                                Level.FINE, "Failed to close ephemeral Playwright page", closeErr);
+                    }
                 }
             }
         }

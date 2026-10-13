@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.ui;
 
 import javafx.beans.binding.Bindings;
+import javafx.beans.property.StringProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.ComboBox;
@@ -115,6 +116,10 @@ public class CronExpressionEditor extends VBox {
 
     public String getCronExpression() {
         return cronTextField.getText().trim();
+    }
+
+    public StringProperty cronExpressionProperty() {
+        return cronTextField.textProperty();
     }
 
     /**

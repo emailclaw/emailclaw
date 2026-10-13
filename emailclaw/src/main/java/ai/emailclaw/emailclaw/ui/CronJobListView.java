@@ -562,6 +562,37 @@ public class CronJobListView implements ViewPane {
                 sessionBox.setValue(match.getId() + " (" + match.getName() + ")");
             }
         }
+        sessionBox.setOnAction(
+                e -> {
+                    String selected = sessionBox.getValue();
+                    if (selected != null && !selected.isBlank()) {
+                        int parenIdx = selected.indexOf(" (");
+                        if (parenIdx > 0 && selected.endsWith(")")) {
+                            String sessionName =
+                                    selected.substring(parenIdx + 2, selected.length() - 1).trim();
+                            if (!sessionName.isBlank()) {
+                                String current = textArea.getText();
+                                if (current == null || current.isBlank()) {
+                                    textArea.setText(sessionName);
+                                } else {
+                                    String trimmed = current.trim();
+                                    boolean alreadyAppended =
+                                            trimmed.equals(sessionName)
+                                                    || trimmed.endsWith("\n" + sessionName)
+                                                    || trimmed.startsWith(sessionName + "\n")
+                                                    || trimmed.contains("\n" + sessionName + "\n");
+                                    if (!alreadyAppended) {
+                                        if (current.endsWith("\n")) {
+                                            textArea.appendText(sessionName);
+                                        } else {
+                                            textArea.appendText("\n" + sessionName);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
         ComboBox<DeliveryMode> modeBox = new ComboBox<>();
         modeBox.getItems().addAll(DeliveryMode.FINAL, DeliveryMode.STREAM);
         modeBox.setConverter(
@@ -685,16 +716,73 @@ public class CronJobListView implements ViewPane {
         rtTab.setClosable(false);
         tabPane.getTabs().addAll(basicTab, taskTab, dispatchTab, rtTab);
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        dialog.getDialogPane().setContent(tabPane);
+        Label validationHint = new Label();
+        validationHint.setStyle("-fx-text-fill: red; -fx-font-size: 12px;");
+        validationHint.setWrapText(true);
+        validationHint.setPadding(new Insets(4, 16, 4, 16));
+
+        VBox dialogContent = new VBox(6, tabPane, validationHint);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+        dialog.getDialogPane().setContent(dialogContent);
         dialog.getDialogPane().setPrefWidth(620);
         dialog.getDialogPane().setPrefHeight(650);
+
+        Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveType);
+        if (saveButton != null && !saveButton.getStyleClass().contains("btn-primary")) {
+            saveButton.getStyleClass().add("btn-primary");
+        }
+
+        Runnable refreshSaveState =
+                () -> {
+                    String error = null;
+                    if (nameField.getText() == null || nameField.getText().trim().isBlank()) {
+                        error = "Job name is required.";
+                    } else if (textArea.getText() == null || textArea.getText().trim().isBlank()) {
+                        error = "Task Prompt is required.";
+                    } else if (cronEditor.getCronExpression() == null
+                            || cronEditor.getCronExpression().isBlank()) {
+                        error = "Cron expression is required.";
+                    } else if (tzBox.getValue() == null || tzBox.getValue().trim().isBlank()) {
+                        error = "Timezone is required.";
+                    } else if (concurrencyField.getText() == null
+                            || !concurrencyField.getText().trim().matches("[1-9]\\d*")) {
+                        error = "Max Concurrency must be a positive integer.";
+                    } else if (timeoutField.getText() == null
+                            || !timeoutField.getText().trim().matches("[1-9]\\d*")) {
+                        error = "Timeout must be a positive integer.";
+                    } else if (countdownCb.isSelected()
+                            && (countdownField.getText() == null
+                                    || !countdownField.getText().trim().matches("[1-9]\\d*"))) {
+                        error = "Countdown limit must be a positive integer.";
+                    }
+
+                    boolean valid = (error == null);
+                    if (saveButton != null) {
+                        saveButton.setDisable(!valid);
+                    }
+                    validationHint.setText(valid ? "" : error);
+                };
+
+        nameField.textProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        textArea.textProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        cronEditor
+                .cronExpressionProperty()
+                .addListener((obs, oldV, newV) -> refreshSaveState.run());
+        tzBox.valueProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        tzBox.getEditor().textProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        concurrencyField.textProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        timeoutField.textProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        countdownCb.selectedProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+        countdownField.textProperty().addListener((obs, oldV, newV) -> refreshSaveState.run());
+
+        refreshSaveState.run();
+
         // ===== Result Conversion =====
         dialog.setResultConverter(
                 btn -> {
                     if (btn != saveType) return null;
                     String name = nameField.getText().trim();
                     if (name.isBlank()) {
-                        showAlert("Validation Error", "Job name is required.");
                         return null;
                     }
                     ScheduleSpec schedule =
@@ -710,20 +798,36 @@ public class CronJobListView implements ViewPane {
                     // Target session optional: if not selected, service layer will auto-create new
                     // session by task name after saving
                     String sessionVal = sessionBox.getValue();
-                    String selectedSessionId = "";
+                    String parsedSessionId = "";
                     if (sessionVal != null && !sessionVal.isBlank()) {
-                        selectedSessionId = sessionVal;
                         int parenIdx = sessionVal.indexOf(" (");
-                        if (parenIdx > 0) {
-                            selectedSessionId = sessionVal.substring(0, parenIdx);
-                        }
+                        parsedSessionId =
+                                (parenIdx > 0) ? sessionVal.substring(0, parenIdx) : sessionVal;
                     }
+                    final String selectedSessionId = parsedSessionId;
                     LOGGER.info(
                             "Saving scheduled task, target session: "
                                     + (selectedSessionId.isBlank()
                                             ? "(Not selected, will auto-create)"
                                             : selectedSessionId));
-                    String textContent = textArea.getText();
+                    String textContent =
+                            textArea.getText() != null ? textArea.getText().trim() : "";
+                    if (textContent.isBlank() && !selectedSessionId.isBlank()) {
+                        List<ChatSessionInfo> all = cronService.sessions(currentAgent.getId());
+                        ChatSessionInfo match =
+                                all.stream()
+                                        .filter(s -> selectedSessionId.equals(s.getId()))
+                                        .findFirst()
+                                        .orElse(null);
+                        if (match != null
+                                && match.getName() != null
+                                && !match.getName().isBlank()) {
+                            textContent = match.getName().trim();
+                        }
+                    }
+                    if (textContent.isBlank()) {
+                        return null;
+                    }
                     DispatchSpec dispatch =
                             new DispatchSpec(
                                     "channel",

@@ -114,13 +114,17 @@ public class GenericMcpFetchProvider implements RemoteWebFetchProvider {
             }
 
             if (Boolean.TRUE.equals(result.isError())) {
+                String errorDetail = extractTextContent(result.content());
                 LOGGER.log(
                         Level.WARNING,
-                        "Remote provider [{0}] reported tool execution error for URL: {1}",
-                        new Object[] {config.name(), safeLogUrl});
-                // In MCP, tool errors could be 4xx or 5xx, so we record failure
-                circuitBreaker.recordTransportFailure(
-                        new IllegalStateException("MCP tool execution error flagged by server"));
+                        "Remote provider [{0}] reported tool execution error for URL: {1}, detail:"
+                                + " {2}",
+                        new Object[] {config.name(), safeLogUrl, errorDetail});
+                // In MCP, tool execution errors (e.g. CRAWL_UNEXPECTED_CONTENT_TYPE, 404, or target
+                // crawl block)
+                // indicate the target URL cannot be fetched by this provider. The MCP server
+                // connection itself
+                // is healthy, so we do not trip the transport circuit breaker.
                 return null;
             }
 

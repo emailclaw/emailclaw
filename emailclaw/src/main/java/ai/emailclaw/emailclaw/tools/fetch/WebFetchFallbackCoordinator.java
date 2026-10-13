@@ -170,8 +170,7 @@ public class WebFetchFallbackCoordinator implements AutoCloseable {
         WebExtractUtils.HttpExtractResult fast = localHttpFetcher.fetch(url, fastHttpTimeout);
         if (fast.ok()
                 && !fast.dynamicLikely()
-                && fast.text() != null
-                && fast.text().length() >= 200
+                && hasSufficientContent(fast)
                 && !AntiBotDetectionFilter.isBotBlocked(fast.statusCode(), fast.text())) {
             metrics.recordFastHttpSuccess();
             LOGGER.log(
@@ -208,8 +207,7 @@ public class WebFetchFallbackCoordinator implements AutoCloseable {
         WebExtractUtils.HttpExtractResult fast = localHttpFetcher.fetch(url, fastHttpTimeout);
         if (fast.ok()
                 && !fast.dynamicLikely()
-                && fast.text() != null
-                && fast.text().length() >= 200
+                && hasSufficientContent(fast)
                 && !AntiBotDetectionFilter.isBotBlocked(fast.statusCode(), fast.text())) {
             metrics.recordFastHttpSuccess();
             LOGGER.log(
@@ -245,10 +243,7 @@ public class WebFetchFallbackCoordinator implements AutoCloseable {
         Duration fastHttpTimeout = minDuration(Duration.ofSeconds(4), remaining);
         WebExtractUtils.HttpExtractResult fast = localHttpFetcher.fetch(url, fastHttpTimeout);
 
-        if (fast.ok()
-                && !fast.dynamicLikely()
-                && fast.text() != null
-                && fast.text().length() >= 200) {
+        if (fast.ok() && !fast.dynamicLikely() && hasSufficientContent(fast)) {
             if (!AntiBotDetectionFilter.isBotBlocked(fast.statusCode(), fast.text())) {
                 metrics.recordFastHttpSuccess();
                 LOGGER.log(
@@ -419,6 +414,14 @@ public class WebFetchFallbackCoordinator implements AutoCloseable {
 
     private static Duration minDuration(Duration a, Duration b) {
         return a.compareTo(b) <= 0 ? a : b;
+    }
+
+    private static boolean hasSufficientContent(WebExtractUtils.HttpExtractResult fast) {
+        if (fast == null || fast.text() == null || fast.text().isBlank()) {
+            return false;
+        }
+        return fast.text().length() >= 200
+                || !WebExtractUtils.isHtmlContentType(fast.contentType());
     }
 
     @Override

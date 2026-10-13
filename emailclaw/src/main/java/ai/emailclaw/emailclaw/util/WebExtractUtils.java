@@ -92,10 +92,19 @@ public class WebExtractUtils {
                         false, true, "", "http status not success", status, contentType);
             }
             String contentTypeLower = contentType.toLowerCase(Locale.ROOT);
-            if (!contentTypeLower.contains("text/html")
-                    && !contentTypeLower.contains("application/xhtml+xml")) {
+            boolean isHtml = isHtmlContentType(contentTypeLower);
+            boolean isXmlOrFeed = isXmlOrFeedContentType(contentTypeLower);
+            boolean isJson = isJsonContentType(contentTypeLower);
+            boolean isText = isPlainTextContentType(contentTypeLower);
+
+            if (!isHtml && !isXmlOrFeed && !isJson && !isText) {
                 return new HttpExtractResult(
-                        false, true, "", "content-type is not html", status, contentType);
+                        false,
+                        true,
+                        "",
+                        "unsupported content-type: " + contentType,
+                        status,
+                        contentType);
             }
             byte[] bodyBytes = response.body();
             String contentEncoding =
@@ -121,9 +130,21 @@ public class WebExtractUtils {
             } catch (Exception ignored) {
                 cs = StandardCharsets.UTF_8;
             }
-            String html = new String(bodyBytes, cs);
-            String text = extractVisibleTextFromHtml(html);
-            boolean dynamicLikely = isProbablyDynamicPage(html, text);
+            String decoded = new String(bodyBytes, cs);
+            String text;
+            boolean dynamicLikely;
+
+            if (isXmlOrFeed) {
+                text = extractFeedOrXmlText(decoded);
+                dynamicLikely = false;
+            } else if (isJson || isText) {
+                text = normalizeWhitespace(decoded);
+                dynamicLikely = false;
+            } else {
+                text = extractVisibleTextFromHtml(decoded);
+                dynamicLikely = isProbablyDynamicPage(decoded, text);
+            }
+
             return new HttpExtractResult(true, dynamicLikely, text, "ok", status, contentType);
         } catch (Exception e) {
             return new HttpExtractResult(
@@ -230,6 +251,90 @@ public class WebExtractUtils {
                 .replace("&quot;", "\"")
                 .replace("&#39;", "'")
                 .replace("&apos;", "'");
+    }
+
+    public static boolean isHtmlContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String lower = contentType.toLowerCase(Locale.ROOT);
+        return lower.contains("text/html") || lower.contains("application/xhtml+xml");
+    }
+
+    public static boolean isXmlOrFeedContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String lower = contentType.toLowerCase(Locale.ROOT);
+        return lower.contains("/rss+xml")
+                || lower.contains("/atom+xml")
+                || lower.contains("/xml")
+                || lower.contains("+xml")
+                || lower.contains("text/xml");
+    }
+
+    public static boolean isJsonContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String lower = contentType.toLowerCase(Locale.ROOT);
+        return lower.contains("application/json") || lower.contains("text/json");
+    }
+
+    public static boolean isPlainTextContentType(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String lower = contentType.toLowerCase(Locale.ROOT);
+        return lower.contains("text/plain")
+                || lower.contains("text/markdown")
+                || lower.contains("text/csv");
+    }
+
+    public static String extractFeedOrXmlText(String xml) {
+        if (xml == null || xml.isBlank()) {
+            return "";
+        }
+        try {
+            org.jsoup.nodes.Document doc =
+                    Jsoup.parse(xml, "", org.jsoup.parser.Parser.xmlParser());
+            org.jsoup.select.Elements items = doc.select("item, entry");
+            if (!items.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                String feedTitle = doc.select("channel > title, feed > title").text();
+                if (!feedTitle.isBlank()) {
+                    sb.append("# ").append(feedTitle).append("\n\n");
+                }
+                for (org.jsoup.nodes.Element item : items) {
+                    String title = item.select("title").text();
+                    String link = item.select("link").text();
+                    if (link.isBlank()) {
+                        link = item.select("link").attr("href");
+                    }
+                    String pubDate = item.select("pubDate, published, updated").text();
+                    String desc = item.select("description, summary, content").text();
+                    if (!title.isBlank()) {
+                        sb.append("### ").append(title).append("\n");
+                    }
+                    if (!pubDate.isBlank()) {
+                        sb.append("Date: ").append(pubDate).append("\n");
+                    }
+                    if (!link.isBlank()) {
+                        sb.append("Link: ").append(link).append("\n");
+                    }
+                    if (!desc.isBlank()) {
+                        sb.append(desc).append("\n\n");
+                    }
+                }
+                String result = normalizeWhitespace(sb.toString());
+                if (!result.isBlank()) {
+                    return result;
+                }
+            }
+            return normalizeWhitespace(doc.text());
+        } catch (Throwable t) {
+            return extractVisibleTextFromHtml(xml);
+        }
     }
 
     private static String normalizeWhitespace(String input) {
