@@ -1667,10 +1667,14 @@ public class ChatView implements ViewPane {
                             .append("'>")
                             .append(escape(m.getRole()))
                             .append("</div>");
+                    String contentText = m.effectiveContent();
+                    if (contentText == null || contentText.isBlank()) {
+                        contentText = "(No content)";
+                    }
                     html.append("<div class='content content-")
                             .append(safeRole)
                             .append("'>")
-                            .append(escape(m.effectiveContent()))
+                            .append(escape(contentText))
                             .append("</div>");
                 } else {
                     html.append("<div class='role role-")

@@ -706,6 +706,7 @@ public class MainWindow extends BorderPane {
                     Button btn = new Button(channelButtonText(plugin.displayName(), isEnabled));
                     btn.getStyleClass().add("menu-btn");
                     btn.setMaxWidth(Double.MAX_VALUE);
+                    btn.setId("btn-channel-" + plugin.id());
 
                     javafx.animation.Timeline timeline =
                             new javafx.animation.Timeline(

@@ -115,6 +115,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
 
             Button addBtn = new Button("+ Add Mailbox");
             addBtn.getStyleClass().add("btn-primary");
+            addBtn.setId("btn-add-mailbox");
             addBtn.setOnAction(e -> showAddOrEditDialog(null));
 
             HBox headerBox = new HBox(8, new Label("Configured Mailboxes:"), addBtn);
@@ -130,6 +131,7 @@ public class EmailclawChannelConfigViewProvider implements CustomConfigViewProvi
             this.getChildren().addAll(switchBox, headerBox, scrollPane);
 
             saveButton.getStyleClass().add("btn-primary");
+            saveButton.setId("btn-save-global-config");
             saveButton.setOnAction(
                     e -> {
                         Map<String, Object> result = new HashMap<>();
@@ -406,6 +408,12 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
 
             saveButton = new Button(initialConfig == null ? "Add Mailbox" : "Update Mailbox");
             saveButton.getStyleClass().add("btn-primary");
+            saveButton.setId("btn-save-mailbox");
+            sysEmailRadio.setId("radio-sys-email");
+            ownEmailRadio.setId("radio-own-email");
+            sysAgreementCheckBox.setId("check-sys-agreement");
+            sysRegistrationEmailField.setId("field-sys-reg-email");
+            sysOneTimePasswordField.setId("field-sys-otp");
             saveButton.setOnAction(
                     e -> {
                         if (validateForm() == null) {
@@ -866,6 +874,7 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                                         Alert alert = new Alert(Alert.AlertType.INFORMATION);
                                         alert.setTitle("Validation Successful");
                                         alert.setHeaderText("Registration Completed");
+                                        alert.getDialogPane().setId("dialog-validation-successful");
 
                                         VBox contentBox = new VBox(8);
                                         contentBox

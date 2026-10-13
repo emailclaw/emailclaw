@@ -165,29 +165,29 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
 
         String agentId =
                 this.context.currentAgent != null ? this.context.currentAgent.getId() : "default";
-        synchronized (BrowserAutomationTool.class) {
+        synchronized (PlaywrightManager.PLAYWRIGHT_MUTEX) {
             PlaywrightManager.initPlaywrightIfNeeded(agentId);
-        }
-        try {
-            return executeBrowserUseAction(
-                    agentId,
-                    normalizedAction,
-                    url,
-                    x,
-                    y,
-                    selector,
-                    text,
-                    key,
-                    scrollX,
-                    scrollY,
-                    value,
-                    waitMs,
-                    jsExpression);
-        } catch (TimeoutError e) {
-            return recoverBrowserUseAfterTimeout(normalizedAction, agentId);
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "browser_use execution failed", e);
-            return ToolResultBlock.error("Browser action failed: " + e.getMessage());
+            try {
+                return executeBrowserUseAction(
+                        agentId,
+                        normalizedAction,
+                        url,
+                        x,
+                        y,
+                        selector,
+                        text,
+                        key,
+                        scrollX,
+                        scrollY,
+                        value,
+                        waitMs,
+                        jsExpression);
+            } catch (TimeoutError e) {
+                return recoverBrowserUseAfterTimeout(normalizedAction, agentId);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "browser_use execution failed", e);
+                return ToolResultBlock.error("Browser action failed: " + e.getMessage());
+            }
         }
     }
 

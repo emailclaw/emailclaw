@@ -435,12 +435,13 @@ public class CronJobService implements AutoCloseable {
                 });
         List<CronJobSpec> jobs = new ArrayList<>(configManager.getCronJobs());
         jobs.add(created);
-        configManager.saveCronJobs(jobs);
         // Initialize runtime state
         jobStates.put(jobId, CronJobState.empty());
         runningCounts.put(jobId, 0);
-        // Register schedule if started and job is enabled
-        if (started && created.enabled()) {
+        configManager.saveCronJobs(jobs);
+        // Register schedule if started, job is enabled, and not already scheduled by reload
+        // listener
+        if (started && created.enabled() && !scheduledJobs.containsKey(jobId)) {
             scheduleJob(created);
         }
         return created;
@@ -469,8 +470,9 @@ public class CronJobService implements AutoCloseable {
             jobs.add(spec);
         }
         configManager.saveCronJobs(jobs);
-        // Register new schedule if started and job is enabled
-        if (started && spec.enabled()) {
+        // Register new schedule if started, job is enabled, and not already scheduled by reload
+        // listener
+        if (started && spec.enabled() && !scheduledJobs.containsKey(spec.id())) {
             scheduleJob(spec);
         }
         return spec;
@@ -580,8 +582,9 @@ public class CronJobService implements AutoCloseable {
     /**
      * Register a scheduled trigger for a job.
      */
-    private void scheduleJob(CronJobSpec spec) {
+    private synchronized void scheduleJob(CronJobSpec spec) {
         if (spec.id() == null || spec.id().isBlank()) return;
+        unscheduleJob(spec.id());
         ScheduleSpec schedule = spec.schedule();
         if (schedule == null) return;
         String jobId = spec.id();
@@ -716,15 +719,16 @@ public class CronJobService implements AutoCloseable {
     private void executeJob(CronJobSpec spec, CronJobTrigger trigger) {
         String jobId = spec.id();
         if (jobId == null || jobId.isBlank()) return;
-        // Concurrency control
+        // Concurrency control with atomic check-and-increment
         int maxConcurrency = spec.runtime() != null ? spec.runtime().maxConcurrency() : 1;
-        int currentRunning = runningCounts.getOrDefault(jobId, 0);
-        if (currentRunning >= maxConcurrency) {
+        int currentRunning = runningCounts.compute(jobId, (k, v) -> (v == null ? 0 : v) + 1);
+        if (currentRunning > maxConcurrency) {
+            runningCounts.compute(jobId, (k, v) -> (v == null || v <= 1 ? 0 : v - 1));
             LOGGER.log(
                     Level.WARNING,
                     "Job has reached maximum concurrency, skipping execution: id={0}, running={1},"
                             + " max={2}",
-                    new Object[] {jobId, currentRunning, maxConcurrency});
+                    new Object[] {jobId, currentRunning - 1, maxConcurrency});
             recordExecution(
                     jobId,
                     CronJobStatus.SKIPPED,
@@ -732,7 +736,6 @@ public class CronJobService implements AutoCloseable {
                     trigger);
             return;
         }
-        runningCounts.merge(jobId, 1, Integer::sum);
         ZonedDateTime runAt = ZonedDateTime.now();
         String runAtStr = runAt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
         // Update status: running
@@ -786,7 +789,29 @@ public class CronJobService implements AutoCloseable {
                     Level.INFO,
                     "Scheduled task session set up: channel={0}, userId={1}",
                     new Object[] {session.getChannel(), session.getUserId()});
-            String prompt = spec.inputPrompt() != null ? spec.inputPrompt() : "";
+            String prompt = spec.inputPrompt() != null ? spec.inputPrompt().trim() : "";
+            if (prompt.isBlank()
+                    && session != null
+                    && session.getName() != null
+                    && !session.getName().isBlank()) {
+                prompt = session.getName().trim();
+                LOGGER.log(
+                        Level.INFO,
+                        "Cron job input prompt is empty, falling back to session name: id={0},"
+                                + " fallbackPrompt={1}",
+                        new Object[] {jobId, prompt});
+            }
+            if (prompt.isBlank()) {
+                LOGGER.log(
+                        Level.WARNING,
+                        "Cron job execution rejected: task prompt cannot be empty: id={0}",
+                        jobId);
+                CronJobStatus status = CronJobStatus.ERROR;
+                String error = "Task prompt cannot be empty";
+                updateState(jobId, null, runAtStr, status, error);
+                recordExecution(jobId, status, error, trigger);
+                return;
+            }
             int timeoutSeconds =
                     appContext
                             .loadAgentConfig(agent.getId())
@@ -869,7 +894,7 @@ public class CronJobService implements AutoCloseable {
             updateState(jobId, null, runAtStr, status, error);
             recordExecution(jobId, status, error, trigger);
         } finally {
-            runningCounts.merge(jobId, -1, Integer::sum);
+            runningCounts.compute(jobId, (k, v) -> (v == null || v <= 1 ? 0 : v - 1));
             // Countdown logic
             CronJobSpec latestSpec = get(jobId);
             if (latestSpec != null

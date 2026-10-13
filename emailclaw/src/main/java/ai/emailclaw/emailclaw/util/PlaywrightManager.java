@@ -38,6 +38,16 @@ public class PlaywrightManager {
 
     private static final ConcurrentMap<String, Page> activePageMap = new ConcurrentHashMap<>();
 
+    /**
+     * Global synchronization mutex for all Playwright operations.
+     *
+     * <p>Playwright Java's underlying IPC Connection to Chromium is strictly not thread-safe. All
+     * calls that touch Page, BrowserContext, or Playwright across threads (e.g. concurrent
+     * web_fetch calls or parallel browser_use interactions) must synchronize on this mutex to
+     * prevent internal driver object handle collisions.
+     */
+    public static final Object PLAYWRIGHT_MUTEX = PlaywrightManager.class;
+
     private static volatile Path browserDataDir = null;
 
     /**
@@ -168,7 +178,7 @@ public class PlaywrightManager {
      * <p>{@link #initPlaywrightIfNeeded} must have completed for the given agentId before calling
      * this method.
      */
-    public static Page createEphemeralPage(String agentId) {
+    public static synchronized Page createEphemeralPage(String agentId) {
         BrowserContext ctx = browserContextMap.get(agentId);
         if (ctx == null) {
             throw new IllegalStateException("Browser context not initialized: agent=" + agentId);
