@@ -701,6 +701,7 @@ public class ChatView implements ViewPane {
         styleToolbarButton(chatHistoryBtn, false);
         styleToolbarButton(attachBtn, false);
         styleToolbarButton(sendBtn, true);
+        sendBtn.setId("btn-chat-send");
         attachBtn.setOnAction(e -> chooseAttachments());
         attachBtn.setTooltip(attachTooltip);
         newChatBtn.setOnAction(
@@ -760,6 +761,7 @@ public class ChatView implements ViewPane {
                         + "-fx-border-width: 1;"
                         + "-fx-background-radius: 8;"
                         + "-fx-border-radius: 8;");
+        input.setId("field-chat-input");
         input.setPromptText("\"↑↓\" for message navigation - \"/\" for quick commands");
         input.setPrefRowCount(3);
         input.setMinHeight(78);

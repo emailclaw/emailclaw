@@ -187,6 +187,7 @@ public class CronJobListView implements ViewPane {
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Button createBtn = new Button("+ Create Job");
+        createBtn.setId("btn-create-job");
         createBtn.getStyleClass().add("primary-btn");
         createBtn.setOnAction(e -> showCreateDialog());
         Button templateBtn = new Button("From Template");
@@ -383,7 +384,8 @@ public class CronJobListView implements ViewPane {
         actions.setPrefWidth(280);
         actions.setAlignment(Pos.CENTER_LEFT);
         Button runBtn = new Button("Run");
-        runBtn.getStyleClass().add("chip-btn");
+        runBtn.setId("btn-run-job-" + (job.name() != null ? job.name() : job.id()));
+        runBtn.getStyleClass().addAll("chip-btn", "btn-run-job");
         runBtn.setStyle("-fx-font-size: 11px; -fx-padding: 4 8;");
         runBtn.setOnAction(
                 e -> {
@@ -451,6 +453,7 @@ public class CronJobListView implements ViewPane {
         dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
         // ===== Form Fields =====
         TextField nameField = new TextField(existing != null ? existing.name() : "");
+        nameField.setId("field-job-name");
         nameField.setPromptText("e.g. Morning Brief");
         CheckBox enabledCb = new CheckBox("Enabled");
         enabledCb.setSelected(existing == null || existing.enabled());
@@ -497,9 +500,11 @@ public class CronJobListView implements ViewPane {
                         existing != null && existing.inputPrompt() != null
                                 ? existing.inputPrompt()
                                 : "");
+        textArea.setId("field-job-prompt");
         textArea.setPrefRowCount(3);
         textArea.setPromptText("Message text / Input Prompt");
         ComboBox<String> channelBox = new ComboBox<>();
+        channelBox.setId("combo-target-channel");
         channelBox
                 .getItems()
                 .addAll(ChannelIds.CONSOLE, ChannelIds.EMAILCLAW); // ChannelIds.DINGTALK,
@@ -509,6 +514,7 @@ public class CronJobListView implements ViewPane {
                         : ChannelIds.CONSOLE;
         channelBox.setValue(initialChannel);
         ComboBox<String> sessionBox = new ComboBox<>();
+        sessionBox.setId("combo-target-session");
         sessionBox.setPromptText("Select a session (optional, auto-create if empty)");
         sessionBox.setEditable(false);
         sessionBox.setValue(null);
@@ -631,6 +637,7 @@ public class CronJobListView implements ViewPane {
                         || existing.runtime().shareSession());
         // ===== Form Layout =====
         TabPane tabPane = new TabPane();
+        tabPane.setId("tab-pane-job");
         // Tab 1: Basic Information
         VBox basicBox = new VBox(12);
         basicBox.setPadding(new Insets(16));
@@ -728,8 +735,11 @@ public class CronJobListView implements ViewPane {
         dialog.getDialogPane().setPrefHeight(650);
 
         Button saveButton = (Button) dialog.getDialogPane().lookupButton(saveType);
-        if (saveButton != null && !saveButton.getStyleClass().contains("btn-primary")) {
-            saveButton.getStyleClass().add("btn-primary");
+        if (saveButton != null) {
+            saveButton.setId("btn-save-job");
+            if (!saveButton.getStyleClass().contains("btn-primary")) {
+                saveButton.getStyleClass().add("btn-primary");
+            }
         }
 
         Runnable refreshSaveState =

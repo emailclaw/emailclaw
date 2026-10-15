@@ -13,6 +13,7 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw.ui;
 import ai.emailclaw.emailclaw.model.AgentIds;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailMailPreset;
+import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailPresetDomains;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailPresetRegistry;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.EmailclawChannelConfig;
 import ai.emailclaw.emailclaw.plugin.channel.emailclaw.MailboxAccountConfig;
@@ -820,6 +821,12 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                     emailAddressField.getText() == null ? "" : emailAddressField.getText().trim();
             if (email.isBlank()) return "Please fill in Email Address.";
             if (!isValidEmail(email)) return "Email Address format is invalid.";
+            if (EmailPresetDomains.isMicrosoftDomain(email)) {
+                return "Microsoft Outlook/Hotmail accounts no longer support password or App"
+                        + " Password authentication (deprecated by Microsoft in September 2024;"
+                        + " OAuth 2.0 Modern Auth is required). Please use Gmail (App Password),"
+                        + " QQ, NetEase (163/126), or iCloud.";
+            }
             String password = passwordField.getText() == null ? "" : passwordField.getText().trim();
             if (password.isBlank()) return "Please fill in Email Password or App Password.";
 
@@ -1018,10 +1025,21 @@ By using the Service, you acknowledge and agree to be bound by the following Ema
                 setServerSectionsVisible(true);
                 return;
             }
-            autoPresetHint.setText(
-                    "Detected "
-                            + preset.displayName()
-                            + " preset. Server settings are managed automatically.");
+            if (EmailPresetDomains.isMicrosoftDomain(email)) {
+                autoPresetHint.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 12px;");
+                autoPresetHint.setText(
+                        "⚠️ Notice: Microsoft permanently deprecated Basic Authentication and App"
+                                + " Passwords for Outlook/Hotmail in September 2024. Outlook now"
+                                + " requires Modern Authentication (OAuth 2.0 / XOAUTH2). Password"
+                                + " login will fail. Please use Gmail (App Password), QQ, NetEase,"
+                                + " or iCloud instead.");
+            } else {
+                autoPresetHint.setStyle("-fx-text-fill: #3b82f6; -fx-font-size: 12px;");
+                autoPresetHint.setText(
+                        "Detected "
+                                + preset.displayName()
+                                + " preset. Server settings are managed automatically.");
+            }
             setServerSectionsVisible(false);
             if (!force && !imapHostField.getText().isBlank() && !smtpHostField.getText().isBlank())
                 return;

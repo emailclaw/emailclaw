@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -59,6 +60,13 @@ public final class EmailPresetDomains {
                     PROTON,
                     PROTONMAIL);
 
+    /**
+     * Microsoft email domains that require Modern Authentication (OAuth 2.0 / XOAUTH2).
+     * Microsoft permanently deprecated Basic Authentication and App Passwords for consumer
+     * accounts (Outlook.com, Hotmail, Live, MSN) on September 16, 2024.
+     */
+    public static final Set<String> MICROSOFT_DOMAINS = Set.of(OUTLOOK, HOTMAIL, LIVE, MSN);
+
     private EmailPresetDomains() {}
 
     public static boolean isSystemProvided(String email) {
@@ -66,5 +74,19 @@ public final class EmailPresetDomains {
             return false;
         }
         return EMAILCLAW_EMAIL.equalsIgnoreCase(email.substring(email.lastIndexOf('@') + 1).trim());
+    }
+
+    /**
+     * Checks if the given email address belongs to a Microsoft personal domain requiring OAuth 2.0.
+     *
+     * @param email Email address to inspect
+     * @return True if the email domain is managed by Microsoft personal services
+     */
+    public static boolean isMicrosoftDomain(String email) {
+        if (email == null || !email.contains("@") || email.endsWith("@")) {
+            return false;
+        }
+        String domain = email.substring(email.lastIndexOf('@') + 1).trim().toLowerCase(Locale.ROOT);
+        return MICROSOFT_DOMAINS.contains(domain);
     }
 }

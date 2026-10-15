@@ -539,6 +539,7 @@ public class MainWindow extends BorderPane {
         Label title = new Label("Current Project: ");
         title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #333333;");
         Button settingsProjectBtn = new Button("⚙");
+        settingsProjectBtn.setId("btn-settings-project");
         settingsProjectBtn.getStyleClass().add("link-btn");
         settingsProjectBtn.setStyle("-fx-font-size: 14px; -fx-cursor: hand; -fx-padding: 0 4;");
         settingsProjectBtn.setOnAction(e -> showView(ViewIds.PROJECTS));
@@ -895,6 +896,7 @@ public class MainWindow extends BorderPane {
 
     private Button menuButton(String text, String viewId) {
         Button b = new Button(text);
+        b.setId("btn-nav-" + viewId);
         b.getStyleClass().add("menu-btn");
         b.setMaxWidth(Double.MAX_VALUE);
         b.setOnAction(e -> showView(viewId));
@@ -1108,6 +1110,7 @@ public class MainWindow extends BorderPane {
         for (int i = 0; i < limit; i++) {
             ProjectInfo p = projects.get(i);
             RadioButton rb = new RadioButton(p.getName());
+            rb.setId("radio-project-" + p.getName());
             rb.setToggleGroup(projectToggleGroup);
             rb.setUserData(p);
             rb.setMaxWidth(Double.MAX_VALUE);
