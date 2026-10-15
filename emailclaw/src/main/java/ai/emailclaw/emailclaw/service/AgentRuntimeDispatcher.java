@@ -471,7 +471,7 @@ public class AgentRuntimeDispatcher {
         HarnessAgent harnessAgent = builder.build();
         io.agentscope.core.tool.Toolkit agentToolkit = harnessAgent.getToolkit();
         if (agentToolkit != null) {
-            toolService.reconcileAgentToolkit(agentToolkit, toolRuntimeContext);
+            toolService.reconcileAgentToolkit(agentToolkit, toolkit, toolRuntimeContext);
         }
         return harnessAgent;
     }

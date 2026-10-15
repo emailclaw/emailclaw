@@ -5,7 +5,7 @@
 
   <groupId>ai.emailclaw</groupId>
   <artifactId>emailclaw</artifactId>
-  <version>26.10.13</version>
+  <version>26.10.15</version>
 
   <name>emailclaw</name>
   <url>http://www.emailclaw.email</url>
@@ -21,6 +21,8 @@
     <playwright.exclude.linux>driver/linux*/**</playwright.exclude.linux>
     <mockito.version>5.23.0</mockito.version>
     <junit-jupiter.version>6.1.1</junit-jupiter.version>
+    <exec.mainClass>ai.emailclaw.emailclaw.Launcher</exec.mainClass>
+    <exec.classpathScope>runtime</exec.classpathScope>
   </properties>
 
   <!-- Before running mvn clean install on Linux: sudo apt install -y fakeroot -->
@@ -461,7 +463,8 @@
                       <goal>java</goal>
                   </goals>
                   <configuration>
-                      <mainClass>ai.emailclaw.emailclaw.Launcher</mainClass>
+                      <mainClass>${exec.mainClass}</mainClass>
+                      <classpathScope>${exec.classpathScope}</classpathScope>
                       <arguments>
                           <argument>--add-modules</argument>
                           <argument>javafx.controls,javafx.fxml,javafx.graphics</argument>

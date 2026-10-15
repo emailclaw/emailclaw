@@ -19,6 +19,7 @@ import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.tools.NetworkFetchTool;
 import ai.emailclaw.emailclaw.tools.ToolRegistry;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -56,18 +57,29 @@ public class ToolService {
     public static final String TOOL_DISABLED_MESSAGE = "Tool disabled.";
 
     public ToolService(
-            AppContext repository,
+            ConfigManager configManager,
             PluginRegistry pluginRegistry,
             McpService mcpService,
             WebFetchFallbackCoordinator webFetchCoordinator) {
         this.configManager =
-                Objects.requireNonNull(repository, "repository must not be null").configManager();
+                Objects.requireNonNull(configManager, "configManager must not be null");
         this.pluginRegistry =
                 Objects.requireNonNull(pluginRegistry, "pluginRegistry must not be null");
-        this.mcpService = Objects.requireNonNull(mcpService, "mcpService must not be null");
-        this.webFetchCoordinator =
-                Objects.requireNonNull(webFetchCoordinator, "webFetchCoordinator must not be null");
+        this.mcpService = mcpService;
+        this.webFetchCoordinator = webFetchCoordinator;
         LOGGER.info("ToolService initialized with singleton WebFetchFallbackCoordinator");
+    }
+
+    public ToolService(
+            AppContext repository,
+            PluginRegistry pluginRegistry,
+            McpService mcpService,
+            WebFetchFallbackCoordinator webFetchCoordinator) {
+        this(
+                Objects.requireNonNull(repository, "repository must not be null").configManager(),
+                pluginRegistry,
+                mcpService,
+                webFetchCoordinator);
     }
 
     public List<ToolInfo> list() {
@@ -164,19 +176,35 @@ public class ToolService {
 
     /**
      * Reconciles the agent toolkit after HarnessAgent construction to ensure Emailclaw's
-     * industrial-grade tools (such as NetworkFetchTool with 4-tier fallback) take precedence
-     * over AgentScope HarnessAgent's naive built-in tools (such as WebTools.WebFetchTool).
+     * unified tools take precedence over AgentScope defaults, directly blocking AgentScope's
+     * naive Tavily-based web_search while allowing Parallel AI and Exa MCP search tools to be used.
      *
      * @param agentToolkit active toolkit from the built agent
+     * @param originalToolkit source toolkit containing configured MCP tools before agent build
      * @param context tool runtime context
      */
-    public void reconcileAgentToolkit(Toolkit agentToolkit, ToolRuntimeContext context) {
+    public void reconcileAgentToolkit(
+            Toolkit agentToolkit, Toolkit originalToolkit, ToolRuntimeContext context) {
         if (agentToolkit == null) {
             return;
         }
         LOGGER.info(
-                "Reconciling agent toolkit: ensuring Emailclaw unified tools override HarnessAgent"
-                        + " defaults");
+                "Reconciling agent toolkit: ensuring Emailclaw unified tools and MCP search"
+                        + " override HarnessAgent defaults");
+
+        // Directly block / remove AgentScope's naive Tavily-dependent WebSearchTool
+        agentToolkit.removeTool("web_search");
+
+        // If an MCP server (e.g. Parallel AI Search) provided web_search, restore it onto agent
+        // toolkit
+        if (originalToolkit != null) {
+            AgentTool mcpSearchTool = originalToolkit.getTool("web_search");
+            if (mcpSearchTool != null) {
+                agentToolkit.registerAgentTool(mcpSearchTool);
+                LOGGER.info("Restored MCP web_search tool onto agent toolkit.");
+            }
+        }
+
         Set<String> enabled =
                 list().stream()
                         .filter(ToolInfo::enabled)
@@ -190,6 +218,16 @@ public class ToolService {
                     "Successfully re-registered Emailclaw NetworkFetchTool onto agent toolkit,"
                             + " replacing default AgentScope WebFetchTool.");
         }
+    }
+
+    /**
+     * Overload for callers without original toolkit reference.
+     *
+     * @param agentToolkit active toolkit from the built agent
+     * @param context tool runtime context
+     */
+    public void reconcileAgentToolkit(Toolkit agentToolkit, ToolRuntimeContext context) {
+        reconcileAgentToolkit(agentToolkit, null, context);
     }
 
     /**

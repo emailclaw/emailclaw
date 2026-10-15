@@ -32,7 +32,7 @@ When the user asks for "latest news", "what's in the news today", or "news in ca
 2. **Pick the URL**: Use the Primary URL from the table for that category. **If the primary website fails to load or returns an error, fallback to the Backup URL.** For multiple categories, repeat the steps below for each URL.
 3. **Open the page**: Call **web_fetch** with:
    ```json
-   {"action": "open", "url": "https://apnews.com/hub/us-news"}
+   {"action": "open", "url": "https://techcrunch.com/category/artificial-intelligence/"}
    ```
    Replace `url` with the corresponding URL from the table.
 4. **Take a snapshot**: In the same session, call **web_fetch** again:

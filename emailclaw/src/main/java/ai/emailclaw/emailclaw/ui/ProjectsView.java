@@ -87,6 +87,7 @@ public class ProjectsView implements ViewPane {
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Button createBtn = new Button("+ New Project");
+        createBtn.setId("btn-new-project");
         createBtn.setStyle(
                 "-fx-background-color: #3b82f6; -fx-text-fill: white;"
                         + " -fx-font-weight: 700; -fx-padding: 8 18;"
@@ -101,6 +102,7 @@ public class ProjectsView implements ViewPane {
                                                 "Successfully created new Project: {0} ({1})",
                                                 new Object[] {project.getName(), project.getId()});
                                         projectService.save(project);
+                                        projectService.setCurrentProject(project.getId());
                                     });
                 });
         HBox header = new HBox(8, title, spacer, createBtn);
@@ -202,6 +204,7 @@ public class ProjectsView implements ViewPane {
         String generatedId = isEdit ? existingProject.getId() : UuidUtils.randomUUIDv7().toString();
         Label nameLabel = new Label("Project Name: ");
         TextField nameInput = new TextField(isEdit ? existingProject.getName() : "Project 1");
+        nameInput.setId("field-project-name");
         nameInput.setPrefWidth(580);
         Label idLabel = new Label("Project ID: ");
         TextField idInput = new TextField(generatedId);
@@ -384,6 +387,9 @@ public class ProjectsView implements ViewPane {
         layout.getChildren().addAll(grid, addDirBox, dirsListView);
         dialog.getDialogPane().setContent(layout);
         Node saveButton = dialog.getDialogPane().lookupButton(saveType);
+        if (saveButton != null) {
+            saveButton.setId("btn-save-project");
+        }
         saveButton
                 .disableProperty()
                 .bind(

@@ -1252,7 +1252,20 @@ public class EmailclawChannelRunner {
             message.setContent(multipart);
         }
         message.saveChanges();
-        Transport.send(message);
+        try {
+            Transport.send(message);
+        } catch (Exception e) {
+            if (EmailPresetDomains.isMicrosoftDomain(mailbox.emailAddress())) {
+                LOGGER.warning(
+                        "Failed to send email via "
+                                + mailbox.emailAddress()
+                                + ": Microsoft permanently deprecated Basic Authentication and App"
+                                + " Passwords for personal accounts (Outlook, Hotmail, Live, MSN)"
+                                + " in September 2024. Modern Authentication (OAuth 2.0 / XOAUTH2)"
+                                + " is required.");
+            }
+            throw e;
+        }
         LOGGER.info(
                 "Email sent successfully: from=" + user + ", to=" + to + ", subject=" + subject);
     }
@@ -1288,6 +1301,16 @@ public class EmailclawChannelRunner {
             }
             return mails;
         } catch (Exception e) {
+            if (EmailPresetDomains.isMicrosoftDomain(mailbox.emailAddress())) {
+                LOGGER.warning(
+                        "Mailbox "
+                                + mailbox.emailAddress()
+                                + " authentication failed: Microsoft permanently deprecated Basic"
+                                + " Authentication and App Passwords for personal accounts"
+                                + " (Outlook, Hotmail, Live, MSN) in September 2024. Microsoft now"
+                                + " strictly requires Modern Authentication (OAuth 2.0 /"
+                                + " XOAUTH2).");
+            }
             LOGGER.log(
                     Level.WARNING,
                     "Failed to fetch unread emails for " + mailbox.emailAddress(),
