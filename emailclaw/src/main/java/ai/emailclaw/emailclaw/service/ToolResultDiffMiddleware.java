@@ -360,12 +360,7 @@ public class ToolResultDiffMiddleware implements MiddlewareBase {
         }
         if (effectiveFs != null) {
             try {
-                RuntimeContext rc =
-                        ctx != null
-                                ? ctx
-                                : (agent instanceof HarnessAgent ha
-                                        ? ha.getRuntimeContext()
-                                        : null);
+                RuntimeContext rc = ctx != null ? ctx : RuntimeContext.empty();
                 LOGGER.log(
                         Level.FINE,
                         "ToolResultDiffMiddleware.readFromFilesystem: rc={0}, relativePath={1}",

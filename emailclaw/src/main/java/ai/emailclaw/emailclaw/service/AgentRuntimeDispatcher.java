@@ -36,7 +36,7 @@ import io.agentscope.core.state.ConflictPolicy;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
-import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -316,6 +316,13 @@ public class AgentRuntimeDispatcher {
         }
 
         java.util.List<Path> additionalRoots = new java.util.ArrayList<>();
+        String sysUserHome = System.getProperty("user.home", "");
+        if (sysUserHome != null && !sysUserHome.isBlank()) {
+            Path homePath = Path.of(sysUserHome).toAbsolutePath().normalize();
+            if (Files.isDirectory(homePath) && !additionalRoots.contains(homePath)) {
+                additionalRoots.add(homePath);
+            }
+        }
         if (repository != null && repository.paths() != null) {
             if (repository.paths().root != null) {
                 Path appRoot = repository.paths().root.toAbsolutePath().normalize();
@@ -372,7 +379,8 @@ public class AgentRuntimeDispatcher {
                         .project(projectRoot)
                         .additionalRoots(additionalRoots)
                         .projectWritable(projectWritable)
-                        .isolationScope(io.agentscope.harness.agent.IsolationScope.GLOBAL);
+                        .sharedLocalWorkspace(true)
+                        .isolationScope(IsolationScope.GLOBAL);
 
         LOGGER.log(
                 Level.INFO,
@@ -380,23 +388,9 @@ public class AgentRuntimeDispatcher {
                         + " projectWritable={2}",
                 new Object[] {agentWorkspace, projectRoot, projectWritable});
 
-        AbstractFilesystem sharedFilesystem =
-                filesystemSpec.toFilesystem(agentWorkspace, rc -> List.of());
-
         // Build PermissionContextState based on execution_level
         PermissionContextState permissionContext = buildPermissionContext(config, agent.getId());
-        io.agentscope.harness.agent.middleware.AsyncToolMiddleware asyncToolMiddleware =
-                new io.agentscope.harness.agent.middleware.AsyncToolMiddleware(
-                        messageBusService.getMessageBus(project.getId()),
-                        java.time.Duration.ofSeconds(
-                                Math.max(120, config.getShellCommandTimeout())),
-                        messageBusService.getAsyncToolRegistry(project.getId()));
-        io.agentscope.harness.agent.middleware.InboxMiddleware inboxMiddleware =
-                new io.agentscope.harness.agent.middleware.InboxMiddleware(
-                        messageBusService.getMessageBus(project.getId()),
-                        100,
-                        messageBusService.getAsyncToolRegistry(project.getId()),
-                        java.time.Duration.ofMinutes(10));
+        syncSessionPermissionContext(sessionId, permissionContext);
 
         ExecutionConfig toolExecConfig =
                 ExecutionConfig.builder()
@@ -418,11 +412,16 @@ public class AgentRuntimeDispatcher {
                         .toolExecutionConfig(toolExecConfig)
                         .stateStore(repository.agentStateStore())
                         .workspace(agentWorkspace)
-                        .abstractFilesystem(sharedFilesystem)
+                        .filesystem(filesystemSpec)
+                        .messageBus(messageBusService.getMessageBus(project.getId()))
+                        .asyncToolTimeout(
+                                Duration.ofSeconds(Math.max(120, config.getShellCommandTimeout())))
+                        .asyncToolRegistry(messageBusService.getAsyncToolRegistry(project.getId()))
+                        .disableWebTools()
                         .compaction(CompactionConfig.builder().build())
-                        . // Control Agent execution phase (read-only gate + plan_enter/write/exit
+                        // Control Agent execution phase (read-only gate + plan_enter/write/exit
                         // tools)
-                        enablePlanMode()
+                        .enablePlanMode()
                         .enableSkillManageTool(true)
                         .enableAgentTracingLog(true)
                         .enablePendingToolRecovery(true)
@@ -431,10 +430,47 @@ public class AgentRuntimeDispatcher {
                         .middleware(rateLimitMiddleware)
                         .middleware(adaptiveFinalAnswerFilterMiddleware)
                         .middleware(toolResultDiffMiddleware)
-                        .middleware(asyncToolMiddleware)
-                        .middleware(inboxMiddleware)
                         .middleware(planToHintMiddleware)
                         .middleware(memoryRecallMiddleware);
+
+        if (agent.getFallbackModelId() != null && !agent.getFallbackModelId().isBlank()) {
+            ProviderInfo fallbackProvider = provider;
+            if (agent.getFallbackProviderId() != null && !agent.getFallbackProviderId().isBlank()) {
+                fallbackProvider =
+                        repository.loadProviders().stream()
+                                .filter(p -> p.getId().equals(agent.getFallbackProviderId()))
+                                .findFirst()
+                                .orElse(provider);
+            }
+            OpenAIChatModel fallbackModel =
+                    OpenAIChatModel.builder()
+                            .apiKey(ProviderRequestOptions.apiKeyFor(fallbackProvider))
+                            .baseUrl(fallbackProvider.getBaseUrl())
+                            .modelName(agent.getFallbackModelId())
+                            .stream(true)
+                            .generateOptions(
+                                    buildGenerateOptions(
+                                            fallbackProvider,
+                                            selectedModel(
+                                                    fallbackProvider, agent.getFallbackModelId())))
+                            .nativeStructuredOutputWithTools(
+                                    fallbackProvider.isNativeStructuredOutputWithTools())
+                            .build();
+            builder.fallbackModel(fallbackModel);
+            builder.failoverListener(
+                    (primaryModel, error) -> {
+                        LOGGER.log(
+                                Level.WARNING,
+                                "Model failover triggered for agent {0}: switching from {1} to {2}"
+                                        + " due to: {3}",
+                                new Object[] {
+                                    agent.getId(),
+                                    primaryModel != null ? primaryModel.getModelName() : "primary",
+                                    agent.getFallbackModelId(),
+                                    error != null ? error.getMessage() : "unknown"
+                                });
+                    });
+        }
         // Register subagent declarations (read from ACP agent configuration)
         List<AcpAgentInfo> acpAgents = repository.configManager().getAcpAgents();
         for (AcpAgentInfo a : acpAgents) {
@@ -538,7 +574,7 @@ public class AgentRuntimeDispatcher {
         return channel == null || channel.isBlank() || skill.channels().contains(channel);
     }
 
-    private PermissionContextState buildPermissionContext(
+    public PermissionContextState buildPermissionContext(
             AgentConfiguration config, String agentId) {
         PermissionContextState.Builder builder = PermissionContextState.builder();
         // Get PermissionMode
@@ -555,7 +591,7 @@ public class AgentRuntimeDispatcher {
                 // Allow all tools directly, do not add any rules
                 LOGGER.log(Level.INFO, "PermissionContext: BYPASS mode");
             }
-            case DEFAULT, DONT_ASK -> {
+            case DEFAULT -> {
                 // Add askRules for guarded_tools
                 SecuritySettings settings = repository.configManager().getSecuritySettings();
                 List<String> guardedTools =
@@ -579,13 +615,86 @@ public class AgentRuntimeDispatcher {
                         "PermissionContext: {0} mode, guarded_tools={1}",
                         new Object[] {mode, guardedTools.size()});
             }
-            case ACCEPT_EDITS, EXPLORE -> {
-                // PermissionEngine automatically handles read-only/write logic, no extra rules
-                // needed
+            case ACCEPT_EDITS, EXPLORE, DONT_ASK -> {
+                // PermissionEngine automatically handles read-only/write/dont_ask logic, no extra
+                // rules needed
                 LOGGER.log(Level.INFO, "PermissionContext: {0} mode (auto handled)", mode);
             }
         }
         return builder.build();
+    }
+
+    private void syncSessionPermissionContext(
+            String sessionId, PermissionContextState permissionContext) {
+        if (sessionId == null
+                || sessionId.isBlank()
+                || permissionContext == null
+                || repository == null
+                || repository.agentStateStore() == null) {
+            return;
+        }
+        try {
+            var stateStore = repository.agentStateStore();
+            var existingOpt =
+                    stateStore.get(
+                            null,
+                            sessionId,
+                            "agent_state",
+                            io.agentscope.core.state.AgentState.class);
+            if (existingOpt.isPresent()) {
+                io.agentscope.core.state.AgentState state = existingOpt.get();
+                PermissionContextState currentCtx = state.getPermissionContext();
+                PermissionContextState.Builder merged =
+                        PermissionContextState.builder().mode(permissionContext.getMode());
+                permissionContext.getWorkingDirectories().forEach(merged::addWorkingDirectory);
+                permissionContext
+                        .getAllowRules()
+                        .forEach(
+                                (tool, rules) -> {
+                                    if (rules != null) {
+                                        rules.forEach(r -> merged.addAllowRule(tool, r));
+                                    }
+                                });
+                if (currentCtx != null && currentCtx.getAllowRules() != null) {
+                    currentCtx
+                            .getAllowRules()
+                            .forEach(
+                                    (tool, rules) -> {
+                                        if (rules != null) {
+                                            rules.forEach(r -> merged.addAllowRule(tool, r));
+                                        }
+                                    });
+                }
+                permissionContext
+                        .getDenyRules()
+                        .forEach(
+                                (tool, rules) -> {
+                                    if (rules != null) {
+                                        rules.forEach(r -> merged.addDenyRule(tool, r));
+                                    }
+                                });
+                permissionContext
+                        .getAskRules()
+                        .forEach(
+                                (tool, rules) -> {
+                                    if (rules != null) {
+                                        rules.forEach(r -> merged.addAskRule(tool, r));
+                                    }
+                                });
+                state.setPermissionContext(merged.build());
+                stateStore.save(null, sessionId, "agent_state", state);
+                LOGGER.log(
+                        Level.INFO,
+                        "Synced PermissionContext into persisted AgentState: session={0}, mode={1}",
+                        new Object[] {sessionId, permissionContext.getMode()});
+            }
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to sync PermissionContext into persisted AgentState for session="
+                            + sessionId,
+                    e);
+        }
     }
 
     public boolean selectedModelSupportsImage(ProviderInfo provider, String modelId) {

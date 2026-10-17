@@ -97,6 +97,15 @@ final class StreamingEventHandler {
     /** Model ID (for logging). */
     private final String modelId;
 
+    /** Channel ID for HITL approval routing. */
+    private final String channel;
+
+    /** User ID for HITL approval routing. */
+    private final String userId;
+
+    /** Route map for HITL approval routing. */
+    private final Map<String, Object> route;
+
     /** Cumulative input (prompt) tokens across model calls in this turn. */
     private long totalInputTokens = 0;
 
@@ -105,6 +114,15 @@ final class StreamingEventHandler {
 
     /** Cumulative cached tokens served from prompt cache across model calls in this turn. */
     private long totalCachedTokens = 0;
+
+    /** Cumulative cache creation tokens across model calls in this turn. */
+    private long totalCacheCreationTokens = 0;
+
+    /** Cumulative reasoning tokens across model calls in this turn. */
+    private long totalReasoningTokens = 0;
+
+    /** Cumulative tool use prompt tokens across model calls in this turn. */
+    private long totalToolUsePromptTokens = 0;
 
     /** Whether at least one ModelCallEndEvent was observed. */
     private boolean hasModelUsage = false;
@@ -126,12 +144,40 @@ final class StreamingEventHandler {
             String sessionId,
             String providerId,
             String modelId) {
+        this(
+                approvalTracker,
+                callback,
+                agentId,
+                sessionId,
+                providerId,
+                modelId,
+                null,
+                null,
+                Map.of());
+    }
+
+    /**
+     * Constructs streaming event handler with channel and routing context for HITL approvals.
+     */
+    StreamingEventHandler(
+            PendingApprovalTracker approvalTracker,
+            ai.emailclaw.emailclaw.service.StreamCallback callback,
+            String agentId,
+            String sessionId,
+            String providerId,
+            String modelId,
+            String channel,
+            String userId,
+            Map<String, Object> route) {
         this.approvalTracker = approvalTracker;
         this.callback = callback;
         this.agentId = agentId;
         this.sessionId = sessionId;
         this.providerId = providerId;
         this.modelId = modelId;
+        this.channel = channel;
+        this.userId = userId;
+        this.route = route != null ? route : Map.of();
         this.finalParts = new ArrayList<>();
         this.toolCallNameCache = new HashMap<>();
         this.replacementWarned = new boolean[] {false};
@@ -234,6 +280,33 @@ final class StreamingEventHandler {
      */
     long getTotalCachedTokens() {
         return totalCachedTokens;
+    }
+
+    /**
+     * Returns cumulative prompt cache creation tokens in this turn.
+     *
+     * @return cache creation tokens
+     */
+    long getTotalCacheCreationTokens() {
+        return totalCacheCreationTokens;
+    }
+
+    /**
+     * Returns cumulative reasoning tokens in this turn.
+     *
+     * @return reasoning tokens
+     */
+    long getTotalReasoningTokens() {
+        return totalReasoningTokens;
+    }
+
+    /**
+     * Returns cumulative tool use prompt tokens in this turn.
+     *
+     * @return tool use prompt tokens
+     */
+    long getTotalToolUsePromptTokens() {
+        return totalToolUsePromptTokens;
     }
 
     // ── Event Processing Methods ──────────────────────────────────────
@@ -440,15 +513,22 @@ final class StreamingEventHandler {
             totalInputTokens += usage.getInputTokens();
             totalOutputTokens += usage.getOutputTokens();
             totalCachedTokens += usage.getCachedTokens();
+            totalCacheCreationTokens += usage.getCacheCreationTokens();
+            totalReasoningTokens += usage.getReasoningTokens();
+            totalToolUsePromptTokens += usage.getToolUsePromptTokens();
             hasModelUsage = true;
             LOGGER.log(
                     Level.FINE,
-                    "Model call ended for session {0}: input={1}, output={2}, cached={3}",
+                    "Model call ended for session {0}: input={1}, output={2}, cached={3},"
+                            + " cacheCreation={4}, reasoning={5}, toolUsePrompt={6}",
                     new Object[] {
                         sessionId,
                         usage.getInputTokens(),
                         usage.getOutputTokens(),
-                        usage.getCachedTokens()
+                        usage.getCachedTokens(),
+                        usage.getCacheCreationTokens(),
+                        usage.getReasoningTokens(),
+                        usage.getToolUsePromptTokens()
                     });
         }
     }
@@ -492,12 +572,7 @@ final class StreamingEventHandler {
      */
     private void handleRequireUserConfirm(RequireUserConfirmEvent confirm) {
         approvalTracker.onRequireUserConfirm(
-                confirm.getToolCalls(),
-                agentId,
-                sessionId,
-                null, // channel is unknown at this layer, passed in by outer layer
-                null, // userId is unknown at this layer
-                Map.of());
+                confirm.getToolCalls(), agentId, sessionId, channel, userId, route);
     }
 
     /**

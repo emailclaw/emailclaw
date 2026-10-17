@@ -23,7 +23,9 @@ import ai.emailclaw.emailclaw.model.TokenUsageRecord;
 import ai.emailclaw.emailclaw.service.memory.MemoAutoSync;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.HintBlock;
@@ -92,6 +94,8 @@ public class MessagePipeline {
     private final SessionTitleGenerator titleGenerator;
 
     private final Map<String, AgentChatPending> pendingAgentChatReplies = new ConcurrentHashMap<>();
+
+    private final Map<String, AgentRun<AgentEvent>> activeRuns = new ConcurrentHashMap<>();
 
     private record AgentChatPending(String replyTo, String correlationId) {}
 
@@ -242,7 +246,10 @@ public class MessagePipeline {
                             agent.getId(),
                             sessionInfo.getId(),
                             provider.getId(),
-                            modelId);
+                            modelId,
+                            channel,
+                            sessionInfo.getUserId(),
+                            route);
 
             agentService.markTaskStarted(agent.getId());
             chatService.markSessionRunning(sessionInfo.getId());
@@ -287,20 +294,34 @@ public class MessagePipeline {
                                     AdaptiveFinalAnswerFilterMiddleware.CONTEXT_KEY_DELIVERY_MODE,
                                     deliveryMode);
                         }
+                        if (agent != null) {
+                            rcBuilder.put(AgentInfo.class, agent);
+                        }
                         RuntimeContext runtimeContext = rcBuilder.build();
                         StreamingEventHandler currentHandler = eventHandler;
                         List<Msg> inputMsgs = userMsg != null ? List.of(userMsg) : List.of();
-                        reactAgent
-                                .streamEvents(inputMsgs, runtimeContext)
-                                .doOnNext(event -> currentHandler.handleEvent(event))
-                                .doOnComplete(
-                                        () -> {
-                                            // Event Sourcing reordering has been handled internally
-                                            // by the AgentScope framework.
-                                        })
-                                .blockLast(
-                                        Duration.ofSeconds(
-                                                config.effectiveTaskExecutionTimeoutSeconds()));
+                        AgentRun<AgentEvent> agentRun =
+                                reactAgent.prepareRun(inputMsgs, runtimeContext);
+                        if (sessionInfo != null && sessionInfo.getId() != null) {
+                            activeRuns.put(sessionInfo.getId(), agentRun);
+                        }
+                        try {
+                            agentRun.stream()
+                                    .doOnNext(event -> currentHandler.handleEvent(event))
+                                    .doOnComplete(
+                                            () -> {
+                                                // Event Sourcing reordering has been handled
+                                                // internally
+                                                // by the AgentScope framework.
+                                            })
+                                    .blockLast(
+                                            Duration.ofSeconds(
+                                                    config.effectiveTaskExecutionTimeoutSeconds()));
+                        } finally {
+                            if (sessionInfo != null && sessionInfo.getId() != null) {
+                                activeRuns.remove(sessionInfo.getId());
+                            }
+                        }
 
                         success = true;
                         hasError = false;
@@ -375,7 +396,10 @@ public class MessagePipeline {
                                             agent.getId(),
                                             sessionInfo.getId(),
                                             fallbackProvider.getId(),
-                                            agent.getFallbackModelId());
+                                            agent.getFallbackModelId(),
+                                            channel,
+                                            sessionInfo.getUserId(),
+                                            route);
                         } else {
                             LOGGER.log(
                                     Level.SEVERE,
@@ -903,5 +927,23 @@ public class MessagePipeline {
             return DeliveryMode.fromValue(s);
         }
         return null;
+    }
+
+    /**
+     * Cancels an active agent run for the specified session.
+     *
+     * @param sessionId Session ID to cancel
+     * @return true if the run was found and cancelled, false otherwise
+     */
+    public boolean cancelRun(String sessionId) {
+        if (sessionId == null) {
+            return false;
+        }
+        AgentRun<AgentEvent> run = activeRuns.get(sessionId);
+        if (run != null) {
+            LOGGER.log(Level.INFO, "Cancelling active AgentRun for session: {0}", sessionId);
+            return run.cancel();
+        }
+        return false;
     }
 }

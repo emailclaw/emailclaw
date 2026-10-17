@@ -19,6 +19,7 @@ import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
+import ai.emailclaw.emailclaw.model.security.ApprovalDecision;
 import ai.emailclaw.emailclaw.model.security.PendingApproval;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
@@ -509,18 +510,17 @@ public class EmailclawChannelRunner {
                                                                     && !p.isDelivered())
                                             .toList();
                             if (!pendingForSession.isEmpty()) {
-                                for (PendingApproval approval : pendingForSession) {
-                                    String subject = mail.subject() == null ? "" : mail.subject();
-                                    sendApprovalRequestMail(
-                                            outboundMailbox,
-                                            replySender,
-                                            subject.trim(),
-                                            approval.getToolName(),
-                                            String.valueOf(approval.getToolInput()),
-                                            approval.getApprovalCode(),
-                                            approval.getRememberCode());
-                                    guardService.markDelivered(approval.getId());
-                                }
+                                PendingApproval approval = pendingForSession.get(0);
+                                String subject = mail.subject() == null ? "" : mail.subject();
+                                sendApprovalRequestMail(
+                                        outboundMailbox,
+                                        replySender,
+                                        subject.trim(),
+                                        approval.getToolName(),
+                                        String.valueOf(approval.getToolInput()),
+                                        approval.getApprovalCode(),
+                                        approval.getRememberCode());
+                                guardService.markDelivered(approval.getId());
                             } else {
                                 String replyText;
                                 if (deliveryMode == DeliveryMode.FINAL) {
@@ -566,23 +566,25 @@ public class EmailclawChannelRunner {
             String sender,
             PendingApproval approval,
             boolean remember) {
-        String replyContent = extractLatestUserContent(mail, agent, session).trim();
-        chatService.appendHistory(
-                agent.getId(),
-                session.getId(),
-                new ChatMessageRecord(
-                        ChatMessageRoles.USER,
-                        List.of(ChatMessagePart.text(sender + " wrote: " + replyContent)),
-                        LocalDateTime.now().toString()));
-
         LOGGER.info(
                 "Emailclaw approval code matched: session="
                         + session.getId()
                         + ", tool="
                         + approval.getToolName());
 
+        GovernanceService guardService = chatService.getGovernanceService();
+        guardService.setApprovalDecision(
+                approval.getId(),
+                ApprovalDecision.APPROVE,
+                sender,
+                remember ? "Approved and remembered via email code" : "Approved via email code");
+
+        Map<String, Object> inputMap =
+                approval.getToolInput() != null ? approval.getToolInput() : Map.of();
+        String rawContent = io.agentscope.core.util.JsonUtils.getJsonCodec().toJson(inputMap);
         ToolUseBlock toolBlock =
-                new ToolUseBlock(approval.getId(), approval.getToolName(), approval.getToolInput());
+                new ToolUseBlock(
+                        approval.getId(), approval.getToolName(), inputMap, rawContent, Map.of());
         List<PermissionRule> rules =
                 remember
                         ? List.of(
@@ -594,32 +596,55 @@ public class EmailclawChannelRunner {
                         : List.of();
         ConfirmResult confirmResult = new ConfirmResult(true, toolBlock, rules);
 
-        chatService.resumeWithConfirmResult(
-                agent.getId(),
-                session.getId(),
-                ChannelIds.EMAILCLAW,
-                approval.getRoute() != null ? approval.getRoute() : Map.of(),
-                List.of(confirmResult));
-
-        chatService.appendHistory(
-                agent.getId(),
-                session.getId(),
-                new ChatMessageRecord(
-                        ChatMessageRoles.SYSTEM,
-                        List.of(
-                                ChatMessagePart.text(
-                                        "User approved tool call via approval code: "
-                                                + approval.getToolName())),
-                        LocalDateTime.now().toString()));
+        Msg result =
+                chatService.resumeWithConfirmResult(
+                        agent.getId(),
+                        session.getId(),
+                        ChannelIds.EMAILCLAW,
+                        approval.getRoute() != null ? approval.getRoute() : Map.of(),
+                        List.of(confirmResult));
 
         try {
-            sendMail(
-                    mailbox,
-                    mail.replyTo(),
-                    mail.subject(),
-                    "Approval code received, tool call approved: " + approval.getToolName());
+            List<PendingApproval> pendingForSession =
+                    guardService.getPendingApprovals().stream()
+                            .filter(
+                                    p ->
+                                            session.getId().equals(p.getSessionId())
+                                                    && !p.isDelivered())
+                            .toList();
+            if (!pendingForSession.isEmpty()) {
+                PendingApproval nextApproval = pendingForSession.get(0);
+                String subject = mail.subject() == null ? "" : mail.subject();
+                sendApprovalRequestMail(
+                        mailbox,
+                        sender,
+                        subject.trim(),
+                        nextApproval.getToolName(),
+                        String.valueOf(nextApproval.getToolInput()),
+                        nextApproval.getApprovalCode(),
+                        nextApproval.getRememberCode());
+                guardService.markDelivered(nextApproval.getId());
+            } else if (result != null) {
+                DeliveryMode deliveryMode =
+                        mailbox.deliveryMode() != null
+                                ? mailbox.deliveryMode()
+                                : DeliveryMode.FINAL;
+                String replyText;
+                if (deliveryMode == DeliveryMode.FINAL) {
+                    replyText = extractFinalText(chatService.partsOf(result));
+                } else {
+                    replyText = ChatMessageRecord.textOfParts(chatService.partsOf(result));
+                }
+                sendReply(mailbox, mail, replyText, agent, session);
+            } else {
+                sendMail(
+                        mailbox,
+                        mail.replyTo(),
+                        mail.subject(),
+                        "Approval code received, tool call approved: " + approval.getToolName());
+            }
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to send approval confirmation email", e);
+            LOGGER.log(Level.WARNING, "Failed to send approval result email", e);
         }
     }
 

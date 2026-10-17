@@ -100,6 +100,7 @@ final class PendingApprovalTracker {
                 ToolGuardResult guardResult =
                         governanceService.analyze(tool.getName(), tool.getInput());
                 governanceService.createPendingApproval(
+                        tool.getId(),
                         tool.getName(),
                         tool.getInput(),
                         guardResult,

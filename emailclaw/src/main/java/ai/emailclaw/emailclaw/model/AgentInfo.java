@@ -35,7 +35,7 @@ public class AgentInfo {
     private String providerId = "kilo";
 
     /** Bound model identifier. */
-    private String modelId = "stepfun/step-5-preview-free"; // "stepfun/step-3.7-flash:free";
+    private String modelId = "nvidia/nemotron-3.5-super-vl:free"; // stepfun/step-5-preview-free
 
     /** Fallback provider identifier. */
     private String fallbackProviderId = "kilo";
