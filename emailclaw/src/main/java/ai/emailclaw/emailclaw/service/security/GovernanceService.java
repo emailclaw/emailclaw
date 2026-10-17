@@ -272,7 +272,30 @@ public class GovernanceService {
             ToolGuardResult guardResult,
             long timeoutSeconds,
             ToolGuardConversationContext conversationContext) {
+        return createPendingApproval(
+                null, toolName, toolInput, guardResult, timeoutSeconds, conversationContext);
+    }
+
+    /**
+     * Create a pending approval request with explicit tool call ID and session routing context.
+     */
+    public PendingApproval createPendingApproval(
+            String approvalId,
+            String toolName,
+            Map<String, Object> toolInput,
+            ToolGuardResult guardResult,
+            long timeoutSeconds,
+            ToolGuardConversationContext conversationContext) {
+        if (approvalId != null && !approvalId.isBlank()) {
+            PendingApproval existing = pendingApprovals.get(approvalId);
+            if (existing != null && !existing.isDecided() && !existing.isExpired()) {
+                return existing;
+            }
+        }
         PendingApproval approval = new PendingApproval(toolName, guardResult.getMaxSeverity());
+        if (approvalId != null && !approvalId.isBlank()) {
+            approval.setId(approvalId);
+        }
         approval.setToolInput(new ConcurrentHashMap<>(toolInput));
         approval.setFindings(guardResult.getFindings());
         approval.setTimeoutSeconds(timeoutSeconds);

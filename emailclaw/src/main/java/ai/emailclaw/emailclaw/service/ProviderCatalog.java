@@ -264,6 +264,31 @@ public final class ProviderCatalog {
         return providers;
     }
 
+    /**
+     * Returns the list of built-in model upgrade and replacement rules.
+     *
+     * <p>When built-in models are superseded during software upgrades, rules declared here
+     * allow the configuration subsystem to automatically migrate agents and clean up legacy models.
+     *
+     * @return an unmodifiable list of built-in model replacement rules
+     */
+    public static List<ModelReplacement> builtinModelReplacements() {
+        List<ModelReplacement> replacements = new ArrayList<>();
+        replacements.add(
+                new ModelReplacement(
+                        "kilo",
+                        "stepfun/step-3.7-flash:free",
+                        "nvidia/nemotron-3.5-super-vl:free",
+                        "Kilo free tier model upgrade"));
+        replacements.add(
+                new ModelReplacement(
+                        "kilo",
+                        "stepfun/step-5-preview-free",
+                        "nvidia/nemotron-3.5-super-vl:free",
+                        "Kilo free tier model upgrade"));
+        return Collections.unmodifiableList(replacements);
+    }
+
     /** Create local Provider (no API Key required). */
     private static ProviderInfo localProvider(String id, String name, String baseUrl) {
         ProviderInfo p = new ProviderInfo();
@@ -420,12 +445,14 @@ public final class ProviderCatalog {
         // addFreeModel(p, "nvidia/nemotron-3-ultra-550b-a55b:free", "Nemotron 3 Ultra 550B");
         // addFreeModel(p, "nvidia/nemotron-3-super-120b-a12b:free", "Nemotron 3 Super 120B");
         addFreeModel(p, "nvidia/nemotron-3.5-lightning:free", "Nemotron 3.5 Lightning (free)");
-        addFreeModel(p, "poolside/laguna-xs-2.1:free", "Poolside: Laguna XS 2.1 (free)");
-        addFreeModel(p, "poolside/laguna-s-2.1:free", "Poolside: Laguna S 2.1 (free)");
-        addFreeModel(p, "stepfun/step-5-preview-free", "StepFun: Step 5 Preview (free)");
-        //        addFreeModel(p, "stepfun/step-3.7-flash:free", "Step 3.7 Flash");
+        addFreeModel(
+                p, "nvidia/nemotron-3.5-super-vl:free", "NVIDIA: Nemotron 3.5 Super VL (free)");
+        // addFreeModel(p, "stepfun/step-5-preview-free", "StepFun: Step 5 Preview (free)");
+        // addFreeModel(p, "stepfun/step-3.7-flash:free", "Step 3.7 Flash");
         // addFreeModel(p, "qwen/qwen3.8-27b:free", "Qwen: Qwen3.8 27B (free)");
         // addFreeModel(p, "z-ai/glm-5.2:free", "Z.ai: GLM 5.2 (free)");
+        addFreeModel(p, "poolside/laguna-xs-2.1:free", "Poolside: Laguna XS 2.1 (free)");
+        addFreeModel(p, "poolside/laguna-s-2.1:free", "Poolside: Laguna S 2.1 (free)");
     }
 
     private static void addGitHubModels(ProviderInfo p) {
@@ -683,26 +710,6 @@ public final class ProviderCatalog {
 
         model.setSupportsImage(model.isSupportsImage() || image);
         model.setSupportsVideo(model.isSupportsVideo() || video);
-    }
-
-    /**
-     * Returns the list of built-in model upgrade and replacement rules.
-     *
-     * <p>When built-in models are superseded during software upgrades, rules declared here
-     * allow the configuration subsystem to automatically migrate agents and clean up legacy models.
-     *
-     * @return an unmodifiable list of built-in model replacement rules
-     */
-    public static List<ModelReplacement> builtinModelReplacements() {
-        List<ModelReplacement> replacements = new ArrayList<>();
-        replacements.add(
-                new ModelReplacement(
-                        "kilo",
-                        "stepfun/step-3.7-flash:free",
-                        "stepfun/step-5-preview-free",
-                        "Kilo free tier model upgrade: step-3.7-flash superseded by"
-                                + " step-5-preview"));
-        return Collections.unmodifiableList(replacements);
     }
 
     /**

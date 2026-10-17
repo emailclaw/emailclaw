@@ -134,21 +134,56 @@ public class SqliteAgentStateStore implements AgentStateStore {
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {
-        if (expectedVersion == UNVERSIONED) {
-            save(userId, sessionId, key, value);
-            return 1L;
-        }
         String slot = slotId(userId, sessionId);
         String json = JsonUtils.getJsonCodec().toJson(value);
         long now = DateTimeUtils.currentTimeMillis();
 
+        if (expectedVersion == UNVERSIONED) {
+            String insertOrUpdateSql =
+                    """
+                    INSERT INTO agent_state (session_id, state_key, item_index, state_data, version, created_at, updated_at)
+                    VALUES (?, ?, 0, ?, 1, ?, ?)
+                    ON CONFLICT(session_id, state_key, item_index) DO UPDATE SET
+                        state_data = excluded.state_data,
+                        version = agent_state.version + 1,
+                        updated_at = excluded.updated_at
+                    RETURNING version;
+                    """;
+            return databaseManager.executeQuery(
+                    conn -> {
+                        try (PreparedStatement ps = conn.prepareStatement(insertOrUpdateSql)) {
+                            ps.setString(1, slot);
+                            ps.setString(2, key);
+                            ps.setString(3, json);
+                            ps.setLong(4, now);
+                            ps.setLong(5, now);
+                            try (ResultSet rs = ps.executeQuery()) {
+                                if (rs.next()) {
+                                    long newVersion = rs.getLong(1);
+                                    LOGGER.log(
+                                            Level.FINE,
+                                            "Unconditional saveIfVersion for session={0}, key={1},"
+                                                    + " version={2}",
+                                            new Object[] {slot, key, newVersion});
+                                    return newVersion;
+                                }
+                            }
+                            return 1L;
+                        }
+                    });
+        }
+
         if (expectedVersion == 0) {
-            // Atomic create-if-absent
+            // Atomic create-if-absent OR upgrade row whose stored version is still 0 (#3165)
             String insertSql =
                     """
                     INSERT INTO agent_state (session_id, state_key, item_index, state_data, version, created_at, updated_at)
                     VALUES (?, ?, 0, ?, 1, ?, ?)
-                    ON CONFLICT(session_id, state_key, item_index) DO NOTHING;
+                    ON CONFLICT(session_id, state_key, item_index) DO UPDATE SET
+                        state_data = excluded.state_data,
+                        version = 1,
+                        updated_at = excluded.updated_at
+                    WHERE agent_state.version = 0;
                     """;
             return databaseManager.executeQuery(
                     conn -> {
@@ -169,8 +204,8 @@ public class SqliteAgentStateStore implements AgentStateStore {
                             } else {
                                 LOGGER.log(
                                         Level.FINE,
-                                        "CAS create-if-absent conflict: key already exists for"
-                                                + " session={0}, key={1}",
+                                        "CAS create-if-absent conflict: key already exists with"
+                                                + " non-zero version for session={0}, key={1}",
                                         new Object[] {slot, key});
                                 return UNVERSIONED;
                             }

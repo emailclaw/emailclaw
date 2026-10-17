@@ -476,9 +476,47 @@ public class ChatService {
                     agentRuntimeDispatcher.buildAgent(
                             agent, provider, modelId, config, channel, effectiveSessionId)) {
 
-                String confirmDesc =
+                List<ConfirmResult> normalizedConfirmResults =
                         confirmResults != null
                                 ? confirmResults.stream()
+                                        .map(
+                                                cr -> {
+                                                    if (cr == null || cr.getToolCall() == null) {
+                                                        return cr;
+                                                    }
+                                                    ToolUseBlock tc = cr.getToolCall();
+                                                    if (tc.getContent() != null
+                                                            && !tc.getContent().isBlank()) {
+                                                        return cr;
+                                                    }
+                                                    Map<String, Object> in =
+                                                            tc.getInput() != null
+                                                                    ? tc.getInput()
+                                                                    : Map.of();
+                                                    String rawJson =
+                                                            io.agentscope.core.util.JsonUtils
+                                                                    .getJsonCodec()
+                                                                    .toJson(in);
+                                                    ToolUseBlock withContent =
+                                                            new ToolUseBlock(
+                                                                    tc.getId(),
+                                                                    tc.getName(),
+                                                                    in,
+                                                                    rawJson,
+                                                                    tc.getMetadata(),
+                                                                    tc.getState());
+                                                    return new ConfirmResult(
+                                                            cr.isConfirmed(),
+                                                            withContent,
+                                                            cr.getRules(),
+                                                            cr.getReason());
+                                                })
+                                        .toList()
+                                : List.of();
+
+                String confirmDesc =
+                        !normalizedConfirmResults.isEmpty()
+                                ? normalizedConfirmResults.stream()
                                         .map(
                                                 cr ->
                                                         (cr.isConfirmed() ? "Approved" : "Rejected")
@@ -496,9 +534,7 @@ public class ChatService {
                                 .metadata(
                                         Map.of(
                                                 Msg.METADATA_CONFIRM_RESULTS,
-                                                confirmResults != null
-                                                        ? confirmResults
-                                                        : List.of()))
+                                                normalizedConfirmResults))
                                 .build();
 
                 LOGGER.log(
@@ -524,11 +560,8 @@ public class ChatService {
                             result != null ? result.getGenerateReason() : "null"
                         });
 
-                // Persist resume result to history
+                // Check if resumed turn paused on another ASKING tool call
                 if (result != null) {
-                    appendHistoryMsg(agent.getId(), effectiveSessionId, resumeMsg);
-                    appendHistoryMsg(agent.getId(), effectiveSessionId, result);
-
                     // If resumed turn paused on another ASKING tool call, register new pending
                     // approval
                     if (result.getGenerateReason() == GenerateReason.PERMISSION_ASKING) {

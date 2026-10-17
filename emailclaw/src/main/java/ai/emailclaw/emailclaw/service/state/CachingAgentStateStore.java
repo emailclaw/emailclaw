@@ -192,6 +192,9 @@ public class CachingAgentStateStore implements AgentStateStore {
 
     @Override
     public void delete(String userId, String sessionId, String key) {
+        if ("agent_state".equals(key)) {
+            cache.remove(slotKey(userId, sessionId));
+        }
         delegate.delete(userId, sessionId, key);
     }
 
