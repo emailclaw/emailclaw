@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.channel.ChannelIds;
 import ai.emailclaw.emailclaw.model.AgentInfo;
+import ai.emailclaw.emailclaw.model.ArtifactRecord;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRecord;
@@ -24,12 +25,11 @@ import ai.emailclaw.emailclaw.model.security.PendingApproval;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
-import ai.emailclaw.emailclaw.service.MessageMarkupTags;
 import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
+import ai.emailclaw.emailclaw.service.SessionArtifactStagingService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
-import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
@@ -147,23 +147,12 @@ public class EmailclawChannelRunner {
     /** Used for multiple spaces folding */
     private static final Pattern SPACE_PATTERN = Pattern.compile("\\s+");
 
-    /** Attachment tag pattern */
-    private static final Pattern ATTACHMENT_TAG_PATTERN =
-            Pattern.compile("^" + MessageMarkupTags.ATTACHMENT_PATTERN + "$", Pattern.MULTILINE);
-
     /** Guide reply email template */
     private static final String BOOTSTRAP_GUIDANCE_TEMPLATE =
             "For security reasons, the system only processes emails with valid TaskId in the"
                 + " subject line. This email has now been updated with the newly created TaskId."
                 + " Please reply to this email, and the system will immediately start working for"
                 + " you.";
-
-    /** Attachment error: file not found */
-    private static final String ATTACHMENT_ERR_NOT_FOUND = "[Attachment Error: File not found: %s]";
-
-    /** Attachment error: invalid path */
-    private static final String ATTACHMENT_ERR_INVALID_PATH =
-            "[Attachment Error: Invalid path: %s]";
 
     /** Attachment directory name */
     private static final String ATTACHMENTS_DIR_NAME = WorkspacePaths.ATTACHMENTS_DIR;
@@ -181,6 +170,7 @@ public class EmailclawChannelRunner {
     private final ProviderService providerService;
     private final ConfigManager configManager;
     private final ProjectService projectService;
+    private final SessionArtifactStagingService stagingService;
 
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Semaphore mailProcessingPermits = new Semaphore(MAIL_PROCESSING_MAX_CONCURRENCY);
@@ -199,12 +189,31 @@ public class EmailclawChannelRunner {
             ProviderService providerService,
             ConfigManager configManager,
             ProjectService projectService) {
+        this(
+                channelService,
+                chatService,
+                agentService,
+                providerService,
+                configManager,
+                projectService,
+                null);
+    }
+
+    public EmailclawChannelRunner(
+            ChannelService channelService,
+            ChatService chatService,
+            AgentService agentService,
+            ProviderService providerService,
+            ConfigManager configManager,
+            ProjectService projectService,
+            SessionArtifactStagingService stagingService) {
         this.channelService = channelService;
         this.chatService = chatService;
         this.agentService = agentService;
         this.providerService = providerService;
         this.configManager = configManager;
         this.projectService = projectService;
+        this.stagingService = stagingService;
 
         Thread.startVirtualThread(
                 () -> {
@@ -367,7 +376,9 @@ public class EmailclawChannelRunner {
             materializeMailAttachments(targetAgent, newSession, mail);
             persistBootstrapMailToSession(targetAgent, newSession, mail);
             String newSubject = truncateSubject(mail.subject()) + " " + newSession.getId();
-            sendMail(mailbox, mail.replyTo(), newSubject.trim(), BOOTSTRAP_GUIDANCE_TEMPLATE);
+            // Send bootstrap guidance strictly to mail.from() (ignoring Reply-To for handshake
+            // security)
+            sendMail(mailbox, mail.from(), newSubject.trim(), BOOTSTRAP_GUIDANCE_TEMPLATE);
             return;
         }
 
@@ -639,7 +650,7 @@ public class EmailclawChannelRunner {
             } else {
                 sendMail(
                         mailbox,
-                        mail.replyTo(),
+                        mail.from(),
                         mail.subject(),
                         "Approval code received, tool call approved: " + approval.getToolName());
             }
@@ -1046,122 +1057,26 @@ public class EmailclawChannelRunner {
                                 .replaceAll("^Response[:]?\\s*", "")
                                 .trim();
         List<Path> sendAttachments = new ArrayList<>();
-        String finalContent = content;
-        if (content != null && !content.isBlank()) {
-            Matcher matcher = ATTACHMENT_TAG_PATTERN.matcher(content);
-            StringBuffer cleanText = new StringBuffer();
-            ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
-            Path projectBaseDir = Path.of(project.getBaseDirectory());
-            Path workspaceBaseDir =
-                    (agent.getWorkspacePath() == null || agent.getWorkspacePath().isBlank())
-                            ? (this.configManager != null && this.configManager.paths() != null
-                                            ? this.configManager
-                                                    .paths()
-                                                    .workspaceRoot
-                                                    .resolve(agent.getId())
-                                            : AppPaths.fromDefault()
-                                                    .workspaceRoot
-                                                    .resolve(agent.getId()))
-                                    .toAbsolutePath()
-                                    .normalize()
-                            : Path.of(FileNameUtils.expandUserHome(agent.getWorkspacePath()))
-                                    .toAbsolutePath()
-                                    .normalize();
-
-            while (matcher.find()) {
-                String pathStr = matcher.group(1).trim();
-                if (!pathStr.isEmpty()) {
-                    try {
-                        String expandedPath = FileNameUtils.expandUserHome(pathStr);
-                        Path file = Path.of(expandedPath);
-                        if (!file.isAbsolute()) {
-                            // Relative path: prioritize project directory, fallback to workspace
-                            Path projectCandidate =
-                                    projectBaseDir != null
-                                            ? projectBaseDir.resolve(file).normalize()
-                                            : null;
-                            if (projectCandidate != null
-                                    && Files.exists(projectCandidate)
-                                    && Files.isRegularFile(projectCandidate)) {
-                                file = projectCandidate;
-                            } else {
-                                Path wsCandidate = workspaceBaseDir.resolve(file).normalize();
-                                if (Files.exists(wsCandidate) && Files.isRegularFile(wsCandidate)) {
-                                    file = wsCandidate;
-                                } else if (projectCandidate != null) {
-                                    file = projectCandidate;
-                                } else {
-                                    file = wsCandidate;
-                                }
-                            }
-                        } else {
-                            // Absolute path: check if it directly exists
-                            file = file.normalize();
-                            if (!Files.exists(file) || !Files.isRegularFile(file)) {
-                                // Self-healing 1: If path erroneously starts with agent workspace
-                                // prefix, strip it and check in projectBaseDir
-                                if (projectBaseDir != null) {
-                                    String fileStr = file.toString().replace('\\', '/');
-                                    String wsStr = workspaceBaseDir.toString().replace('\\', '/');
-                                    if (fileStr.startsWith(wsStr)) {
-                                        String subPath =
-                                                fileStr.substring(wsStr.length())
-                                                        .replaceFirst("^/", "");
-                                        Path projectCandidate =
-                                                projectBaseDir.resolve(subPath).normalize();
-                                        if (Files.exists(projectCandidate)
-                                                && Files.isRegularFile(projectCandidate)) {
-                                            LOGGER.log(
-                                                    Level.INFO,
-                                                    "Self-healed attachment path from workspace to"
-                                                            + " project: {0} -> {1}",
-                                                    new Object[] {file, projectCandidate});
-                                            file = projectCandidate;
-                                        }
-                                    }
-                                    // Self-healing 2: If still not found, check if filename exists
-                                    // directly under projectBaseDir
-                                    if ((!Files.exists(file) || !Files.isRegularFile(file))
-                                            && file.getFileName() != null) {
-                                        Path nameCandidate =
-                                                projectBaseDir
-                                                        .resolve(file.getFileName().toString())
-                                                        .normalize();
-                                        if (Files.exists(nameCandidate)
-                                                && Files.isRegularFile(nameCandidate)) {
-                                            LOGGER.log(
-                                                    Level.INFO,
-                                                    "Self-healed attachment path by filename in"
-                                                            + " project: {0} -> {1}",
-                                                    new Object[] {file, nameCandidate});
-                                            file = nameCandidate;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if (Files.exists(file) && Files.isRegularFile(file)) {
-                            sendAttachments.add(file);
-                            matcher.appendReplacement(cleanText, "");
-                        } else {
-                            LOGGER.log(Level.WARNING, "Attachment file does not exist: " + pathStr);
-                            matcher.appendReplacement(
-                                    cleanText, String.format(ATTACHMENT_ERR_NOT_FOUND, pathStr));
-                        }
-                    } catch (Exception e) {
-                        LOGGER.log(Level.WARNING, "Failed to parse attachment path: " + pathStr, e);
-                        matcher.appendReplacement(
-                                cleanText, String.format(ATTACHMENT_ERR_INVALID_PATH, pathStr));
+        if (stagingService != null && session != null) {
+            List<ArtifactRecord> staged = stagingService.drainStagedArtifacts(session.getId());
+            for (ArtifactRecord record : staged) {
+                if (record != null && record.storagePath() != null) {
+                    Path path = Path.of(record.storagePath());
+                    if (Files.exists(path) && Files.isRegularFile(path)) {
+                        sendAttachments.add(path);
                     }
-                } else {
-                    matcher.appendReplacement(cleanText, "");
                 }
             }
-            matcher.appendTail(cleanText);
-            finalContent = cleanText.toString().trim();
+            if (!sendAttachments.isEmpty()) {
+                LOGGER.log(
+                        Level.INFO,
+                        "Drained {0} staged artifact(s) for email reply to session {1}",
+                        new Object[] {sendAttachments.size(), session.getId()});
+            }
         }
+        String finalContent = content != null ? content.trim() : "";
         try {
-            sendMail(mailbox, mail.replyTo(), subject, finalContent, sendAttachments);
+            sendMail(mailbox, mail.from(), subject, finalContent, sendAttachments);
         } catch (Exception e) {
             throw new IOException("Failed to send reply email", e);
         }
@@ -1419,10 +1334,43 @@ public class EmailclawChannelRunner {
             if (from.isBlank()) {
                 return null;
             }
-            String replyTo = normalizeSender(getFirstEmail(msg.getReplyTo()));
-            if (replyTo.isBlank()) {
-                replyTo = from;
-            }
+            // ==================================================================================
+            // Security Design Note (Option A: Strictly honor From; completely ignore Reply-To):
+            //
+            // Why we must ignore msg.getReplyTo() and pin replyTo strictly to from:
+            //
+            // 1. Defending Against Sender Spoofing & Out-of-Band Hijacking:
+            //    In standard SMTP specifications, the 'From' and 'Reply-To' headers are decoupled.
+            //    A malicious actor can easily forge:
+            //      From: trusted_user@company.com  (passes allowedSenders whitelist check)
+            //      Reply-To: attacker@evil.com     (attacker's own external mailbox)
+            //
+            // 2. Protecting the TaskId Out-of-Band Challenge-Response Handshake:
+            //    Emailclaw's security foundation mandates: "New subject only bootstraps; it never
+            // executes
+            //    immediately, but issues a unique TaskId receipt. Execution is only activated upon
+            // receiving
+            //    a follow-up reply containing that TaskId."
+            //    If the system honored and replied to Reply-To, the bootstrap guidance containing
+            // the new
+            //    TaskId (as well as subsequent approval codes and result attachments) would be
+            // dispatched
+            //    directly to attacker@evil.com. The attacker would then obtain the TaskId to
+            // trigger
+            //    unauthorized agent tasks and steal output artifacts, completely bypassing
+            // whitelist controls.
+            //
+            // 3. Ensuring a Closed-Loop Trust Chain:
+            //    By strictly enforcing replyTo = from, all outbound system responses (bootstrap
+            // receipts,
+            //    approval requests, and task results) are physically routed exclusively to the
+            // authentic,
+            //    whitelisted sender's mailbox. Even if an attacker forges the From header, they can
+            // never
+            //    intercept the TaskId challenge receipt, thereby eliminating spoofing and
+            // unauthorized access.
+            // ==================================================================================
+            String replyTo = from;
             String subject = msg.getSubject() == null ? "" : msg.getSubject();
             List<MailAttachment> attachments = new ArrayList<>();
             StringBuilder bodyBuilder = new StringBuilder();
@@ -1735,6 +1683,11 @@ public class EmailclawChannelRunner {
     }
 
     // ======================== Inner Helper Types ========================
+    /**
+     * Internal representation of an incoming email.
+     * <p>Security note: {@code replyTo} is intentionally pinned to {@code from} (completely
+     * ignoring incoming Reply-To headers) to prevent out-of-band TaskId/approval code hijacking.
+     */
     record EmailEnvelope(
             long uid,
             String from,

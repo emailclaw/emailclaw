@@ -24,7 +24,14 @@ public final class BuiltInToolNames {
     public static final String DESKTOP_SCREENSHOT = "desktop_screenshot";
     public static final String VIEW_IMAGE = "view_image";
     public static final String VIEW_VIDEO = "view_video";
+
+    /**
+     * @deprecated Deprecated since 26.10.18 in favor of AgentScope standard artifact delivery system
+     *             ({@code deliver_artifact} via {@link io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget}).
+     */
+    @Deprecated(since = "26.10.18", forRemoval = true)
     public static final String SEND_FILE_TO_USER = "send_file_to_user";
+
     public static final String GET_CURRENT_TIME = "get_current_time";
     public static final String SET_USER_TIMEZONE = "set_user_timezone";
     public static final String GET_TOKEN_USAGE = "get_token_usage";

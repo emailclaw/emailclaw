@@ -173,6 +173,13 @@ public class SystemCommandTool extends BaseEmailclawTool {
         }
     }
 
+    /**
+     * Sends a local file to the user.
+     *
+     * @deprecated Deprecated since 26.10.18 in favor of AgentScope standard artifact delivery system
+     *             ({@code deliver_artifact} via {@link io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget}).
+     */
+    @Deprecated(since = "26.10.18", forRemoval = true)
     @Tool(name = BuiltInToolNames.SEND_FILE_TO_USER, description = "Send files to user")
     public ToolResultBlock sendFileToUser(
             @ToolParam(name = "path", description = "File path") String path) {
