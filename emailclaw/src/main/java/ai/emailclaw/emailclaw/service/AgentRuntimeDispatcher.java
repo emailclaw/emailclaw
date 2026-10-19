@@ -10,7 +10,6 @@
  */
 package ai.emailclaw.emailclaw.service;
 
-import ai.emailclaw.emailclaw.channel.ChannelIds;
 import ai.emailclaw.emailclaw.model.AcpAgentInfo;
 import ai.emailclaw.emailclaw.model.AgentConfiguration;
 import ai.emailclaw.emailclaw.model.AgentInfo;
@@ -23,7 +22,6 @@ import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.ExecutionConfig;
@@ -37,6 +35,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
+import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
@@ -74,38 +73,21 @@ public class AgentRuntimeDispatcher {
                 + " completed output when it finishes.";
 
     /**
-     * Instruction prompt for sending attachments via non-console channels (Emailclaw).
+     * Universal instruction prompt for delivering task deliverables and artifacts via deliver_artifact tool.
      */
-    private static final String NON_CONSOLE_CHANNEL_ATTACHMENT_INSTRUCTION =
-            "\n\n# File Delivery Rules (MANDATORY on this channel)\n"
-                    + "This conversation runs on a messaging channel (email). When the user asks"
-                    + " you to send, attach, or deliver any file, report, or document, the ONLY"
-                    + " supported delivery method is to write the file path inside "
-                    + MessageMarkupTags.ATTACHMENT_PATH_TAG
-                    + " tags on ONE single line (no newline characters inside the tag pair,"
-                    + " not wrapped in code fences) in your final response. The system"
-                    + " automatically attaches those files to the message sent to the user."
-                    + " Paths may be relative to the Project Directory (recommended, e.g."
-                    + " report.md, output/result.pdf) or the full absolute path of the file in the"
-                    + " Project Directory. (Note: Project files, generated code, and reports are"
-                    + " located in the Project Directory, NOT in agent-workspace).\n"
-                    + "STRICTLY FORBIDDEN: do NOT attempt to deliver files or send messages"
-                    + " yourself. Never use email CLI tools (such as himalaya, mutt, sendmail),"
-                    + " never write shell/Python scripts that call SMTP or mail APIs, and never"
-                    + " ask the user for mailbox credentials. Such attempts cannot reach the user"
-                    + " and only waste the task budget.";
-
-    /**
-     * Short reminder appended after the skills section so it stays near the end of the system
-     * prompt with higher attention weight.
-     */
-    private static final String NON_CONSOLE_CHANNEL_ATTACHMENT_REMINDER =
-            "\n\nREMINDER: You are on a messaging channel. Deliver files to the user ONLY by"
-                    + " writing "
-                    + MessageMarkupTags.ATTACHMENT_PATH_TAG
-                    + " (using a relative path or full project path) on a single line in your"
-                    + " reply. NEVER send emails or messages yourself (no himalaya, no SMTP/mail"
-                    + " scripts).";
+    private static final String ARTIFACT_DELIVERY_INSTRUCTION =
+            "\n\n"
+                + "# Artifact Delivery Rules\n"
+                + "When your task produces any deliverable files (such as reports, documents,"
+                + " spreadsheets, images, archives, charts, or generated code), you MUST call the"
+                + " `deliver_artifact` tool to deliver each file to the user.\n"
+                + "- Deliver silently: the tool call itself records and attaches the deliverable"
+                + " for the user, so do not mention the delivery or the `deliver_artifact` tool in"
+                + " your reply to the user.\n"
+                + "- Only deliver final completed outputs; do not deliver temporary working files"
+                + " or sensitive credentials.\n"
+                + "- STRICTLY FORBIDDEN: never attempt to send emails, execute mutt/sendmail or run"
+                + " mail scripts yourself.";
 
     private final AppContext repository;
 
@@ -131,6 +113,8 @@ public class AgentRuntimeDispatcher {
 
     private final ChatSessionRepository chatSessionRepository;
 
+    private final ArtifactDeliveryTarget artifactDeliveryTarget;
+
     public AgentRuntimeDispatcher(
             AppContext repository,
             ToolService toolService,
@@ -143,7 +127,8 @@ public class AgentRuntimeDispatcher {
             MessageBusService messageBusService,
             PlanToHintMiddleware planToHintMiddleware,
             MemoryRecallMiddleware memoryRecallMiddleware,
-            ChatSessionRepository chatSessionRepository) {
+            ChatSessionRepository chatSessionRepository,
+            ArtifactDeliveryTarget artifactDeliveryTarget) {
         this.repository = repository;
         this.toolService = toolService;
         this.skillService = skillService;
@@ -156,6 +141,7 @@ public class AgentRuntimeDispatcher {
         this.planToHintMiddleware = planToHintMiddleware;
         this.memoryRecallMiddleware = memoryRecallMiddleware;
         this.chatSessionRepository = chatSessionRepository;
+        this.artifactDeliveryTarget = artifactDeliveryTarget;
     }
 
     /**
@@ -274,14 +260,8 @@ public class AgentRuntimeDispatcher {
                         projectRoot,
                         agentWorkspace);
 
-        // notConsole whether it is a non-console channel session
-        boolean notConsole = channel != null && !ChannelIds.CONSOLE.equals(channel);
-        LOGGER.info("notConsole===" + notConsole);
+        sysPrompt += ARTIFACT_DELIVERY_INSTRUCTION;
         Toolkit toolkit = toolService.buildToolkit(toolRuntimeContext);
-        if (notConsole) {
-            sysPrompt += NON_CONSOLE_CHANNEL_ATTACHMENT_INSTRUCTION;
-            toolkit.removeTool(BuiltInToolNames.SEND_FILE_TO_USER);
-        }
         // Load skills and append to sysPrompt
         List<SkillInfo> enabledSkills =
                 skillService.listWorkspaceSkills(agent.getId()).stream()
@@ -310,9 +290,6 @@ public class AgentRuntimeDispatcher {
                 }
             }
             sysPrompt = sysPrompt + skillsPrompt.toString();
-        }
-        if (notConsole) {
-            sysPrompt += NON_CONSOLE_CHANNEL_ATTACHMENT_REMINDER;
         }
 
         java.util.List<Path> additionalRoots = new java.util.ArrayList<>();
@@ -413,6 +390,7 @@ public class AgentRuntimeDispatcher {
                         .stateStore(repository.agentStateStore())
                         .workspace(agentWorkspace)
                         .filesystem(filesystemSpec)
+                        .artifactDeliveryTarget(artifactDeliveryTarget)
                         .messageBus(messageBusService.getMessageBus(project.getId()))
                         .asyncToolTimeout(
                                 Duration.ofSeconds(Math.max(120, config.getShellCommandTimeout())))

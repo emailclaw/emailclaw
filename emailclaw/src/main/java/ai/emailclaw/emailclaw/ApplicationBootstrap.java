@@ -33,6 +33,7 @@ import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.service.ChatSessionRepository;
 import ai.emailclaw.emailclaw.service.CronJobService;
+import ai.emailclaw.emailclaw.service.EmailclawArtifactDeliveryTarget;
 import ai.emailclaw.emailclaw.service.MarketService;
 import ai.emailclaw.emailclaw.service.McpService;
 import ai.emailclaw.emailclaw.service.MessageBusService;
@@ -41,6 +42,7 @@ import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.RateLimitMiddleware;
 import ai.emailclaw.emailclaw.service.SecurityService;
+import ai.emailclaw.emailclaw.service.SessionArtifactStagingService;
 import ai.emailclaw.emailclaw.service.SessionTitleGenerator;
 import ai.emailclaw.emailclaw.service.SkillService;
 import ai.emailclaw.emailclaw.service.SpawnRegistryService;
@@ -67,6 +69,7 @@ import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.storage.sqlite.DatabaseManager;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStateStore;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStatsRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteArtifactRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteCronHistoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
@@ -201,6 +204,8 @@ public final class ApplicationBootstrap {
         SqliteCronHistoryRepository sqliteCronHistoryRepository =
                 new SqliteCronHistoryRepository(databaseManager);
         SqliteMemoryRepository sqliteMemoryRepository = new SqliteMemoryRepository(databaseManager);
+        SqliteArtifactRepository sqliteArtifactRepository =
+                new SqliteArtifactRepository(databaseManager);
 
         ConfigManager configManager =
                 new ConfigManager(
@@ -219,7 +224,8 @@ public final class ApplicationBootstrap {
                         sqliteTokenUsageRepository,
                         sqliteAgentStatsRepository,
                         sqliteCronHistoryRepository,
-                        sqliteMemoryRepository);
+                        sqliteMemoryRepository,
+                        sqliteArtifactRepository);
         // Seed the schedule default timezone from global configuration and keep it in sync
         // (covers UI saves and external hot reloads of global-config.json)
         CronJobModel.setDefaultTimezone(repository.configManager().getGlobalConfig().getTimeZone());
@@ -339,6 +345,14 @@ public final class ApplicationBootstrap {
         AdaptiveFinalAnswerFilterMiddleware adaptiveFinalAnswerFilterMiddleware =
                 new AdaptiveFinalAnswerFilterMiddleware();
         ToolResultDiffMiddleware toolResultDiffMiddleware = new ToolResultDiffMiddleware();
+        SessionArtifactStagingService sessionArtifactStagingService =
+                new SessionArtifactStagingService();
+        EmailclawArtifactDeliveryTarget emailclawArtifactDeliveryTarget =
+                new EmailclawArtifactDeliveryTarget(
+                        repository,
+                        projectService,
+                        sqliteArtifactRepository,
+                        sessionArtifactStagingService);
         AgentRuntimeDispatcher agentRuntimeDispatcher =
                 new AgentRuntimeDispatcher(
                         repository,
@@ -352,7 +366,8 @@ public final class ApplicationBootstrap {
                         messageBusService,
                         planToHintMiddleware,
                         memoryRecallMiddleware,
-                        chatSessionRepository);
+                        chatSessionRepository,
+                        emailclawArtifactDeliveryTarget);
         ChatService chatService =
                 new ChatService(
                         repository,
@@ -394,7 +409,8 @@ public final class ApplicationBootstrap {
                         agentService,
                         providerService,
                         repository.configManager(),
-                        projectService);
+                        projectService,
+                        sessionArtifactStagingService);
         PluginManager pluginManager =
                 new PluginManager(pluginContext, paths.pluginsDir, pluginRegistry);
         pluginManager.discoverAndLoadAll();

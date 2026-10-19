@@ -38,7 +38,7 @@ public class OneTimePasswordAuth {
                     client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
             int statusCode = response.statusCode();
             String responseBody = response.body();
-            LOG.info("response status=" + statusCode + ", body=" + responseBody);
+            LOG.info("response status=" + statusCode);
 
             if (statusCode < 200 || statusCode >= 300) {
                 LOG.warning(

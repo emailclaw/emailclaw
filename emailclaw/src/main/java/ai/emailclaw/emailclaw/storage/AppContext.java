@@ -29,6 +29,7 @@ import ai.emailclaw.emailclaw.model.VoiceTranscriptionConfig;
 import ai.emailclaw.emailclaw.storage.sqlite.DatabaseManager;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStateStore;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStatsRepository;
+import ai.emailclaw.emailclaw.storage.sqlite.SqliteArtifactRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteChatSessionRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteCronHistoryRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteMemoryRepository;
@@ -61,6 +62,7 @@ public class AppContext implements AutoCloseable {
     private final SqliteAgentStatsRepository agentStatsRepository;
     private final SqliteCronHistoryRepository cronHistoryRepository;
     private final SqliteMemoryRepository memoryRepository;
+    private final SqliteArtifactRepository artifactRepository;
 
     public AppContext(AppPaths paths) {
         this(paths, new DatabaseManager(paths.databaseFile));
@@ -75,7 +77,8 @@ public class AppContext implements AutoCloseable {
                 new SqliteTokenUsageRepository(databaseManager),
                 new SqliteAgentStatsRepository(databaseManager),
                 new SqliteCronHistoryRepository(databaseManager),
-                new SqliteMemoryRepository(databaseManager));
+                new SqliteMemoryRepository(databaseManager),
+                new SqliteArtifactRepository(databaseManager));
     }
 
     public AppContext(
@@ -89,6 +92,28 @@ public class AppContext implements AutoCloseable {
             SqliteMemoryRepository memoryRepository) {
         this(
                 paths,
+                databaseManager,
+                sessionRepository,
+                agentStateStore,
+                tokenUsageRepository,
+                agentStatsRepository,
+                cronHistoryRepository,
+                memoryRepository,
+                new SqliteArtifactRepository(databaseManager));
+    }
+
+    public AppContext(
+            AppPaths paths,
+            DatabaseManager databaseManager,
+            SqliteChatSessionRepository sessionRepository,
+            SqliteAgentStateStore agentStateStore,
+            SqliteTokenUsageRepository tokenUsageRepository,
+            SqliteAgentStatsRepository agentStatsRepository,
+            SqliteCronHistoryRepository cronHistoryRepository,
+            SqliteMemoryRepository memoryRepository,
+            SqliteArtifactRepository artifactRepository) {
+        this(
+                paths,
                 new ConfigManager(
                         paths, sessionRepository, tokenUsageRepository, agentStatsRepository),
                 databaseManager,
@@ -97,7 +122,8 @@ public class AppContext implements AutoCloseable {
                 tokenUsageRepository,
                 agentStatsRepository,
                 cronHistoryRepository,
-                memoryRepository);
+                memoryRepository,
+                artifactRepository);
     }
 
     public AppContext(
@@ -110,6 +136,30 @@ public class AppContext implements AutoCloseable {
             SqliteAgentStatsRepository agentStatsRepository,
             SqliteCronHistoryRepository cronHistoryRepository,
             SqliteMemoryRepository memoryRepository) {
+        this(
+                paths,
+                configManager,
+                databaseManager,
+                sessionRepository,
+                agentStateStore,
+                tokenUsageRepository,
+                agentStatsRepository,
+                cronHistoryRepository,
+                memoryRepository,
+                new SqliteArtifactRepository(databaseManager));
+    }
+
+    public AppContext(
+            AppPaths paths,
+            ConfigManager configManager,
+            DatabaseManager databaseManager,
+            SqliteChatSessionRepository sessionRepository,
+            SqliteAgentStateStore agentStateStore,
+            SqliteTokenUsageRepository tokenUsageRepository,
+            SqliteAgentStatsRepository agentStatsRepository,
+            SqliteCronHistoryRepository cronHistoryRepository,
+            SqliteMemoryRepository memoryRepository,
+            SqliteArtifactRepository artifactRepository) {
         this.paths = paths;
         this.configManager = configManager;
         this.databaseManager = databaseManager;
@@ -119,6 +169,7 @@ public class AppContext implements AutoCloseable {
         this.agentStatsRepository = agentStatsRepository;
         this.cronHistoryRepository = cronHistoryRepository;
         this.memoryRepository = memoryRepository;
+        this.artifactRepository = artifactRepository;
     }
 
     public AppPaths paths() {
@@ -324,6 +375,10 @@ public class AppContext implements AutoCloseable {
 
     public SqliteMemoryRepository memoryRepository() {
         return memoryRepository;
+    }
+
+    public SqliteArtifactRepository artifactRepository() {
+        return artifactRepository;
     }
 
     @Override

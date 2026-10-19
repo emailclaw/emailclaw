@@ -16,6 +16,7 @@ import ai.emailclaw.emailclaw.service.ChannelService;
 import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.service.ProviderService;
+import ai.emailclaw.emailclaw.service.SessionArtifactStagingService;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 
 /**
@@ -59,4 +60,9 @@ public interface PluginContext {
      * Gets the ProjectService instance.
      */
     ProjectService projectService();
+
+    /**
+     * Gets the SessionArtifactStagingService instance.
+     */
+    SessionArtifactStagingService stagingService();
 }

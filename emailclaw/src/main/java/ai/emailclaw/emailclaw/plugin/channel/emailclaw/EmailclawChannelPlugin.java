@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
 import ai.emailclaw.emailclaw.channel.ChannelIds;
+import ai.emailclaw.emailclaw.model.ArtifactRecord;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
@@ -19,6 +20,10 @@ import ai.emailclaw.emailclaw.model.SessionDefaults;
 import ai.emailclaw.emailclaw.plugin.AbstractChannelPlugin;
 import ai.emailclaw.emailclaw.plugin.PluginStatus;
 import ai.emailclaw.emailclaw.service.ChatService;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -109,11 +114,31 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
             // session.name saves the original email title, future email titles will be
             // "session.name session.id"
             String subject = session.getName() + " " + sessionId;
-            runner.sendMail(mailbox, to, subject, content);
+            List<Path> sendAttachments = new ArrayList<>();
+            if (context.stagingService() != null) {
+                List<ArtifactRecord> staged =
+                        context.stagingService().drainStagedArtifacts(sessionId);
+                for (ArtifactRecord record : staged) {
+                    if (record != null && record.storagePath() != null) {
+                        Path path = Path.of(record.storagePath());
+                        if (Files.exists(path) && Files.isRegularFile(path)) {
+                            sendAttachments.add(path);
+                        }
+                    }
+                }
+                if (!sendAttachments.isEmpty()) {
+                    LOGGER.log(
+                            Level.INFO,
+                            "EmailclawPlugin draining {0} staged artifact(s) for session {1}",
+                            new Object[] {sendAttachments.size(), sessionId});
+                }
+            }
+            runner.sendMail(mailbox, to, subject, content, sendAttachments);
             LOGGER.log(
                     Level.INFO,
-                    "EmailclawPlugin has sent reply to {0} (sessionId={1}) via mailbox {2}",
-                    new Object[] {to, sessionId, mailbox.emailAddress()});
+                    "EmailclawPlugin has sent reply to {0} (sessionId={1}) via mailbox {2} with"
+                            + " {3} attachment(s)",
+                    new Object[] {to, sessionId, mailbox.emailAddress(), sendAttachments.size()});
         } catch (Exception e) {
             LOGGER.log(
                     Level.WARNING, "EmailclawPlugin failed to reply to session: " + sessionId, e);
@@ -198,7 +223,8 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
                             context.agentService(),
                             context.providerService(),
                             context.configManager(),
-                            context.projectService());
+                            context.projectService(),
+                            context.stagingService());
             currentStatus = PluginStatus.running("Polling emails");
             LOGGER.info("EmailclawPlugin has started");
         } catch (Exception e) {

@@ -17,13 +17,31 @@ package ai.emailclaw.emailclaw.service;
  * Channel runners (such as Emailclaw) also reference the attachment tag pattern when parsing attachment paths.
  */
 public final class MessageMarkupTags {
+    /**
+     * @deprecated Deprecated since 26.10.18 in favor of AgentScope standard artifact delivery system.
+     */
+    @Deprecated(since = "26.10.18", forRemoval = true)
     public static final String ATTACHMENT_TAG_OPEN = "<attachment_to_channel>";
+
+    /**
+     * @deprecated Deprecated since 26.10.18 in favor of AgentScope standard artifact delivery system.
+     */
+    @Deprecated(since = "26.10.18", forRemoval = true)
     public static final String ATTACHMENT_TAG_CLOSE = "</attachment_to_channel>";
 
-    /** Tag pair for attachment return channel (regex capture group is used to extract the path). */
+    /**
+     * Tag pair for attachment return channel (regex capture group is used to extract the path).
+     *
+     * @deprecated Deprecated since 26.10.18 in favor of AgentScope standard artifact delivery system.
+     */
+    @Deprecated(since = "26.10.18", forRemoval = true)
     public static final String ATTACHMENT_PATTERN =
             ATTACHMENT_TAG_OPEN + "(.*?)" + ATTACHMENT_TAG_CLOSE;
 
+    /**
+     * @deprecated Deprecated since 26.10.18 in favor of AgentScope standard artifact delivery system.
+     */
+    @Deprecated(since = "26.10.18", forRemoval = true)
     public static final String ATTACHMENT_PATH_TAG =
             ATTACHMENT_TAG_OPEN + "/path/to/your/file" + ATTACHMENT_TAG_CLOSE;
 

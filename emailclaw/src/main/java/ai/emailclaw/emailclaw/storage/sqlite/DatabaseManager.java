@@ -38,7 +38,7 @@ public class DatabaseManager implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
     private static final int VALIDATION_TIMEOUT_SECONDS = 2;
     private static final long IDLE_CHECK_THRESHOLD_MS = 10_000L;
-    private static final int TARGET_SCHEMA_VERSION = 3;
+    private static final int TARGET_SCHEMA_VERSION = 4;
 
     private final Path databasePath;
     private final String jdbcUrl;
@@ -434,6 +434,9 @@ public class DatabaseManager implements AutoCloseable {
                         if (currentVersion < 3) {
                             migrateToV3(conn, currentVersion);
                         }
+                        if (currentVersion < 4) {
+                            migrateToV4(conn);
+                        }
                     });
             schemaInitialized.set(true);
             LOGGER.info("SQLite database schema initialization finished successfully.");
@@ -665,6 +668,45 @@ public class DatabaseManager implements AutoCloseable {
         }
         recordSchemaVersion(conn, 3, "Migrate all timestamp fields to 64-bit INTEGER epoch millis");
         LOGGER.info("Schema migration to V3 completed successfully.");
+    }
+
+    /**
+     * Applies the V4 schema migration: creates artifacts table and associated indexes.
+     *
+     * @param conn active connection within transaction
+     * @throws SQLException on DDL error
+     */
+    private void migrateToV4(Connection conn) throws SQLException {
+        LOGGER.info("Applying schema migration to V4 (artifacts table)...");
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS artifacts (
+                        id VARCHAR(255) PRIMARY KEY,
+                        project_id VARCHAR(255) NOT NULL,
+                        session_id VARCHAR(255) NOT NULL,
+                        agent_id VARCHAR(255) NOT NULL,
+                        channel VARCHAR(64) NOT NULL,
+                        file_name VARCHAR(255) NOT NULL,
+                        source_path TEXT,
+                        storage_path TEXT NOT NULL,
+                        mime_type VARCHAR(128),
+                        size_bytes INTEGER NOT NULL,
+                        sha256 VARCHAR(64) NOT NULL,
+                        description TEXT,
+                        created_at_ms INTEGER NOT NULL
+                    );
+                    """);
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_artifacts_session ON artifacts (session_id);");
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_artifacts_project ON artifacts (project_id);");
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_artifacts_created ON artifacts (created_at_ms"
+                            + " DESC);");
+        }
+        recordSchemaVersion(conn, 4, "Add artifacts table and session/project indexes");
+        LOGGER.info("Schema migration to V4 completed successfully.");
     }
 
     /**
