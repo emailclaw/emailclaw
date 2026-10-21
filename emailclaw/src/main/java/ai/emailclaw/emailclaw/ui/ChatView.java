@@ -12,6 +12,7 @@ package ai.emailclaw.emailclaw.ui;
 
 import ai.emailclaw.emailclaw.model.AgentConfiguration;
 import ai.emailclaw.emailclaw.model.AgentInfo;
+import ai.emailclaw.emailclaw.model.ArtifactRecord;
 import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRecord;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
@@ -28,6 +29,7 @@ import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.service.CronJobService;
 import ai.emailclaw.emailclaw.service.ProviderService;
 import ai.emailclaw.emailclaw.service.StreamCallback;
+import ai.emailclaw.emailclaw.util.DesktopPlatformUtils;
 import ai.emailclaw.emailclaw.util.WebViewUtils;
 import io.agentscope.core.event.ConfirmResult;
 import io.agentscope.core.message.Msg;
@@ -35,31 +37,43 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionRule;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -69,6 +83,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
 import javafx.stage.Popup;
+import javafx.stage.Stage;
 import javafx.stage.Window;
 import javafx.util.StringConverter;
 import netscape.javascript.JSObject;
@@ -299,6 +314,218 @@ public class ChatView implements ViewPane {
                             stage.show();
                         } catch (java.io.IOException e) {
                             LOGGER.log(Level.SEVERE, "Failed to load offload file", e);
+                        }
+                    });
+        }
+
+        private Path resolveArtifactPath(String filePath) {
+            if (filePath == null || filePath.isBlank()) {
+                return null;
+            }
+            Path path = Path.of(filePath);
+            if (Files.exists(path)) {
+                return path;
+            }
+            if (currentProject != null && currentProject.getBaseDirectory() != null) {
+                Path base = Path.of(currentProject.getBaseDirectory());
+                Path candidate = base.resolve(filePath);
+                if (Files.exists(candidate)) {
+                    return candidate;
+                }
+                Path inArtifacts = base.resolve("artifacts").resolve(path.getFileName());
+                if (Files.exists(inArtifacts)) {
+                    return inArtifacts;
+                }
+                Path inRoot = base.resolve(path.getFileName());
+                if (Files.exists(inRoot)) {
+                    return inRoot;
+                }
+            }
+            return path;
+        }
+
+        public void openArtifactFile(String filePath) {
+            Platform.runLater(
+                    () -> {
+                        try {
+                            Path path = resolveArtifactPath(filePath);
+                            if (path == null || !Files.exists(path)) {
+                                LOGGER.warning("Artifact file not found: " + filePath);
+                                Alert alert = new Alert(Alert.AlertType.WARNING);
+                                alert.setTitle("Open File");
+                                alert.setHeaderText("File Not Found");
+                                alert.setContentText(
+                                        "The artifact file does not exist at:\n"
+                                                + (path != null ? path : filePath));
+                                alert.showAndWait();
+                                return;
+                            }
+                            DesktopPlatformUtils.openFile(path);
+                            LOGGER.info("Initiated open file for artifact: " + path);
+                        } catch (Exception e) {
+                            LOGGER.log(
+                                    Level.WARNING, "Failed to open artifact file: " + filePath, e);
+                        }
+                    });
+        }
+
+        public void revealArtifactInFolder(String filePath) {
+            Platform.runLater(
+                    () -> {
+                        try {
+                            Path path = resolveArtifactPath(filePath);
+                            if (path == null) {
+                                LOGGER.warning("Artifact path is null/blank");
+                                return;
+                            }
+                            Path dir = Files.isDirectory(path) ? path : path.getParent();
+                            if ((dir == null || !Files.exists(dir)) && !Files.exists(path)) {
+                                LOGGER.warning(
+                                        "Artifact parent directory not found for: " + filePath);
+                                Alert alert = new Alert(Alert.AlertType.WARNING);
+                                alert.setTitle("Show in Folder");
+                                alert.setHeaderText("Directory Not Found");
+                                alert.setContentText(
+                                        "The directory does not exist at:\n"
+                                                + (dir != null ? dir : filePath));
+                                alert.showAndWait();
+                                return;
+                            }
+                            DesktopPlatformUtils.revealInFolder(path);
+                            LOGGER.info("Initiated reveal in folder for artifact: " + path);
+                        } catch (Exception e) {
+                            LOGGER.log(
+                                    Level.WARNING,
+                                    "Failed to reveal artifact folder: " + filePath,
+                                    e);
+                        }
+                    });
+        }
+
+        public void copyArtifactPath(String filePath) {
+            Platform.runLater(
+                    () -> {
+                        try {
+                            Clipboard clipboard = Clipboard.getSystemClipboard();
+                            ClipboardContent content = new ClipboardContent();
+                            content.putString(filePath);
+                            clipboard.setContent(content);
+                            LOGGER.info("Copied artifact path to clipboard: " + filePath);
+                        } catch (Exception e) {
+                            LOGGER.log(
+                                    Level.WARNING, "Failed to copy artifact path: " + filePath, e);
+                        }
+                    });
+        }
+
+        public void previewArtifact(String filePath) {
+            Platform.runLater(
+                    () -> {
+                        try {
+                            Path path = resolveArtifactPath(filePath);
+                            if (path == null || !Files.exists(path)) {
+                                Alert alert = new Alert(Alert.AlertType.WARNING);
+                                alert.setTitle("Artifact Preview");
+                                alert.setHeaderText("File Not Found");
+                                alert.setContentText(
+                                        "The artifact file was not found on disk at:\n"
+                                                + (path != null ? path : filePath));
+                                alert.showAndWait();
+                                return;
+                            }
+                            String fileName = path.getFileName().toString();
+                            String lowerName = fileName.toLowerCase(Locale.ROOT);
+                            Stage previewStage = new Stage();
+                            previewStage.setTitle("Deliverable Preview — " + fileName);
+
+                            BorderPane previewRoot = new BorderPane();
+                            previewRoot.setPadding(new Insets(10));
+
+                            HBox topBar = new HBox(12);
+                            topBar.setAlignment(Pos.CENTER_LEFT);
+                            topBar.setPadding(new Insets(0, 0, 10, 0));
+                            Label titleLabel = new Label(fileName);
+                            titleLabel.setStyle(
+                                    "-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill:"
+                                            + " #0f172a;");
+                            Label sizeLabel =
+                                    new Label("(" + formatFileSize(Files.size(path)) + ")");
+                            sizeLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #64748b;");
+                            HBox spacer = new HBox();
+                            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+                            final String resolvedPath = path.toAbsolutePath().toString();
+                            Button copyPathBtn = new Button("Copy Path");
+                            copyPathBtn.setOnAction(e -> copyArtifactPath(resolvedPath));
+                            Button openExtBtn = new Button("Open with OS App");
+                            openExtBtn.setOnAction(e -> openArtifactFile(resolvedPath));
+
+                            topBar.getChildren()
+                                    .addAll(titleLabel, sizeLabel, spacer, copyPathBtn, openExtBtn);
+                            previewRoot.setTop(topBar);
+
+                            if (lowerName.endsWith(".png")
+                                    || lowerName.endsWith(".jpg")
+                                    || lowerName.endsWith(".jpeg")
+                                    || lowerName.endsWith(".gif")) {
+                                Image img = new Image(path.toUri().toString());
+                                ImageView iv = new ImageView(img);
+                                iv.setPreserveRatio(true);
+                                iv.setFitWidth(800);
+                                iv.setFitHeight(560);
+                                ScrollPane sp = new ScrollPane(iv);
+                                previewRoot.setCenter(sp);
+                                previewStage.setScene(new Scene(previewRoot, 840, 640));
+                            } else {
+                                String text = Files.readString(path, StandardCharsets.UTF_8);
+                                if (lowerName.endsWith(".md") || lowerName.endsWith(".markdown")) {
+                                    WebView mdPreview = new WebView();
+                                    WebViewUtils.configureUserDataDirectory(mdPreview);
+                                    String mdHtml =
+                                            "<!DOCTYPE html><html><head><meta"
+                                                + " charset='UTF-8'/><style>body { font-family:"
+                                                + " -apple-system, BlinkMacSystemFont, 'Segoe UI',"
+                                                + " Roboto, sans-serif; padding: 24px 32px;"
+                                                + " line-height: 1.68; color: #1e293b; background:"
+                                                + " #ffffff; margin: 0; }h1, h2, h3 { color:"
+                                                + " #0f172a; border-bottom: 1px solid #e2e8f0;"
+                                                + " padding-bottom: 8px; margin-top: 24px; }table {"
+                                                + " border-collapse: collapse; width: 100%; margin:"
+                                                + " 16px 0; font-size: 13px; }th, td { border: 1px"
+                                                + " solid #cbd5e1; padding: 8px 12px; text-align:"
+                                                + " left; }th { background: #f8fafc; font-weight:"
+                                                + " 700; color: #334155; }tr:nth-child(even) {"
+                                                + " background: #f8fafc; }code { font-family:"
+                                                + " 'JetBrains Mono', Consolas, monospace;"
+                                                + " background: #f1f5f9; padding: 2px 6px;"
+                                                + " border-radius: 4px; font-size: 12px; }pre {"
+                                                + " background: #0f172a; color: #f8fafc; padding:"
+                                                + " 14px; border-radius: 6px; overflow: auto; }pre"
+                                                + " code { background: transparent; padding: 0;"
+                                                + " color: inherit; }blockquote { border-left: 4px"
+                                                + " solid #3b82f6; margin: 16px 0; padding: 8px"
+                                                + " 16px; background: #eff6ff; color: #1e40af; }hr"
+                                                + " { border: none; border-top: 1px solid #e2e8f0;"
+                                                + " margin: 24px 0; }</style></head><body>"
+                                                    + markdownToHtml(text)
+                                                    + "</body></html>";
+                                    mdPreview.getEngine().loadContent(mdHtml);
+                                    previewRoot.setCenter(mdPreview);
+                                    previewStage.setScene(new Scene(previewRoot, 880, 680));
+                                } else {
+                                    TextArea ta = new TextArea(text);
+                                    ta.setEditable(false);
+                                    ta.setStyle(
+                                            "-fx-font-family: 'JetBrains Mono', Consolas,"
+                                                    + " monospace; -fx-font-size: 13px;");
+                                    previewRoot.setCenter(ta);
+                                    previewStage.setScene(new Scene(previewRoot, 840, 600));
+                                }
+                            }
+                            previewStage.show();
+                        } catch (Exception e) {
+                            LOGGER.log(Level.SEVERE, "Failed to preview artifact: " + filePath, e);
+                            openArtifactFile(filePath);
                         }
                     });
         }
@@ -1636,6 +1863,26 @@ public class ChatView implements ViewPane {
         html.append("    body.classList.add('diff-collapsed'); icon.innerHTML = '▼';\n");
         html.append("  }\n");
         html.append("}\n");
+        // Copy artifact path with temporary visual feedback
+        html.append("function copyPath(btn, path) {\n");
+        html.append("  if (window.javaInterop && window.javaInterop.copyArtifactPath) {\n");
+        html.append("    window.javaInterop.copyArtifactPath(path);\n");
+        html.append("  }\n");
+        html.append("  var orig = btn.innerHTML;\n");
+        html.append(
+                "  btn.innerHTML = '<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\""
+                    + " fill=\"none\" stroke=\"#059669\" stroke-width=\"2.5\""
+                    + " stroke-linecap=\"round\" stroke-linejoin=\"round\""
+                    + " style=\"vertical-align:-1px; margin-right:3px;\"><polyline points=\"20 6 9"
+                    + " 17 4 12\"/></svg>Copied!';\n");
+        html.append("  btn.style.borderColor = '#10b981';\n");
+        html.append("  btn.style.color = '#059669';\n");
+        html.append("  setTimeout(function() {\n");
+        html.append("    btn.innerHTML = orig;\n");
+        html.append("    btn.style.borderColor = '';\n");
+        html.append("    btn.style.color = '';\n");
+        html.append("  }, 2000);\n");
+        html.append("}\n");
         html.append("</script>\n");
         html.append("</head><body>\n");
         html.append("<main class='timeline'>\n");
@@ -1769,6 +2016,12 @@ public class ChatView implements ViewPane {
             html.append("<div class='content content-assistant'>")
                     .append(markdownToHtml(part.getText()))
                     .append("</div>");
+            return;
+        }
+        // If this part is a successful deliver_artifact result, render the in-place Deliverable
+        // Card (Scheme A)
+        if (isDeliverArtifactSuccessResult(part)) {
+            renderDeliverArtifactCard(html, part);
             return;
         }
         // Extract file diff markup block from tool result (<<<FILE_DIFF>>> ... <<<END_FILE_DIFF>>>)
@@ -2019,6 +2272,408 @@ public class ChatView implements ViewPane {
                 .append("'>Approve Execution</button>");
         html.append("</div>");
         html.append("</div>");
+    }
+
+    private static final Pattern ARTIFACT_SOURCE_PATH_PATTERN =
+            Pattern.compile("Delivered\\s+(.+?)\\s+to the configured destination", Pattern.DOTALL);
+    private static final Pattern ARTIFACT_FILE_NAME_PATTERN =
+            Pattern.compile("Delivered\\s+'([^']+)'", Pattern.DOTALL);
+    private static final Pattern ARTIFACT_SIZE_PATTERN =
+            Pattern.compile("\\((\\d+)\\s+bytes\\)", Pattern.DOTALL);
+
+    // --- Vector SVG Icons for Linux Desktop Compatibility (No Emoji Font Dependency) ---
+    private static final String SVG_BADGE_PACKAGE =
+            "<svg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='currentColor'"
+                + " stroke-width='2' stroke-linecap='round' stroke-linejoin='round'"
+                + " style='vertical-align:-1px; margin-right:4px;'><path d='M21 8a2 2 0 0"
+                + " 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0"
+                + " 2 0l7-4A2 2 0 0 0 21 16Z'/><path d='m3.3 7 8.7 5 8.7-5'/><path d='M12"
+                + " 22V12'/></svg>";
+
+    private static final String SVG_STATUS_CHECK =
+            "<svg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='#059669'"
+                + " stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'"
+                + " style='vertical-align:-1px; margin-right:3px;'><polyline points='20 6 9 17 4"
+                + " 12'/></svg>";
+
+    private static final String SVG_BTN_PREVIEW =
+            "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor'"
+                + " stroke-width='2' stroke-linecap='round' stroke-linejoin='round'"
+                + " style='vertical-align:-2px; margin-right:4px;'><path d='M2 12s3-7 10-7 10 7 10"
+                + " 7-3 7-10 7-10-7-10-7Z'/><circle cx='12' cy='12' r='3'/></svg>";
+
+    private static final String SVG_BTN_OPEN =
+            "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor'"
+                + " stroke-width='2' stroke-linecap='round' stroke-linejoin='round'"
+                + " style='vertical-align:-2px; margin-right:4px;'><path d='M18 13v6a2 2 0 0 1-2"
+                + " 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/><polyline points='15 3 21 3 21 9'/><line"
+                + " x1='10' y1='14' x2='21' y2='3'/></svg>";
+
+    private static final String SVG_BTN_FOLDER =
+            "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor'"
+                + " stroke-width='2' stroke-linecap='round' stroke-linejoin='round'"
+                + " style='vertical-align:-2px; margin-right:4px;'><path d='M20 20a2 2 0 0 0"
+                + " 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0"
+                + " 0-2 2v13a2 2 0 0 0 2 2Z'/></svg>";
+
+    private static final String SVG_BTN_COPY =
+            "<svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor'"
+                    + " stroke-width='2' stroke-linecap='round' stroke-linejoin='round'"
+                    + " style='vertical-align:-2px; margin-right:4px;'><rect width='14' height='14'"
+                    + " x='8' y='8' rx='2' ry='2'/><path d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2"
+                    + " 2-2h10c1.1 0 2 .9 2 2'/></svg>";
+
+    private static final String SVG_FILE_DOC =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#2563eb'"
+                + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14"
+                + " 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2"
+                + " 14 8 20 8'/><line x1='16' y1='13' x2='8' y2='13'/><line x1='16' y1='17' x2='8'"
+                + " y2='17'/><polyline points='10 9 9 9 8 9'/></svg>";
+
+    private static final String SVG_FILE_PDF =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#dc2626'"
+                + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14"
+                + " 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2"
+                + " 14 8 20 8'/><path d='M9 15v-4h2a1.5 1.5 0 0 1 0 3H9'/><path d='M15"
+                + " 15h-2v-4h2'/></svg>";
+
+    private static final String SVG_FILE_SHEET =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#16a34a'"
+                + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14"
+                + " 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2"
+                + " 14 8 20 8'/><path d='M8 13h8'/><path d='M8 17h8'/><path d='M12 9v12'/></svg>";
+
+    private static final String SVG_FILE_ZIP =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#d97706'"
+                + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M21"
+                + " 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7"
+                + " 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/><line x1='12' y1='22' x2='12'"
+                + " y2='12'/><line x1='12' y1='7' x2='12' y2='7.01'/><line x1='12' y1='9' x2='12'"
+                + " y2='9.01'/></svg>";
+
+    private static final String SVG_FILE_IMG =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#7c3aed'"
+                    + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><rect"
+                    + " width='18' height='18' x='3' y='3' rx='2' ry='2'/><circle cx='9' cy='9'"
+                    + " r='2'/><path d='m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21'/></svg>";
+
+    private static final String SVG_FILE_CODE =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#0891b2'"
+                    + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><polyline"
+                    + " points='16 18 22 12 16 6'/><polyline points='8 6 2 12 8 18'/></svg>";
+
+    private static final String SVG_FILE_GENERIC =
+            "<svg width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='#64748b'"
+                + " stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M14"
+                + " 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/><polyline points='14 2"
+                + " 14 8 20 8'/></svg>";
+
+    private boolean isDeliverArtifactSuccessResult(ChatMessagePart part) {
+        if (part == null || part.getText() == null) {
+            return false;
+        }
+        String text = part.getText().trim();
+        if (text.startsWith("Error:") || text.contains("was not delivered:")) {
+            return false;
+        }
+        String type = ChatMessagePart.normalizeType(part.getType());
+        if (!ChatMessagePart.TOOL_RESULT.equals(type)) {
+            return false;
+        }
+        String tool = part.getToolName();
+        if (tool != null && "deliver_artifact".equalsIgnoreCase(tool.trim())) {
+            return true;
+        }
+        String title = part.getTitle();
+        if (title != null && title.toLowerCase(Locale.ROOT).contains("deliver_artifact")) {
+            return true;
+        }
+        return text.contains("to the configured destination: Delivered '")
+                || (text.startsWith("Delivered ")
+                        && text.contains("to the configured destination"));
+    }
+
+    private void renderDeliverArtifactCard(StringBuilder html, ChatMessagePart part) {
+        String rawText = part.getText().trim();
+        if (rawText.startsWith("\"") && rawText.endsWith("\"") && rawText.length() >= 2) {
+            rawText = rawText.substring(1, rawText.length() - 1).trim();
+        }
+        rawText = rawText.replace("\\\"", "\"").replace("\\n", "\n");
+
+        Matcher mSrc = ARTIFACT_SOURCE_PATH_PATTERN.matcher(rawText);
+        String sourcePath = mSrc.find() ? mSrc.group(1).trim() : "";
+
+        Matcher mFile = ARTIFACT_FILE_NAME_PATTERN.matcher(rawText);
+        String fileName = mFile.find() ? mFile.group(1).trim() : "";
+        if (fileName.isBlank() && !sourcePath.isBlank()) {
+            try {
+                fileName = Path.of(sourcePath).getFileName().toString();
+            } catch (Exception ignored) {
+            }
+        }
+        if (fileName.isBlank()) {
+            fileName = "deliverable";
+        }
+
+        Matcher mSize = ARTIFACT_SIZE_PATTERN.matcher(rawText);
+        long sizeBytes = 0L;
+        if (mSize.find()) {
+            try {
+                sizeBytes = Long.parseLong(mSize.group(1).trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        String storagePath = null;
+        String sha256 = null;
+        String description = null;
+
+        // 1. Look up in SQLite artifact repository for the current session
+        if (currentSession != null && currentSession.getId() != null) {
+            List<ArtifactRecord> records =
+                    chatService
+                            .repository()
+                            .artifactRepository()
+                            .findBySessionId(currentSession.getId());
+            for (ArtifactRecord r : records) {
+                if (fileName.equals(r.fileName())) {
+                    storagePath = r.storagePath();
+                    if (sizeBytes <= 0) {
+                        sizeBytes = r.sizeBytes();
+                    }
+                    sha256 = r.sha256();
+                    description = r.description();
+                    break;
+                }
+            }
+        }
+
+        // 2. Probe project directory if storagePath is not yet resolved
+        if (storagePath == null
+                && currentProject != null
+                && currentProject.getBaseDirectory() != null) {
+            Path candidate =
+                    Path.of(currentProject.getBaseDirectory())
+                            .resolve("artifacts")
+                            .resolve(fileName);
+            if (Files.exists(candidate)) {
+                storagePath = candidate.toAbsolutePath().normalize().toString();
+            }
+        }
+
+        // 3. Fallback to sourcePath on disk
+        if (storagePath == null && !sourcePath.isBlank()) {
+            Path srcCandidate = Path.of(sourcePath);
+            if (Files.exists(srcCandidate)) {
+                storagePath = srcCandidate.toAbsolutePath().normalize().toString();
+            }
+        }
+
+        // 4. Default destination path if not on disk yet
+        if (storagePath == null) {
+            if (currentProject != null && currentProject.getBaseDirectory() != null) {
+                storagePath =
+                        Path.of(currentProject.getBaseDirectory())
+                                .resolve("artifacts")
+                                .resolve(fileName)
+                                .toAbsolutePath()
+                                .normalize()
+                                .toString();
+            } else {
+                storagePath = !sourcePath.isBlank() ? sourcePath : fileName;
+            }
+        }
+
+        // 5. Probe actual file size and compute SHA-256 if needed
+        Path targetFile = Path.of(storagePath);
+        if (Files.exists(targetFile)) {
+            if (sizeBytes <= 0) {
+                try {
+                    sizeBytes = Files.size(targetFile);
+                } catch (Exception ignored) {
+                }
+            }
+            if (sha256 == null || sha256.isBlank()) {
+                try {
+                    MessageDigest md = MessageDigest.getInstance("SHA-256");
+                    byte[] hash = md.digest(Files.readAllBytes(targetFile));
+                    sha256 = HexFormat.of().formatHex(hash);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        // Display relative destination path
+        String displayPath = storagePath;
+        if (currentProject != null && currentProject.getBaseDirectory() != null) {
+            String base = currentProject.getBaseDirectory();
+            if (displayPath.startsWith(base)) {
+                displayPath = displayPath.substring(base.length());
+                if (displayPath.startsWith("/") || displayPath.startsWith("\\")) {
+                    displayPath = displayPath.substring(1);
+                }
+            }
+        }
+
+        String fileIcon = resolveFileSvgIcon(fileName);
+        String ext =
+                fileName.contains(".")
+                        ? fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)
+                        : "FILE";
+        String shaDisplay =
+                (sha256 != null && sha256.length() >= 12)
+                        ? sha256.substring(0, 6) + "..." + sha256.substring(sha256.length() - 4)
+                        : (sha256 != null ? sha256 : "");
+
+        String jsSafePath = escape(storagePath.replace("\\", "\\\\").replace("'", "\\'"));
+
+        html.append("<div class='artifact-card'>");
+        html.append("<div class='artifact-card-header'>");
+        html.append("<div class='artifact-badge-wrap'>");
+        html.append("<span class='artifact-badge'>")
+                .append(SVG_BADGE_PACKAGE)
+                .append("PROJECT DELIVERABLE</span>");
+        html.append("<span class='artifact-status'>")
+                .append(SVG_STATUS_CHECK)
+                .append("Ready &amp; Saved</span>");
+        html.append("</div>");
+        html.append("<span class='artifact-header-tag'>AgentScope Standard Artifact</span>");
+        html.append("</div>");
+
+        html.append("<div class='artifact-card-body'>");
+        html.append("<div class='artifact-icon'>").append(fileIcon).append("</div>");
+        html.append("<div class='artifact-meta-wrap'>");
+        html.append("<div class='artifact-filename' title='")
+                .append(escape(fileName))
+                .append("'>")
+                .append(escape(fileName))
+                .append("</div>");
+        html.append("<div class='artifact-details'>");
+        html.append("<span class='artifact-pill artifact-size'>")
+                .append(escape(formatFileSize(sizeBytes)))
+                .append("</span>");
+        html.append("<span class='artifact-pill artifact-ext'>")
+                .append(escape(ext))
+                .append("</span>");
+        if (!shaDisplay.isBlank()) {
+            html.append("<span class='artifact-pill artifact-sha' title='SHA-256: ")
+                    .append(escape(sha256))
+                    .append("'>SHA: ")
+                    .append(escape(shaDisplay))
+                    .append("</span>");
+        }
+        html.append("</div>");
+
+        if (description != null && !description.isBlank()) {
+            html.append("<div style='font-size:12px; color:#475569; margin-top:2px;'>")
+                    .append(escape(description))
+                    .append("</div>");
+        }
+
+        html.append("<div class='artifact-path' title='").append(escape(storagePath)).append("'>");
+        html.append("<span class='artifact-path-label'>Destination:</span> ")
+                .append(escape(displayPath));
+        html.append("</div>");
+        html.append("</div>");
+        html.append("</div>");
+
+        // Action Buttons with Vector SVG Icons
+        html.append("<div class='artifact-actions'>");
+        html.append(
+                        "<button class='artifact-btn artifact-btn-preview'"
+                                + " onclick=\"javaInterop.previewArtifact('")
+                .append(jsSafePath)
+                .append("')\">")
+                .append(SVG_BTN_PREVIEW)
+                .append("Preview</button>");
+        html.append(
+                        "<button class='artifact-btn artifact-btn-open'"
+                                + " onclick=\"javaInterop.openArtifactFile('")
+                .append(jsSafePath)
+                .append("')\">")
+                .append(SVG_BTN_OPEN)
+                .append("Open File</button>");
+        html.append("<button class='artifact-btn' onclick=\"javaInterop.revealArtifactInFolder('")
+                .append(jsSafePath)
+                .append("')\">")
+                .append(SVG_BTN_FOLDER)
+                .append("Show in Folder</button>");
+        html.append("<button class='artifact-btn' onclick=\"copyPath(this, '")
+                .append(jsSafePath)
+                .append("')\">")
+                .append(SVG_BTN_COPY)
+                .append("Copy Path</button>");
+        html.append("</div>");
+
+        // Expandable Technical Details
+        html.append("<details class='artifact-tech-details'>");
+        html.append("<summary>Technical Tool Result (AgentScope protocol log)</summary>");
+        html.append("<div class='artifact-raw-log'>").append(escape(rawText)).append("</div>");
+        html.append("</details>");
+
+        html.append("</div>");
+    }
+
+    private static String formatFileSize(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        } else if (bytes < 1024 * 1024) {
+            return String.format(Locale.ROOT, "%.2f KB", bytes / 1024.0);
+        } else if (bytes < 1024 * 1024 * 1024) {
+            return String.format(Locale.ROOT, "%.2f MB", bytes / (1024.0 * 1024.0));
+        } else {
+            return String.format(Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+        }
+    }
+
+    private static String resolveFileSvgIcon(String fileName) {
+        if (fileName == null) {
+            return SVG_FILE_GENERIC;
+        }
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".txt")) {
+            return SVG_FILE_DOC;
+        }
+        if (lower.endsWith(".pdf")) {
+            return SVG_FILE_PDF;
+        }
+        if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".csv")) {
+            return SVG_FILE_SHEET;
+        }
+        if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".rtf")) {
+            return SVG_FILE_DOC;
+        }
+        if (lower.endsWith(".pptx") || lower.endsWith(".ppt")) {
+            return SVG_FILE_DOC;
+        }
+        if (lower.endsWith(".zip")
+                || lower.endsWith(".tar")
+                || lower.endsWith(".gz")
+                || lower.endsWith(".7z")
+                || lower.endsWith(".rar")) {
+            return SVG_FILE_ZIP;
+        }
+        if (lower.endsWith(".png")
+                || lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".svg")
+                || lower.endsWith(".gif")
+                || lower.endsWith(".webp")) {
+            return SVG_FILE_IMG;
+        }
+        if (lower.endsWith(".java")
+                || lower.endsWith(".py")
+                || lower.endsWith(".js")
+                || lower.endsWith(".ts")
+                || lower.endsWith(".html")
+                || lower.endsWith(".css")
+                || lower.endsWith(".json")
+                || lower.endsWith(".xml")
+                || lower.endsWith(".sql")
+                || lower.endsWith(".sh")) {
+            return SVG_FILE_CODE;
+        }
+        return SVG_FILE_GENERIC;
     }
 
     private String escape(String s) {
