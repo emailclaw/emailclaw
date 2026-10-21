@@ -149,10 +149,9 @@ public class EmailclawChannelRunner {
 
     /** Guide reply email template */
     private static final String BOOTSTRAP_GUIDANCE_TEMPLATE =
-            "For security reasons, the system only processes emails with valid TaskId in the"
-                + " subject line. This email has now been updated with the newly created TaskId."
-                + " Please reply to this email, and the system will immediately start working for"
-                + " you.";
+"""
+For security reasons, the system only processes emails with valid TaskId in the subject line. This email has now been updated with the newly created TaskId. Please reply to this email, and the system will immediately start working for you.
+""";
 
     /** Attachment directory name */
     private static final String ATTACHMENTS_DIR_NAME = WorkspacePaths.ATTACHMENTS_DIR;

@@ -14,7 +14,7 @@ import ai.emailclaw.emailclaw.model.GlobalConfig;
 import ai.emailclaw.emailclaw.model.SkillInfo;
 import ai.emailclaw.emailclaw.service.SkillService;
 import ai.emailclaw.emailclaw.storage.AppContext;
-import java.awt.Desktop;
+import ai.emailclaw.emailclaw.util.DesktopPlatformUtils;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -296,9 +296,7 @@ public class SkillPoolView implements ViewPane {
                 externalPathsHint.getStyleClass().add("text-orange-700");
                 return;
             }
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().open(dir);
-            }
+            DesktopPlatformUtils.openFile(dir.toPath());
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to open path: " + selected, ex);
             externalPathsHint.setText("Failed to open path: " + ex.getMessage());
