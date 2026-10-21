@@ -150,7 +150,21 @@ public class EmailclawChannelRunner {
     /** Guide reply email template */
     private static final String BOOTSTRAP_GUIDANCE_TEMPLATE =
 """
-For security reasons, the system only processes emails with valid TaskId in the subject line. This email has now been updated with the newly created TaskId. Please reply to this email, and the system will immediately start working for you.
+Emailclaw Task Handshake: Confirmation Required to Start Execution
+
+A new task project has been initialized for your email subject. For security reasons, execution is held until you complete the TaskId challenge-response handshake.
+
+How to proceed:
+1. Reply directly to this email thread (please keep the TaskId in the subject line intact).
+2. Upon receiving your reply, the TaskId handshake is verified and your Agent will immediately start working in an isolated project workspace.
+
+Why is this handshake required?
+• Defense Against Email Sender Spoofing: Standard SMTP protocol allows 'From' headers to be forged by unauthorized parties. If incoming emails were executed blindly upon receipt, an attacker could spoof your address to trigger unauthorized agent actions, manipulate local files, or consume your API quotas.
+• Out-of-Band TaskId Challenge-Response: To eliminate sender spoofing risks, Emailclaw creates an isolated project session, issues a unique TaskId appended to this email's subject line, and dispatches this receipt strictly to your verified inbox. Only someone with authenticated access to this mailbox can receive the TaskId and authorize execution.
+
+Security notice:
+If you did not send this email, someone may be attempting to spoof your email address. No action is needed: simply ignore or delete this email. Without your explicit reply containing the TaskId, no AI models or tools will ever be invoked.
+
 """;
 
     /** Attachment directory name */
