@@ -1,0 +1,35 @@
+[
+  {
+    "id": "emailclaw",
+    "name": "Emailclaw",
+    "builtIn": true,
+    "enabled": true,
+    "botPrefix": "",
+    "shareSessionInGroup": true,
+    "pluginConfig": {
+      "mailboxes": [
+        {
+          "id": "default-mailbox",
+          "name": "Primary Mailbox",
+          "enabled": true,
+          "emailAddress": "your-agent@example.com",
+          "emailPassword": "your-imap-smtp-authorization-code",
+          "imapHost": "imap.example.com",
+          "imapPort": 993,
+          "imapSsl": true,
+          "imapStartTls": false,
+          "smtpHost": "smtp.example.com",
+          "smtpPort": 465,
+          "smtpSsl": true,
+          "smtpStartTls": false,
+          "targetAgentId": "",
+          "allowlistSenders": [
+            "your-personal-email@example.com"
+          ],
+          "pollIntervalSeconds": 30,
+          "deliveryMode": "REPLY_IN_THREAD"
+        }
+      ]
+    }
+  }
+]
