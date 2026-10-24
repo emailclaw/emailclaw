@@ -1,0 +1,47 @@
+# ==============================================================================
+# Emailclaw - Docker Compose Deployment Specification
+# Repository: https://github.com/emailclaw/emailclaw
+# ==============================================================================
+
+services:
+  emailclaw:
+    container_name: emailclaw
+    image: emailclaw/emailclaw:${EMAILCLAW_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EMAILCLAW_VERSION: ${EMAILCLAW_VERSION:-latest}
+        EMAILCLAW_REPO: ${EMAILCLAW_REPO:-emailclaw/emailclaw}
+    restart: unless-stopped
+    init: true
+    # Allocate sufficient shared memory for Playwright headless Chromium
+    shm_size: '2gb'
+    environment:
+      - EMAILCLAW_HOME=/data
+      - TZ=${TZ:-UTC}
+      - JAVA_OPTS=${JAVA_OPTS:--Xms256m -Xmx1024m -XX:+UseG1GC}
+      - EMAILCLAW_BROWSER_HEADLESS=true
+      - CHROME_OR_EDGE_PATH=/usr/bin/google-chrome-stable
+    volumes:
+      # Persistent storage volume for configurations, database, projects, and logs
+      - emailclaw_data:/data
+      # Alternatively, use a host bind-mount directory for direct file editing:
+      # - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - emailclaw_net
+
+volumes:
+  emailclaw_data:
+    name: emailclaw_data
+
+networks:
+  emailclaw_net:
+    name: emailclaw_net
+    driver: bridge

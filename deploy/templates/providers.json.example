@@ -1,0 +1,20 @@
+[
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "sk-your-openai-api-key",
+    "chatModel": "OpenAIChatModel",
+    "local": false,
+    "custom": false
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "apiKey": "sk-your-deepseek-api-key",
+    "chatModel": "OpenAIChatModel",
+    "local": false,
+    "custom": true
+  }
+]
