@@ -720,6 +720,9 @@ public class ConfigManager {
             if (toolsState.value == null) {
                 toolsState.value = readList(paths.toolConfigFile, TOOLS_REF, toolsState);
             }
+            if (!(toolsState.value instanceof ArrayList)) {
+                toolsState.value = new ArrayList<>(toolsState.value);
+            }
             if (toolsState.value.isEmpty()) {
                 toolsState.value = defaults == null ? new ArrayList<>() : new ArrayList<>(defaults);
                 changed = true;
@@ -758,7 +761,7 @@ public class ConfigManager {
 
     public void saveTools(List<ToolInfo> tools) {
         LOGGER.info("saveTools starts...");
-        List<ToolInfo> toSave = tools == null ? new ArrayList<>() : tools;
+        List<ToolInfo> toSave = tools == null ? new ArrayList<>() : new ArrayList<>(tools);
         synchronized (toolsState.lock) {
             toolsState.value = toSave;
             toolsState.lastWrittenContent =

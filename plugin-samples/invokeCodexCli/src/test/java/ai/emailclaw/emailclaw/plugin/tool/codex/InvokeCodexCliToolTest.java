@@ -36,7 +36,9 @@ class InvokeCodexCliToolTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
-    @DisplayName("Tool invocation should pass prompt, model, sandbox flags, and working directory, returning ToolResultBlock")
+    @DisplayName(
+            "Tool invocation should pass prompt, model, sandbox flags, and working directory,"
+                    + " returning ToolResultBlock")
     void testToolExecutionSuccess() throws Exception {
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
@@ -63,16 +65,15 @@ class InvokeCodexCliToolTest {
                     return new CodexExecutionResult(
                             0,
                             "```json\n"
-                                    + "{\"status\":\"completed\",\"modifiedFiles\":[\"App.java\"]}\n"
-                                    + "```",
+                                + "{\"status\":\"completed\",\"modifiedFiles\":[\"App.java\"]}\n"
+                                + "```",
                             "",
                             false,
                             true,
                             null);
                 };
 
-        InvokeCodexCliTool tool =
-                new InvokeCodexCliTool(null, mockRunner, "codex", 120);
+        InvokeCodexCliTool tool = new InvokeCodexCliTool(null, mockRunner, "codex", 120);
 
         ToolResultBlock resultBlock =
                 tool.invokeCodexCli(
@@ -146,11 +147,9 @@ class InvokeCodexCliToolTest {
                                         + timeoutSeconds
                                         + " seconds.");
 
-        InvokeCodexCliTool tool =
-                new InvokeCodexCliTool(null, timeoutRunner, "codex", 10);
+        InvokeCodexCliTool tool = new InvokeCodexCliTool(null, timeoutRunner, "codex", 10);
         ToolResultBlock errorBlock =
-                tool.invokeCodexCli(
-                        "Long running codex task", null, null, null, 10, null, true);
+                tool.invokeCodexCli("Long running codex task", null, null, null, 10, null, true);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -168,8 +167,7 @@ class InvokeCodexCliToolTest {
     @DisplayName("Tool should reject empty prompts immediately with error ToolResultBlock")
     void testEmptyPromptHandling() throws Exception {
         InvokeCodexCliTool tool = new InvokeCodexCliTool(null);
-        ToolResultBlock errorBlock =
-                tool.invokeCodexCli("   ", null, null, null, null, null, true);
+        ToolResultBlock errorBlock = tool.invokeCodexCli("   ", null, null, null, null, null, true);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -200,8 +198,7 @@ class InvokeCodexCliToolTest {
         assertEquals(PluginStatus.Phase.INITIALIZED, plugin.status().phase());
 
         plugin.start();
-        assertEquals(
-                PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
+        assertEquals(PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
 
         plugin.stop();
         assertEquals(PluginStatus.Phase.STOPPED, plugin.status().phase());
@@ -242,15 +239,17 @@ class InvokeCodexCliToolTest {
     }
 
     @Test
-    @DisplayName("DefaultCodexProcessRunner buildCommand should correctly construct codex exec CLI arguments")
+    @DisplayName(
+            "DefaultCodexProcessRunner buildCommand should correctly construct codex exec CLI"
+                    + " arguments without invalid --color")
     void testDefaultCodexProcessRunnerBuildCommand() {
-        DefaultCodexProcessRunner runner = new DefaultCodexProcessRunner();
+        CodexPathResolver mockPathResolver = configuredPath -> "/resolved/bin/" + configuredPath;
+        DefaultCodexProcessRunner runner = new DefaultCodexProcessRunner(mockPathResolver);
 
         // 1. Standard prompt without model or sandbox, continueLastSession = false
         List<String> cmd1 = runner.buildCommand("codex", "fix bug", null, null, null, false);
         assertEquals(
-                List.of("codex", "exec", "--color", "never", "--skip-git-repo-check", "fix bug"),
-                cmd1);
+                List.of("/resolved/bin/codex", "exec", "--skip-git-repo-check", "fix bug"), cmd1);
 
         // 2. Prompt with model and sandbox, continueLastSession = false
         List<String> cmd2 =
@@ -258,10 +257,8 @@ class InvokeCodexCliToolTest {
                         "codex", "add feature", "gpt-5", "workspace-write", null, false);
         assertEquals(
                 List.of(
-                        "codex",
+                        "/resolved/bin/codex",
                         "exec",
-                        "--color",
-                        "never",
                         "--skip-git-repo-check",
                         "-m",
                         "gpt-5",
@@ -273,13 +270,11 @@ class InvokeCodexCliToolTest {
         // 3. Extra arguments specified, continueLastSession = false
         List<String> cmd3 =
                 runner.buildCommand(
-                        "/custom/codex", "review code", null, null, "--ephemeral --json", false);
+                        "codex", "review code", null, null, "--ephemeral --json", false);
         assertEquals(
                 List.of(
-                        "/custom/codex",
+                        "/resolved/bin/codex",
                         "exec",
-                        "--color",
-                        "never",
                         "--skip-git-repo-check",
                         "--ephemeral",
                         "--json",
@@ -289,21 +284,40 @@ class InvokeCodexCliToolTest {
         // 4. continueLastSession = true (default behavior for session continuity)
         // Notice: resume --last is placed right after exec, and -s / --sandbox is omitted because
         // 'codex exec resume' rejects -s as an unexpected argument.
+        // --color is omitted because it is illegal in 'codex exec resume'.
         List<String> cmd4 =
                 runner.buildCommand(
                         "codex", "continue task", "gpt-5", "workspace-write", null, true);
         assertEquals(
                 List.of(
-                        "codex",
+                        "/resolved/bin/codex",
                         "exec",
                         "resume",
                         "--last",
-                        "--color",
-                        "never",
                         "--skip-git-repo-check",
                         "-m",
                         "gpt-5",
                         "continue task"),
                 cmd4);
+    }
+
+    @Test
+    @DisplayName("DefaultCodexPathResolver should expand tildes and resolve paths")
+    void testDefaultCodexPathResolver() {
+        DefaultCodexPathResolver resolver = new DefaultCodexPathResolver();
+
+        // 1. Tilde expansion
+        String expanded = resolver.expandTilde("~/bin/codex");
+        String userHome = System.getProperty("user.home");
+        assertEquals(userHome + "/bin/codex", expanded);
+
+        // 2. Fallback to command name when binary not found on path
+        String resolvedNonExistent = resolver.resolveCliPath("nonexistent-codex-binary-12345");
+        assertEquals("nonexistent-codex-binary-12345", resolvedNonExistent);
+
+        // 3. Null or blank resolves to codex or discovered path
+        String resolvedDefault = resolver.resolveCliPath(null);
+        assertNotNull(resolvedDefault);
+        assertFalse(resolvedDefault.isBlank());
     }
 }

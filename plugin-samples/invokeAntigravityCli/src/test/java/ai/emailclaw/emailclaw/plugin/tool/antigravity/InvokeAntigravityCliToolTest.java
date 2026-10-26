@@ -53,7 +53,8 @@ class InvokeAntigravityCliToolTest {
     }
 
     @Test
-    @DisplayName("Tool invocation should pass formatted prompt with -p flag and return ToolResultBlock")
+    @DisplayName(
+            "Tool invocation should pass formatted prompt with -p flag and return ToolResultBlock")
     void testToolExecutionSuccess() throws Exception {
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
@@ -92,8 +93,7 @@ class InvokeAntigravityCliToolTest {
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
         assertEquals("agy", capturedCliPath.get());
         assertTrue(capturedPrompt.get().contains("Generate report"));
-        assertTrue(
-                capturedPrompt.get().endsWith(AntigravityJsonUtils.JSON_FORMAT_INSTRUCTION));
+        assertTrue(capturedPrompt.get().endsWith(AntigravityJsonUtils.JSON_FORMAT_INSTRUCTION));
         assertTrue(capturedSkipPerms.get());
         assertEquals(0, resultBlock.getMetadata().get("exitCode"));
         assertEquals(false, resultBlock.getMetadata().get("timedOut"));
@@ -149,7 +149,8 @@ class InvokeAntigravityCliToolTest {
     @DisplayName("Tool should reject empty prompts immediately with error ToolResultBlock")
     void testEmptyPromptHandling() throws Exception {
         InvokeAntigravityCliTool tool = new InvokeAntigravityCliTool(null);
-        ToolResultBlock errorBlock = tool.invokeAntigravityCli("   ", null, null, null, null, null, null);
+        ToolResultBlock errorBlock =
+                tool.invokeAntigravityCli("   ", null, null, null, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -180,8 +181,7 @@ class InvokeAntigravityCliToolTest {
         assertEquals(PluginStatus.Phase.INITIALIZED, plugin.status().phase());
 
         plugin.start();
-        assertEquals(
-                PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
+        assertEquals(PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
 
         plugin.stop();
         assertEquals(PluginStatus.Phase.STOPPED, plugin.status().phase());

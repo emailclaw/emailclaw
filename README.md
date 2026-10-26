@@ -98,6 +98,28 @@ The release process builds desktop installation packages for the following platf
 | Linux Portable Deployment | `.tar.gz` | Execute  `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`. Launch **Emailclaw** by running `~/.local/emailclaw/bin/emailclaw` |
 | Debian/Ubuntu Linux | `.deb` | Execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`. Launch **Emailclaw** from the application menu or by running `/opt/emailclaw/bin/emailclaw` |
 
+#### Native Linux Automated Installation Script & Docker Compose Deployment
+
+* **Native Linux Automated Install Script** (auto-detects amd64/arm64, installs dependencies, sets up systemd service):
+  ```bash
+  # Desktop GUI Mode: Install and launch desktop interface immediately
+  curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash
+
+  # Server Headless Daemon Mode: Install and start as systemd user service (--service)
+  curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash -s -- --service
+  ```
+
+* **Industrial-Grade Docker Compose Deployment** (ideal for 24/7 cloud servers/VPS, Ubuntu 26.04 base, no external JDK required, official Chrome & CJK fonts included, unprivileged non-root user):
+  ```bash
+  mkdir -p emailclaw-docker && cd emailclaw-docker
+  curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/Dockerfile
+  curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/docker-compose.yml
+  curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/.env.example
+  cp .env.example .env
+  docker compose up -d
+  ```
+  See [deploy/README.md](./deploy/README.md) for the complete container deployment guide.
+
 ### 2. Configure Model and Agent
 
 After launching the desktop application:
@@ -128,19 +150,47 @@ After saving the configuration, enable Emailclaw on the channels page. The syste
 
 ### 3.2 Using the System-Provided Emailclaw Channel Service
 
-The prerequisite is that you have sent an email to otp@emailclaw.email to obtain a one-time password, and you fully agree to the Emailclaw Channel Service Agreement:
+The prerequisite is that you have sent an email to `otp@emailclaw.email` to obtain a one-time password (OTP), and you fully agree to the Emailclaw Channel Service Agreement:
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
 4. If a user registers for the Emailclaw Channel service provided by the system but does not use the service for more than 100 consecutive days, the Service Provider will delete the user's service.
 5. By using this service, you agree to comply with all applicable local and international laws and regulations.
 
+#### Desktop GUI Configuration
 Just fill in the following items:
-
 - **Registration Email**: The email address used to register for the service.
 - **One-time Password**: The obtained one-time password credential.
 
 After saving the configuration, enable Emailclaw on the channels page. The system will start polling the mailbox in the background. The allowed sender is simply your own email.
+
+#### Headless Daemon / Service Mode Auto-Registration
+
+When deploying on headless Linux servers (`emailclaw --service`) or in Docker containers without a graphical interface, Emailclaw provides an automated background registration mechanism:
+
+You only need to add `registrantEmail` and `oneTimePassword` to `channels.json` (located at `~/emailclaw/.config/channels.json` or `/data/.config/channels.json` in Docker). During initialization, the system automatically creates a placeholder `"mailboxes" : [ ]` under `emailclaw`, so you can directly insert your credentials into the list:
+
+```json
+[
+  {
+    "id": "emailclaw",
+    "name": "Emailclaw",
+    "pluginConfig": {
+      "mailboxes": [
+        {
+          "registrantEmail": "your-email@example.com",
+          "oneTimePassword": "YOUR_ONE_TIME_PASSWORD"
+        }
+      ]
+    }
+  }
+]
+```
+
+The background daemon's `processOneTimePasswordRegistrations` routine automatically detects these pending credentials. Upon performing the authentication attempt, it immediately removes `oneTimePassword` (completely preventing retry storms), appends `registrantEmail` to `allowlistSenders`, and writes back the allocated Agent email address and password to `channels.json`.
+
+> [!TIP]
+> **After manually saving `registrantEmail` and `oneTimePassword` into `channels.json`, the user only needs to wait about one minute (during channel polling and snapshot scheduling) to see the allocated `emailAddress` and `emailPassword` appear directly in `channels.json`!**
 
 
 ### 4. Initiate the First Task

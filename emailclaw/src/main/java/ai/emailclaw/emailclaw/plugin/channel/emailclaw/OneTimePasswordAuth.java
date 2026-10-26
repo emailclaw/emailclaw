@@ -10,7 +10,14 @@
  */
 package ai.emailclaw.emailclaw.plugin.channel.emailclaw;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.logging.Level;
 import java.util.logging.Logger;
+import tools.jackson.databind.ObjectMapper;
 
 // One-time Password Authentication
 public class OneTimePasswordAuth {
@@ -21,21 +28,23 @@ public class OneTimePasswordAuth {
     public static EmailAndPassword oneTimePasswordAuth(
             String registrantEmail, String oneTimePassword) {
         try {
-            tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+            ObjectMapper mapper = new ObjectMapper();
             OneTimePasswordAndName payload =
                     new OneTimePasswordAndName(registrantEmail.trim(), oneTimePassword.trim());
             String jsonBody = mapper.writeValueAsString(payload);
 
-            java.net.http.HttpRequest request =
-                    java.net.http.HttpRequest.newBuilder()
-                            .uri(java.net.URI.create(OTP_API))
+            HttpRequest request =
+                    HttpRequest.newBuilder()
+                            .uri(URI.create(OTP_API))
+                            .timeout(Duration.ofSeconds(15))
                             .header("Content-Type", "application/json")
-                            .PUT(java.net.http.HttpRequest.BodyPublishers.ofString(jsonBody))
+                            .PUT(HttpRequest.BodyPublishers.ofString(jsonBody))
                             .build();
 
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-            java.net.http.HttpResponse<String> response =
-                    client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            HttpClient client =
+                    HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+            HttpResponse<String> response =
+                    client.send(request, HttpResponse.BodyHandlers.ofString());
             int statusCode = response.statusCode();
             String responseBody = response.body();
             LOG.info("response status=" + statusCode);
@@ -71,10 +80,7 @@ public class OneTimePasswordAuth {
                 return null;
             }
         } catch (Exception ex) {
-            LOG.log(
-                    java.util.logging.Level.SEVERE,
-                    "System mode registration validation exception",
-                    ex);
+            LOG.log(Level.SEVERE, "System mode registration validation exception", ex);
             return null;
         }
     }

@@ -29,8 +29,7 @@ public class InvokeOpencodeCliPlugin extends AbstractToolPlugin {
     public static final String PLUGIN_NAME = "Invoke OpenCode CLI";
     public static final String TOOL_NAME = "invokeOpencodeCli";
 
-    private static final Logger LOGGER =
-            Logger.getLogger(InvokeOpencodeCliPlugin.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(InvokeOpencodeCliPlugin.class.getName());
 
     private InvokeOpencodeCliTool toolHandler;
     private volatile PluginStatus currentStatus = PluginStatus.registered();

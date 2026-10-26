@@ -91,6 +91,28 @@ Agent 在隔离工作区中推理、调用受控工具、生成结果
 | Linux 便携部署 | `.tar.gz` | 执行 `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`；启动 **Emailclaw** 运行 `~/.local/emailclaw/bin/emailclaw` |
 | Debian/Ubuntu Linux | `.deb` | 执行 `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`；从应用菜单启动 **Emailclaw**，或运行  `/opt/emailclaw/bin/emailclaw` |
 
+#### 原生 Linux 自动化安装脚本与基于 Docker Compose 的工业级容器化部署
+
+* **原生 Linux 自动化安装脚本**（自动检测 amd64/arm64 架构、安装依赖、注册开机自启）：
+  ```bash
+  # 桌面图形界面模式：安装后立即启动桌面应用
+  curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash
+
+  # 服务器无头服务模式：安装并以 systemd 后台服务运行（--service）
+  curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash -s -- --service
+  ```
+
+* **基于 Docker Compose 的工业级容器化部署**（适合 24/7 云服务器或 VPS，基于通用 Ubuntu 26.04，无需外部 JDK，内置 Google Chrome 与中文字体，非 root 最小权限运行）：
+  ```bash
+  mkdir -p emailclaw-docker && cd emailclaw-docker
+  curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/Dockerfile
+  curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/docker-compose.yml
+  curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/.env.example
+  cp .env.example .env
+  docker compose up -d
+  ```
+  详细部署指南请见 [deploy 部署指南](./deploy/README-zh.md)。
+
 ### 2. 配置模型与 Agent
 
 启动桌面应用后：
@@ -119,21 +141,49 @@ Gmail、Outlook、iCloud、163、126、QQ、Foxmail、Yahoo 等常见地址会�
 
 保存配置后，在渠道页面启用 Emailclaw。系统会开始在后台轮询邮箱。强烈建议只添加你信任的地址到允许发件人列表。
 
-### 3.2 使用使用系统提供的Emailclaw Channel Service
+### 3.2 使用系统提供的 Emailclaw Channel Service
 
-前提是你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement
+前提是你已发送邮件到 `otp@emailclaw.email` 后获取了一次性密码（OTP），且完全同意 Emailclaw Channel Service Agreement：
 1. The Service Provider reserves all rights, and may suspend or change the terms of this agreement at any time without prior notice.
 2. The Service Provider provides no quality guarantee for the services provided. The Service Provider shall not be held liable for any direct or indirect damages arising from the use of this service.
 3. The Emailclaw Channel only provides email channel services, and does not provide email storage services. All sent or received emails will be completely and irrecoverably deleted from the server after 15 minutes.
 4. If a user registers for the Emailclaw Channel service provided by the system but does not use the service for more than 100 consecutive days, the Service Provider will delete the user's service.
 5. By using this service, you agree to comply with all applicable local and international laws and regulations.
 
+#### 桌面图形界面配置
 只需填写以下项目：
-
 - **Registration Email**：用来注册服务的邮箱地址。
 - **One-time Password**：获取到的一次性密码凭据。
 
 保存配置后，在渠道页面启用 Emailclaw。系统会开始在后台轮询邮箱。允许发件人就是你自己的邮箱。
+
+#### 无图形界面/服务模式后台自动注册（Headless Auto-Registration）
+
+当在无界面的 Linux 服务器（`emailclaw --service`）或 Docker 容器环境下部署时，由于没有图形配置界面，系统提供了后台自动注册机制：
+
+用户只需将 `registrantEmail` 和 `oneTimePassword` 写入 `channels.json`（位于 `~/emailclaw/.config/channels.json` 或 Docker 卷中的 `/data/.config/channels.json`）。系统在初始化时已在 `emailclaw` 渠道内预留了 `"mailboxes" : [ ]`，用户直接在列表中填入即可：
+
+```json
+[
+  {
+    "id": "emailclaw",
+    "name": "Emailclaw",
+    "pluginConfig": {
+      "mailboxes": [
+        {
+          "registrantEmail": "your-email@example.com",
+          "oneTimePassword": "YOUR_ONE_TIME_PASSWORD"
+        }
+      ]
+    }
+  }
+]
+```
+
+后台守护进程在运行时，`processOneTimePasswordRegistrations` 机制会自动检测此配置，在完成一次性鉴权尝试后立即无条件擦除 `oneTimePassword`（彻底杜绝失败后的重试风暴），自动将 `registrantEmail` 添加到 `allowlistSenders` 白名单，并将分配的专属 Agent 邮箱和密码回写持久化。
+
+> [!TIP]
+> **用户手工将 `registrantEmail`、`oneTimePassword` 写入 `channels.json` 后，只需要等一分钟左右（通道周期性轮询与快照调度），就能在 `channels.json` 文件中直接查看到分配好的 `emailAddress` 和 `emailPassword`！**
 
 
 ### 4. 发起第一项任务

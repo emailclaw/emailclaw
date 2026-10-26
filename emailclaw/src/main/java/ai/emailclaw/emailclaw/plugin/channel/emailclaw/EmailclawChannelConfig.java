@@ -15,6 +15,7 @@ import ai.emailclaw.emailclaw.model.AgentIds;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
 import ai.emailclaw.emailclaw.util.CommonUtils;
+import ai.emailclaw.emailclaw.util.UuidUtils;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -245,7 +246,15 @@ public final class EmailclawChannelConfig {
      */
     public static boolean normalizeEmailclawPluginConfig(ChannelInfo ch) {
         if (ch == null || ch.getPluginConfig() == null) return false;
-        return normalizeEmailclawPluginConfig(ch.getPluginConfig());
+        boolean changed = normalizeEmailclawPluginConfig(ch.getPluginConfig());
+        if (changed) {
+            List<MailboxAccountConfig> mailboxes = getMailboxes(ch);
+            boolean hasRunnable = mailboxes.stream().anyMatch(MailboxAccountConfig::isRunnable);
+            if (hasRunnable && !ch.isEnabled()) {
+                ch.setEnabled(true);
+            }
+        }
+        return changed;
     }
 
     /**
@@ -263,6 +272,16 @@ public final class EmailclawChannelConfig {
         }
         if (pluginConfig.containsKey("botPrefix")) {
             pluginConfig.remove("botPrefix");
+            changed = true;
+        }
+
+        if (processOneTimePasswordRegistrations(pluginConfig)) {
+            changed = true;
+        }
+
+        if (!pluginConfig.containsKey(EmailclawChannelConfigKeys.MAILBOXES)
+                || !(pluginConfig.get(EmailclawChannelConfigKeys.MAILBOXES) instanceof List)) {
+            pluginConfig.put(EmailclawChannelConfigKeys.MAILBOXES, new ArrayList<>());
             changed = true;
         }
 
@@ -316,6 +335,220 @@ public final class EmailclawChannelConfig {
             setMailboxes(pluginConfig, deduplicated);
         }
         return changed;
+    }
+
+    /**
+     * Inspects the plugin configuration for any pending one-time password (OTP) registrations.
+     *
+     * <p>When Emailclaw runs in headless daemon mode (e.g., {@code --service}), users cannot configure
+     * mailboxes via the graphical settings dialog. Instead, they can supply {@code registrantEmail}
+     * and {@code oneTimePassword} in {@code channels.json}. This method performs the background
+     * registration via {@link OneTimePasswordAuth}, populates the allocated {@code emailAddress} and
+     * {@code emailPassword}, and appends {@code registrantEmail} to {@code allowlistSenders}.
+     *
+     * <p>To prevent infinite retry storms against the authentication endpoint, {@code oneTimePassword}
+     * is ALWAYS removed from the map after the authentication attempt, regardless of whether it succeeded
+     * or failed.
+     *
+     * @param pluginConfig the raw plugin configuration map to inspect and update
+     * @return {@code true} if any configuration modification occurred
+     */
+    private static boolean processOneTimePasswordRegistrations(Map<String, Object> pluginConfig) {
+        if (pluginConfig == null) {
+            return false;
+        }
+        boolean changed = false;
+
+        // 1. Process pending registrations within the "mailboxes" list
+        Object rawMailboxes = pluginConfig.get(EmailclawChannelConfigKeys.MAILBOXES);
+        if (rawMailboxes instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> rawMap) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> mailboxMap = (Map<String, Object>) rawMap;
+                    String emailAddress = (String) mailboxMap.getOrDefault("emailAddress", "");
+                    String emailPassword = (String) mailboxMap.getOrDefault("emailPassword", "");
+                    String registrantEmail = (String) mailboxMap.get("registrantEmail");
+                    String oneTimePassword = (String) mailboxMap.get("oneTimePassword");
+
+                    if ((emailAddress == null
+                                    || emailAddress.isBlank()
+                                    || emailPassword == null
+                                    || emailPassword.isBlank())
+                            && registrantEmail != null
+                            && !registrantEmail.isBlank()
+                            && oneTimePassword != null
+                            && !oneTimePassword.isBlank()) {
+
+                        String trimmedRegistrant = registrantEmail.trim();
+                        String trimmedOtp = oneTimePassword.trim();
+
+                        // Always remove oneTimePassword to prevent retry storms
+                        mailboxMap.remove("oneTimePassword");
+                        changed = true;
+
+                        LOGGER.info(
+                                "Attempting background One-Time Password registration for"
+                                        + " registrant: "
+                                        + trimmedRegistrant);
+                        OneTimePasswordAuth.EmailAndPassword authRes =
+                                OneTimePasswordAuth.oneTimePasswordAuth(
+                                        trimmedRegistrant, trimmedOtp);
+
+                        if (authRes != null
+                                && authRes.email() != null
+                                && !authRes.email().isBlank()) {
+                            mailboxMap.put("emailAddress", authRes.email());
+                            mailboxMap.put("emailPassword", authRes.password());
+
+                            String currentId = (String) mailboxMap.get("id");
+                            if (currentId == null || currentId.isBlank()) {
+                                mailboxMap.put("id", UuidUtils.randomUUIDv7().toString());
+                            }
+
+                            String currentName = (String) mailboxMap.get("name");
+                            if (currentName == null
+                                    || currentName.isBlank()
+                                    || "Mailbox".equalsIgnoreCase(currentName.trim())) {
+                                mailboxMap.put("name", authRes.email());
+                            }
+                            if (!mailboxMap.containsKey("enabled")) {
+                                mailboxMap.put("enabled", true);
+                            }
+
+                            // Automatically add registrantEmail to allowlistSenders
+                            addSenderToAllowlist(mailboxMap, trimmedRegistrant);
+
+                            LOGGER.info(
+                                    "Background registration succeeded for registrant "
+                                            + trimmedRegistrant
+                                            + ", allocated email: "
+                                            + authRes.email());
+                        } else {
+                            LOGGER.severe(
+                                    "Background registration failed for registrant: "
+                                            + trimmedRegistrant
+                                            + ". oneTimePassword was purged to prevent retry"
+                                            + " storms.");
+                        }
+                    } else if (mailboxMap.containsKey("oneTimePassword")
+                            && emailAddress != null
+                            && !emailAddress.isBlank()
+                            && emailPassword != null
+                            && !emailPassword.isBlank()) {
+                        // Already allocated, clean up residual oneTimePassword
+                        mailboxMap.remove("oneTimePassword");
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // 2. Process pending registration at the root level of pluginConfig
+        String rootRegistrantEmail = (String) pluginConfig.get("registrantEmail");
+        String rootOtp = (String) pluginConfig.get("oneTimePassword");
+        if (rootRegistrantEmail != null
+                && !rootRegistrantEmail.isBlank()
+                && rootOtp != null
+                && !rootOtp.isBlank()) {
+
+            String trimmedRegistrant = rootRegistrantEmail.trim();
+            String trimmedOtp = rootOtp.trim();
+
+            // Always remove oneTimePassword to prevent retry storms
+            pluginConfig.remove("oneTimePassword");
+            changed = true;
+
+            LOGGER.info(
+                    "Attempting root-level One-Time Password registration for registrant: "
+                            + trimmedRegistrant);
+            OneTimePasswordAuth.EmailAndPassword authRes =
+                    OneTimePasswordAuth.oneTimePasswordAuth(trimmedRegistrant, trimmedOtp);
+
+            if (authRes != null && authRes.email() != null && !authRes.email().isBlank()) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> mailboxList =
+                        (rawMailboxes instanceof List<?>)
+                                ? (List<Map<String, Object>>) rawMailboxes
+                                : new ArrayList<>();
+
+                if (!(rawMailboxes instanceof List<?>)) {
+                    pluginConfig.put(EmailclawChannelConfigKeys.MAILBOXES, mailboxList);
+                }
+
+                boolean existingFound = false;
+                for (Map<String, Object> mb : mailboxList) {
+                    String mbEmail = (String) mb.get("emailAddress");
+                    if (authRes.email().equalsIgnoreCase(mbEmail)) {
+                        mb.put("emailPassword", authRes.password());
+                        addSenderToAllowlist(mb, trimmedRegistrant);
+                        existingFound = true;
+                        break;
+                    }
+                }
+
+                if (!existingFound) {
+                    Map<String, Object> newMailbox = new LinkedHashMap<>();
+                    newMailbox.put("id", UuidUtils.randomUUIDv7().toString());
+                    newMailbox.put("name", authRes.email());
+                    newMailbox.put("enabled", true);
+                    newMailbox.put("emailAddress", authRes.email());
+                    newMailbox.put("emailPassword", authRes.password());
+                    newMailbox.put("registrantEmail", trimmedRegistrant);
+                    List<String> allowlist = new ArrayList<>();
+                    allowlist.add(trimmedRegistrant);
+                    newMailbox.put("allowlistSenders", allowlist);
+                    mailboxList.add(newMailbox);
+                }
+
+                LOGGER.info(
+                        "Root-level registration succeeded for registrant "
+                                + trimmedRegistrant
+                                + ", allocated email: "
+                                + authRes.email());
+            } else {
+                LOGGER.severe(
+                        "Root-level registration failed for registrant: "
+                                + trimmedRegistrant
+                                + ". oneTimePassword was purged to prevent retry storms.");
+            }
+        } else if (pluginConfig.containsKey("oneTimePassword")) {
+            pluginConfig.remove("oneTimePassword");
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    /**
+     * Appends the given sender email to the mailbox allowlist if not already present.
+     *
+     * @param mailboxMap  the mailbox configuration map
+     * @param senderEmail the registrant sender email to allow
+     */
+    private static void addSenderToAllowlist(Map<String, Object> mailboxMap, String senderEmail) {
+        if (mailboxMap == null || senderEmail == null || senderEmail.isBlank()) {
+            return;
+        }
+        String normalizedSender = senderEmail.trim();
+        Object rawSenders = mailboxMap.get("allowlistSenders");
+        List<String> sendersList = new ArrayList<>();
+        if (rawSenders instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null && !item.toString().isBlank()) {
+                    sendersList.add(item.toString().trim());
+                }
+            }
+        }
+        boolean alreadyPresent = sendersList.stream().anyMatch(normalizedSender::equalsIgnoreCase);
+        if (!alreadyPresent) {
+            sendersList.add(normalizedSender);
+            mailboxMap.put("allowlistSenders", sendersList);
+            LOGGER.info(
+                    "Automatically added registrant email "
+                            + normalizedSender
+                            + " to allowlistSenders");
+        }
     }
 
     private static Map<String, Object> toMap(MailboxAccountConfig config) {

@@ -72,7 +72,7 @@ During chat sessions or automated agent workflows, prompts that require code ref
 
 The tool executes:
 ```bash
-codex exec --color never --skip-git-repo-check "Refactor the authentication module"
+codex exec --skip-git-repo-check "Refactor the authentication module"
 ```
 in the background with the project working directory set on the process, closes standard input immediately to prevent stdin blocking, extracts clean JSON (supporting JSON objects, arrays, and JSON Lines streams), and returns it directly to the agent.
 

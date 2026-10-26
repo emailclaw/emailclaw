@@ -19,7 +19,53 @@ The release process builds desktop installation packages for the following platf
 | Linux Portable Deployment | `.tar.gz` | Execute  `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`. Launch **Emailclaw** by running `~/.local/emailclaw/bin/emailclaw` |
 | Debian/Ubuntu Linux | `.deb` | Execute `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`. Launch **Emailclaw** from the application menu or by running `/opt/emailclaw/bin/emailclaw` |
 
-### 2.2 Building from Source
+### 2.2 Native Linux Automated Install Script & Industrial-Grade Docker Compose Deployment
+
+For physical Linux machines, cloud servers (VPS), or NAS devices, automated installer scripts and containerized deployment provide the fastest and most reliable setup:
+
+#### Option A: Native Linux Automated Install Script (Recommended for Personal Linux)
+
+The official automated install script detects the CPU architecture (amd64 / arm64), verifies prerequisites, downloads and extracts the release package to `~/.local/emailclaw`, and optionally registers a systemd user service for auto-start on boot:
+
+```bash
+# 1. Desktop GUI Mode: Install and launch desktop interface immediately
+curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash
+
+# 2. Server Headless Daemon Mode: Install and register as headless background service (--service)
+curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash -s -- --service
+
+# 3. Install Only Mode: Install without launching immediately
+curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash -s -- --no-run
+```
+
+#### Option B: Industrial-Grade Docker Compose Deployment (Recommended for 24/7 Cloud Servers)
+
+Ideal for cloud instances, VPS, and private servers requiring unattended continuous daemon execution:
+* **Self-Contained Minimal Runtime**: Based on standard `ubuntu:26.04`, utilizing the bundled runtime from jpackage. **No external JDK installation is required on the host or in the container**.
+* **Headless Browser & CJK Font Support**: Includes pre-installed Google Chrome Stable and multilingual fonts (`fonts-noto-cjk`, Color Emoji), ensuring full compatibility with Playwright web extraction and anti-bot evasions.
+* **Production Sandbox & Process Reaping**: Runs as an unprivileged user (`emailclaw:1000`) following least privilege principles. Uses `dumb-init` as PID 1 to gracefully catch `SIGTERM` signals and shut down cleanly without leaving zombie processes.
+* **Resource Safeguards**: Pre-allocates `shm_size: 2gb` to avoid Chromium crashes and configures log rotation (50MB per file, 5 files max).
+
+**Quickstart**:
+
+```bash
+# 1. Create deployment directory and download deployment files
+mkdir -p emailclaw-docker && cd emailclaw-docker
+curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/Dockerfile
+curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/docker-compose.yml
+curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/.env.example
+cp .env.example .env
+
+# 2. Build and launch the container daemon
+docker compose up -d
+
+# 3. View live runtime logs
+docker compose logs -f
+```
+
+Container data and configuration files are persisted inside the Docker named volume `emailclaw_data` (mapped to `/data`, corresponding to `EMAILCLAW_HOME`). For complete details, see the [deploy documentation](../deploy/README.md).
+
+### 2.3 Building from Source
 
 Use this section only if you need to compile it yourself. Building requires JDK 25, Maven, and the packaging capabilities of the corresponding platform.
 
@@ -83,9 +129,65 @@ The default application home directory is:
 
 It can be changed via the Java system property `emailclaw.home` or the environment variable `EMAILCLAW_HOME`. Channel configurations are located in `.config/channels.json`; Providers, Agents, projects, and cron jobs are also saved in the same `.config/` directory. It is preferred to use the graphical interface to modify configurations. Before manually editing, please back up and stop concurrent modifications.
 
-### 4.4 Manually Modifying the Configuration File channels.json
+### 4.4 Manually Modifying the Configuration File channels.json (Headless Service / Docker Mode)
 
-If you use your own email, please refer to the section above to fill in the relevant fields; if you want to use the system-provided Emailclaw Channel Service, provided you are an invited user, you have sent an email to otp@emailclaw.email to obtain a one-time password, and fully agree to the Emailclaw Channel Service Agreement, you only need to fill in three fields: `"sysEmailMode": true`, `"registrantEmail": "<YOUR EMAIL>"`, `"oneTimePassword": "<YOUR OTP>"`.
+On headless Linux servers (`emailclaw --service` mode) or in containerized Docker environments where no GUI is available, all email channel configurations are managed by directly editing `~/.emailclaw/.config/channels.json` (or `/data/.config/channels.json` inside containers).
+
+#### 1. Using Your Own Email
+When using a personal or corporate mailbox (such as Gmail, Outlook, QQ, 163, etc.), declare the connection parameters inside the `mailboxes` list:
+```json
+{
+  "emailclaw": {
+    "mailboxes": [
+      {
+        "id": "my-mailbox-01",
+        "name": "Work Email",
+        "enabled": true,
+        "emailAddress": "your-account@example.com",
+        "emailPassword": "YOUR_APP_PASSWORD",
+        "imapHost": "imap.example.com",
+        "imapPort": 993,
+        "imapSsl": true,
+        "smtpHost": "smtp.example.com",
+        "smtpPort": 465,
+        "smtpSsl": true,
+        "allowlistSenders": ["admin@example.com"]
+      }
+    ]
+  }
+}
+```
+
+#### 2. Using the System-Provided Emailclaw Channel Service (Automated Background Registration)
+
+If you wish to use the dedicated `@emailclaw.email` service provided by the system (having obtained an OTP from `otp@emailclaw.email` and agreed to the Service Agreement), you do not need any complex CLI interaction. The system automatically initializes `channels.json` with a placeholder `"mailboxes" : [ ]` under `emailclaw`. Simply insert your `registrantEmail` and `oneTimePassword` into the list:
+
+```json
+[
+  {
+    "id": "emailclaw",
+    "name": "Emailclaw",
+    "pluginConfig": {
+      "mailboxes": [
+        {
+          "registrantEmail": "your-personal@example.com",
+          "oneTimePassword": "YOUR_ONE_TIME_PASSWORD"
+        }
+      ]
+    }
+  }
+]
+```
+
+During service startup or routine scheduled polling cycles, the daemon's `processOneTimePasswordRegistrations` routine automatically handles the registration:
+1. **Retry Storm Elimination**: Before making the authentication request, the background service unconditionally purges `oneTimePassword` from the configuration map. Even if the network times out or the OTP is invalid, it will never repeatedly hammer the authentication endpoint.
+2. **Automatic Allowlist Authorization**: Upon successful authentication, the system automatically appends your `registrantEmail` to the mailbox's `allowlistSenders` list, granting you immediate access to dispatch instructions to the Agent.
+3. **Account Allocation & Preset Binding**: Once the allocated credentials are confirmed, the daemon populates `emailAddress` (e.g., `user***@emailclaw.email`) and the secure random `emailPassword`, automatically binding standard IMAP (993) and SMTP (465) configurations via built-in presets.
+4. **State Persistence Write-Back**: The daemon marks the configuration snapshot as modified and automatically persists the updated structure back to `channels.json` on disk.
+
+> [!IMPORTANT]
+> **Automated Credential Write-Back Note**:
+> After manually saving `registrantEmail` and `oneTimePassword` into `channels.json`, **you only need to wait about one minute** (the daemon's background polling and snapshot verification cycle is approximately 30 to 60 seconds) to see the automatically populated `emailAddress` and `emailPassword` appear directly in `channels.json`. No daemon restart is required—the channel becomes active and ready for work immediately!
 
 ## 5. The Most Important Usage: New Subject Means New Project
 

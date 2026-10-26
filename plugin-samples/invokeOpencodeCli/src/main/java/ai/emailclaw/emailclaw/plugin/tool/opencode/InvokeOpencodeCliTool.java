@@ -49,7 +49,25 @@ public class InvokeOpencodeCliTool {
      * @param context Framework plugin context
      */
     public InvokeOpencodeCliTool(PluginContext context) {
-        this(context, new DefaultOpencodeProcessRunner(), DEFAULT_CLI_PATH, DEFAULT_TIMEOUT_SECONDS);
+        this(
+                context,
+                new DefaultOpencodeProcessRunner(),
+                DEFAULT_CLI_PATH,
+                DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Dependency-injected constructor with custom path resolver adhering to Pure DI.
+     *
+     * @param context Framework plugin context
+     * @param pathResolver Strategy for locating OpenCode CLI executable
+     */
+    public InvokeOpencodeCliTool(PluginContext context, OpencodePathResolver pathResolver) {
+        this(
+                context,
+                new DefaultOpencodeProcessRunner(pathResolver),
+                DEFAULT_CLI_PATH,
+                DEFAULT_TIMEOUT_SECONDS);
     }
 
     /**
@@ -105,8 +123,7 @@ public class InvokeOpencodeCliTool {
     public ToolResultBlock invokeOpencodeCli(
             @ToolParam(
                             name = "prompt",
-                            description =
-                                    "The task description or prompt to send to OpenCode CLI.")
+                            description = "The task description or prompt to send to OpenCode CLI.")
                     String prompt,
             @ToolParam(
                             name = "cli_path",
@@ -147,7 +164,8 @@ public class InvokeOpencodeCliTool {
         boolean effectiveContinue = continueLastSession == null || continueLastSession;
         LOGGER.log(
                 Level.INFO,
-                "InvokeOpencodeCli tool call initiated: promptLength={0}, model={1}, continueLastSession={2}",
+                "InvokeOpencodeCli tool call initiated: promptLength={0}, model={1},"
+                        + " continueLastSession={2}",
                 new Object[] {prompt != null ? prompt.length() : 0, model, effectiveContinue});
 
         if (prompt == null || prompt.isBlank()) {
@@ -160,10 +178,7 @@ public class InvokeOpencodeCliTool {
                                                     "Prompt cannot be empty or blank.", -1))
                                     .build())
                     .state(ToolResultState.ERROR)
-                    .metadata(
-                            Map.of(
-                                    "exitCode", -1,
-                                    "error", "Prompt cannot be empty or blank."))
+                    .metadata(Map.of("exitCode", -1, "error", "Prompt cannot be empty or blank."))
                     .build();
         }
 
@@ -179,7 +194,9 @@ public class InvokeOpencodeCliTool {
                 Level.INFO,
                 "Launching OpenCode CLI tool execution: cliPath={0}, workingDir={1}, timeout={2}s,"
                         + " model={3}, continueLastSession={4}",
-                new Object[] {actualCliPath, targetWorkingDir, effectiveTimeout, model, effectiveContinue});
+                new Object[] {
+                    actualCliPath, targetWorkingDir, effectiveTimeout, model, effectiveContinue
+                });
 
         OpencodeExecutionResult result =
                 processRunner.execute(
@@ -198,22 +215,21 @@ public class InvokeOpencodeCliTool {
 
         if (result.timedOut()) {
             String timeoutMessage =
-                    "OpenCode CLI execution timed out after "
-                            + effectiveTimeout
-                            + " seconds.";
+                    "OpenCode CLI execution timed out after " + effectiveTimeout + " seconds.";
             return ToolResultBlock.builder()
                     .output(
                             TextBlock.builder()
-                                    .text(
-                                            OpencodeJsonUtils.createErrorJson(
-                                                    timeoutMessage, -1))
+                                    .text(OpencodeJsonUtils.createErrorJson(timeoutMessage, -1))
                                     .build())
                     .state(ToolResultState.ERROR)
                     .metadata(
                             Map.of(
-                                    "exitCode", -1,
-                                    "timedOut", true,
-                                    "workingDirectory", targetWorkingDir.toString()))
+                                    "exitCode",
+                                    -1,
+                                    "timedOut",
+                                    true,
+                                    "workingDirectory",
+                                    targetWorkingDir.toString()))
                     .build();
         }
 
@@ -221,8 +237,7 @@ public class InvokeOpencodeCliTool {
             String error =
                     result.error() != null && !result.error().isBlank()
                             ? result.error()
-                            : "OpenCode CLI execution failed with exit code "
-                                    + result.exitCode();
+                            : "OpenCode CLI execution failed with exit code " + result.exitCode();
             return ToolResultBlock.builder()
                     .output(
                             TextBlock.builder()
@@ -262,8 +277,7 @@ public class InvokeOpencodeCliTool {
     private Path getProjectOrWorkspaceBase() {
         if (context != null && context.projectService() != null) {
             ProjectInfo project = context.projectService().currentDefault();
-            if (project.getBaseDirectory() != null
-                    && !project.getBaseDirectory().isBlank()) {
+            if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
                 Path projectDir =
                         Paths.get(project.getBaseDirectory()).toAbsolutePath().normalize();
                 if (Files.exists(projectDir) && Files.isDirectory(projectDir)) {

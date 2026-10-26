@@ -59,6 +59,21 @@ public class InvokeAntigravityCliTool {
     }
 
     /**
+     * Dependency-injected constructor with custom path resolver adhering to Pure DI.
+     *
+     * @param context Framework plugin context
+     * @param pathResolver Strategy for locating Antigravity CLI executable
+     */
+    public InvokeAntigravityCliTool(PluginContext context, AntigravityPathResolver pathResolver) {
+        this(
+                context,
+                new DefaultAntigravityProcessRunner(pathResolver),
+                DEFAULT_CLI_PATH,
+                DEFAULT_TIMEOUT_SECONDS,
+                true);
+    }
+
+    /**
      * Full dependency-injected constructor adhering to the Pure DI pattern.
      *
      * @param context Framework plugin context
@@ -177,10 +192,7 @@ public class InvokeAntigravityCliTool {
                                                     "Prompt cannot be empty or blank.", -1))
                                     .build())
                     .state(ToolResultState.ERROR)
-                    .metadata(
-                            Map.of(
-                                    "exitCode", -1,
-                                    "error", "Prompt cannot be empty or blank."))
+                    .metadata(Map.of("exitCode", -1, "error", "Prompt cannot be empty or blank."))
                     .build();
         }
 
@@ -221,22 +233,21 @@ public class InvokeAntigravityCliTool {
 
         if (result.timedOut()) {
             String timeoutMessage =
-                    "Antigravity CLI execution timed out after "
-                            + effectiveTimeout
-                            + " seconds.";
+                    "Antigravity CLI execution timed out after " + effectiveTimeout + " seconds.";
             return ToolResultBlock.builder()
                     .output(
                             TextBlock.builder()
-                                    .text(
-                                            AntigravityJsonUtils.createErrorJson(
-                                                    timeoutMessage, -1))
+                                    .text(AntigravityJsonUtils.createErrorJson(timeoutMessage, -1))
                                     .build())
                     .state(ToolResultState.ERROR)
                     .metadata(
                             Map.of(
-                                    "exitCode", -1,
-                                    "timedOut", true,
-                                    "workingDirectory", targetWorkingDir.toString()))
+                                    "exitCode",
+                                    -1,
+                                    "timedOut",
+                                    true,
+                                    "workingDirectory",
+                                    targetWorkingDir.toString()))
                     .build();
         }
 

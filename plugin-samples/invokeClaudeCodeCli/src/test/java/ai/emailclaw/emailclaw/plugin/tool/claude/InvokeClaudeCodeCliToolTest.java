@@ -36,7 +36,9 @@ class InvokeClaudeCodeCliToolTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
-    @DisplayName("Tool invocation should pass prompt, model, permissionMode, and working directory, returning ToolResultBlock")
+    @DisplayName(
+            "Tool invocation should pass prompt, model, permissionMode, and working directory,"
+                    + " returning ToolResultBlock")
     void testToolExecutionSuccess() throws Exception {
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
@@ -63,16 +65,15 @@ class InvokeClaudeCodeCliToolTest {
                     return new ClaudeCodeExecutionResult(
                             0,
                             "```json\n"
-                                    + "{\"status\":\"completed\",\"modifiedFiles\":[\"App.java\"]}\n"
-                                    + "```",
+                                + "{\"status\":\"completed\",\"modifiedFiles\":[\"App.java\"]}\n"
+                                + "```",
                             "",
                             false,
                             true,
                             null);
                 };
 
-        InvokeClaudeCodeCliTool tool =
-                new InvokeClaudeCodeCliTool(null, mockRunner, "claude", 120);
+        InvokeClaudeCodeCliTool tool = new InvokeClaudeCodeCliTool(null, mockRunner, "claude", 120);
 
         ToolResultBlock resultBlock =
                 tool.invokeClaudeCodeCli(
@@ -200,8 +201,7 @@ class InvokeClaudeCodeCliToolTest {
         assertEquals(PluginStatus.Phase.INITIALIZED, plugin.status().phase());
 
         plugin.start();
-        assertEquals(
-                PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
+        assertEquals(PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
 
         plugin.stop();
         assertEquals(PluginStatus.Phase.STOPPED, plugin.status().phase());
@@ -242,16 +242,15 @@ class InvokeClaudeCodeCliToolTest {
     }
 
     @Test
-    @DisplayName("DefaultClaudeCodeProcessRunner buildCommand should correctly construct claude -p CLI arguments")
+    @DisplayName(
+            "DefaultClaudeCodeProcessRunner buildCommand should correctly construct claude -p CLI"
+                    + " arguments")
     void testDefaultClaudeCodeProcessRunnerBuildCommand() {
         DefaultClaudeCodeProcessRunner runner = new DefaultClaudeCodeProcessRunner();
 
         // 1. Standard prompt without model or permissionMode, continueLastSession = false
-        List<String> cmd1 =
-                runner.buildCommand("claude", "fix bug", null, null, null, false);
-        assertEquals(
-                List.of("claude", "-p", "--output-format", "json", "fix bug"),
-                cmd1);
+        List<String> cmd1 = runner.buildCommand("claude", "fix bug", null, null, null, false);
+        assertEquals(List.of("claude", "-p", "--output-format", "json", "fix bug"), cmd1);
 
         // 2. Prompt with model and permissionMode, continueLastSession = false
         List<String> cmd2 =
@@ -297,8 +296,7 @@ class InvokeClaudeCodeCliToolTest {
 
         // 4. continueLastSession = true (default behavior for session continuity)
         List<String> cmd4 =
-                runner.buildCommand(
-                        "claude", "continue task", "sonnet", null, null, true);
+                runner.buildCommand("claude", "continue task", "sonnet", null, null, true);
         assertEquals(
                 List.of(
                         "claude",
@@ -313,16 +311,8 @@ class InvokeClaudeCodeCliToolTest {
 
         // 5. Extra args containing -c and -p should avoid duplicate flags
         List<String> cmd5 =
-                runner.buildCommand(
-                        "claude", "continue task", null, null, "-c -p", true);
+                runner.buildCommand("claude", "continue task", null, null, "-c -p", true);
         assertEquals(
-                List.of(
-                        "claude",
-                        "--output-format",
-                        "json",
-                        "-c",
-                        "-p",
-                        "continue task"),
-                cmd5);
+                List.of("claude", "--output-format", "json", "-c", "-p", "continue task"), cmd5);
     }
 }
