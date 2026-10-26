@@ -15,7 +15,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -35,7 +37,15 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
     private static final Logger LOGGER =
             Logger.getLogger(DefaultOpencodeProcessRunner.class.getName());
 
-    public DefaultOpencodeProcessRunner() {}
+    private final OpencodePathResolver pathResolver;
+
+    public DefaultOpencodeProcessRunner() {
+        this(new DefaultOpencodePathResolver());
+    }
+
+    public DefaultOpencodeProcessRunner(OpencodePathResolver pathResolver) {
+        this.pathResolver = pathResolver != null ? pathResolver : new DefaultOpencodePathResolver();
+    }
 
     /**
      * Builds the command arguments for opencode run.
@@ -53,7 +63,8 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
         List<String> command = new ArrayList<>();
         String effectiveCliPath =
                 (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "opencode";
-        command.add(effectiveCliPath);
+        String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
+        command.add(resolvedCliPath);
         command.add("run");
 
         boolean hasContinue = false;
@@ -124,6 +135,7 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
         processBuilder.environment().put("TERM", "dumb");
         processBuilder.environment().remove("CI");
         processBuilder.environment().put("NO_COLOR", "1");
+        enrichSubprocessPath(processBuilder, command.get(0));
 
         LOGGER.log(
                 Level.INFO,
@@ -139,20 +151,9 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
             } catch (IOException ignored) {
             }
         } catch (IOException e) {
-            LOGGER.log(
-                    Level.SEVERE,
-                    "Failed to launch OpenCode CLI process: " + command.get(0),
-                    e);
-            return new OpencodeExecutionResult(
-                    -1,
-                    "",
-                    e.getMessage(),
-                    false,
-                    false,
-                    "Failed to start OpenCode CLI process ('"
-                            + command.get(0)
-                            + "'): "
-                            + e.getMessage());
+            LOGGER.log(Level.SEVERE, "Failed to launch OpenCode CLI process: " + command.get(0), e);
+            String diagnostic = buildLaunchFailureDiagnostic(command.get(0), e);
+            return new OpencodeExecutionResult(-1, "", diagnostic, false, false, diagnostic);
         }
 
         StringBuilder stdoutBuilder = new StringBuilder();
@@ -264,5 +265,79 @@ public class DefaultOpencodeProcessRunner implements OpencodeProcessRunner {
                 new Object[] {exitCode, stdout.length(), stderr.length()});
 
         return new OpencodeExecutionResult(exitCode, stdout, stderr, false, success, errorMsg);
+    }
+
+    /**
+     * Enriches the subprocess environment {@code PATH} with the binary's parent directory and {@code ~/.local/bin}.
+     *
+     * @param processBuilder The ProcessBuilder to enrich
+     * @param executablePath The resolved binary path being executed
+     */
+    void enrichSubprocessPath(ProcessBuilder processBuilder, String executablePath) {
+        String existingPath = processBuilder.environment().get("PATH");
+        if (existingPath == null) {
+            existingPath = System.getenv("PATH");
+            if (existingPath == null) {
+                existingPath = "";
+            }
+        }
+
+        String userHome = System.getProperty("user.home");
+        List<String> extraDirs = new ArrayList<>();
+
+        if (executablePath != null
+                && (executablePath.contains("/") || executablePath.contains("\\"))) {
+            try {
+                Path parent = Paths.get(executablePath).toAbsolutePath().getParent();
+                if (parent != null && Files.isDirectory(parent)) {
+                    extraDirs.add(parent.normalize().toString());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (userHome != null && !userHome.isBlank()) {
+            Path opencodeBin = Paths.get(userHome, ".opencode", "bin");
+            if (Files.isDirectory(opencodeBin)) {
+                extraDirs.add(opencodeBin.toAbsolutePath().normalize().toString());
+            }
+            Path localBin = Paths.get(userHome, ".local", "bin");
+            if (Files.isDirectory(localBin)) {
+                extraDirs.add(localBin.toAbsolutePath().normalize().toString());
+            }
+        }
+
+        if (!extraDirs.isEmpty()) {
+            String pathSeparator = File.pathSeparator;
+            StringBuilder newPath = new StringBuilder();
+            for (String extraDir : extraDirs) {
+                if (!existingPath.contains(extraDir)) {
+                    newPath.append(extraDir).append(pathSeparator);
+                }
+            }
+            newPath.append(existingPath);
+            processBuilder.environment().put("PATH", newPath.toString());
+            LOGGER.log(Level.FINE, "Enriched subprocess PATH: {0}", newPath);
+        }
+    }
+
+    /**
+     * Generates a clear, actionable diagnostic message when process spawning fails with {@link IOException}.
+     *
+     * @param binaryPath Binary path that failed to launch
+     * @param ex Caught IOException
+     * @return Formatted diagnostic guidance
+     */
+    private String buildLaunchFailureDiagnostic(String binaryPath, IOException ex) {
+        String errorMsg = ex.getMessage() != null ? ex.getMessage() : "";
+        if (errorMsg.contains("error=2") || errorMsg.contains("No such file")) {
+            return "Failed to start OpenCode CLI process ('"
+                    + binaryPath
+                    + "'): Executable not found. Please ensure OpenCode CLI is installed (e.g. via"
+                    + " 'curl -fsSL https://opencode.ai/install.sh | bash' or 'npm i -g"
+                    + " opencode-ai'), ensure $HOME/.opencode/bin or $HOME/.local/bin is in your"
+                    + " PATH, or configure the 'cli_path' setting.";
+        }
+        return "Failed to start OpenCode CLI process ('" + binaryPath + "'): " + errorMsg;
     }
 }

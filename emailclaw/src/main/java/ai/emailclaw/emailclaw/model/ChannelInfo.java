@@ -11,6 +11,7 @@
 package ai.emailclaw.emailclaw.model;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -129,9 +130,16 @@ public class ChannelInfo {
 
     /** Set plugin exclusive configuration container. */
     public void setPluginConfig(Map<String, Object> pluginConfig) {
-        this.pluginConfig = pluginConfig;
+        if (pluginConfig != null) {
+            if (this.pluginConfig != null && !this.pluginConfig.isEmpty()) {
+                this.pluginConfig.putAll(pluginConfig);
+            } else {
+                this.pluginConfig = pluginConfig;
+            }
+        }
     }
 
+    @JsonCreator
     public ChannelInfo() {}
 
     public ChannelInfo(String id, String name, boolean builtIn, boolean enabled) {

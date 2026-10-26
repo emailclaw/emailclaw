@@ -33,8 +33,7 @@ import java.util.logging.Logger;
  */
 public class InvokeClaudeCodeCliTool {
 
-    private static final Logger LOGGER =
-            Logger.getLogger(InvokeClaudeCodeCliTool.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(InvokeClaudeCodeCliTool.class.getName());
 
     public static final String DEFAULT_CLI_PATH = "claude";
     public static final int DEFAULT_TIMEOUT_SECONDS = 300;
@@ -53,6 +52,20 @@ public class InvokeClaudeCodeCliTool {
         this(
                 context,
                 new DefaultClaudeCodeProcessRunner(),
+                DEFAULT_CLI_PATH,
+                DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Dependency-injected constructor with custom path resolver adhering to Pure DI.
+     *
+     * @param context Framework plugin context
+     * @param pathResolver Strategy for locating Claude Code CLI executable
+     */
+    public InvokeClaudeCodeCliTool(PluginContext context, ClaudeCodePathResolver pathResolver) {
+        this(
+                context,
+                new DefaultClaudeCodeProcessRunner(pathResolver),
                 DEFAULT_CLI_PATH,
                 DEFAULT_TIMEOUT_SECONDS);
     }
@@ -106,9 +119,9 @@ public class InvokeClaudeCodeCliTool {
     @Tool(
             name = "invokeClaudeCodeCli",
             description =
-                    "Invoke Claude Code CLI using 'claude -p [OPTIONS] [PROMPT]' to execute coding tasks,"
-                            + " analyze code, explain files, or apply project modifications non-interactively,"
-                            + " returning structured JSON results.")
+                    "Invoke Claude Code CLI using 'claude -p [OPTIONS] [PROMPT]' to execute coding"
+                            + " tasks, analyze code, explain files, or apply project modifications"
+                            + " non-interactively, returning structured JSON results.")
     public ToolResultBlock invokeClaudeCodeCli(
             @ToolParam(
                             name = "prompt",
@@ -126,7 +139,8 @@ public class InvokeClaudeCodeCliTool {
                             name = "model",
                             description =
                                     "Optional model name or alias to pass to Claude Code CLI via"
-                                            + " --model (e.g. 'sonnet', 'opus', 'haiku', 'claude-sonnet-5').",
+                                            + " --model (e.g. 'sonnet', 'opus', 'haiku',"
+                                            + " 'claude-sonnet-5').",
                             required = false)
                     String model,
             @ToolParam(
@@ -153,14 +167,15 @@ public class InvokeClaudeCodeCliTool {
             @ToolParam(
                             name = "continue_last_session",
                             description =
-                                    "Whether to continue the last session (-c / --continue). Defaults to"
-                                            + " true.",
+                                    "Whether to continue the last session (-c / --continue)."
+                                            + " Defaults to true.",
                             required = false)
                     Boolean continueLastSession) {
         boolean effectiveContinue = continueLastSession == null || continueLastSession;
         LOGGER.log(
                 Level.INFO,
-                "InvokeClaudeCodeCli tool call initiated: promptLength={0}, model={1}, permissionMode={2}, continueLastSession={3}",
+                "InvokeClaudeCodeCli tool call initiated: promptLength={0}, model={1},"
+                        + " permissionMode={2}, continueLastSession={3}",
                 new Object[] {
                     prompt != null ? prompt.length() : 0, model, permissionMode, effectiveContinue
                 });
@@ -175,10 +190,7 @@ public class InvokeClaudeCodeCliTool {
                                                     "Prompt cannot be empty or blank.", -1))
                                     .build())
                     .state(ToolResultState.ERROR)
-                    .metadata(
-                            Map.of(
-                                    "exitCode", -1,
-                                    "error", "Prompt cannot be empty or blank."))
+                    .metadata(Map.of("exitCode", -1, "error", "Prompt cannot be empty or blank."))
                     .build();
         }
 
@@ -192,8 +204,8 @@ public class InvokeClaudeCodeCliTool {
 
         LOGGER.log(
                 Level.INFO,
-                "Launching Claude Code CLI tool execution: cliPath={0}, workingDir={1}, timeout={2}s,"
-                        + " model={3}, permissionMode={4}, continueLastSession={5}",
+                "Launching Claude Code CLI tool execution: cliPath={0}, workingDir={1},"
+                        + " timeout={2}s, model={3}, permissionMode={4}, continueLastSession={5}",
                 new Object[] {
                     actualCliPath,
                     targetWorkingDir,
@@ -221,22 +233,21 @@ public class InvokeClaudeCodeCliTool {
 
         if (result.timedOut()) {
             String timeoutMessage =
-                    "Claude Code CLI execution timed out after "
-                            + effectiveTimeout
-                            + " seconds.";
+                    "Claude Code CLI execution timed out after " + effectiveTimeout + " seconds.";
             return ToolResultBlock.builder()
                     .output(
                             TextBlock.builder()
-                                    .text(
-                                            ClaudeCodeJsonUtils.createErrorJson(
-                                                    timeoutMessage, -1))
+                                    .text(ClaudeCodeJsonUtils.createErrorJson(timeoutMessage, -1))
                                     .build())
                     .state(ToolResultState.ERROR)
                     .metadata(
                             Map.of(
-                                    "exitCode", -1,
-                                    "timedOut", true,
-                                    "workingDirectory", targetWorkingDir.toString()))
+                                    "exitCode",
+                                    -1,
+                                    "timedOut",
+                                    true,
+                                    "workingDirectory",
+                                    targetWorkingDir.toString()))
                     .build();
         }
 
@@ -285,8 +296,7 @@ public class InvokeClaudeCodeCliTool {
     private Path getProjectOrWorkspaceBase() {
         if (context != null && context.projectService() != null) {
             ProjectInfo project = context.projectService().currentDefault();
-            if (project.getBaseDirectory() != null
-                    && !project.getBaseDirectory().isBlank()) {
+            if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
                 Path projectDir =
                         Paths.get(project.getBaseDirectory()).toAbsolutePath().normalize();
                 if (Files.exists(projectDir) && Files.isDirectory(projectDir)) {

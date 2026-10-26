@@ -53,6 +53,20 @@ public class InvokeCodexCliTool {
     }
 
     /**
+     * Dependency-injected constructor with custom path resolver adhering to Pure DI.
+     *
+     * @param context Framework plugin context
+     * @param pathResolver Strategy for locating Codex CLI executable
+     */
+    public InvokeCodexCliTool(PluginContext context, CodexPathResolver pathResolver) {
+        this(
+                context,
+                new DefaultCodexProcessRunner(pathResolver),
+                DEFAULT_CLI_PATH,
+                DEFAULT_TIMEOUT_SECONDS);
+    }
+
+    /**
      * Full dependency-injected constructor adhering to the Pure DI pattern.
      *
      * @param context Framework plugin context
@@ -100,14 +114,13 @@ public class InvokeCodexCliTool {
     @Tool(
             name = "invokeCodexCli",
             description =
-                    "Invoke Codex CLI using 'codex exec [OPTIONS] [PROMPT]' to execute coding tasks,"
-                            + " analyze code, explain files, or apply project modifications non-interactively,"
-                            + " returning structured JSON results.")
+                    "Invoke Codex CLI using 'codex exec [OPTIONS] [PROMPT]' to execute coding"
+                            + " tasks, analyze code, explain files, or apply project modifications"
+                            + " non-interactively, returning structured JSON results.")
     public ToolResultBlock invokeCodexCli(
             @ToolParam(
                             name = "prompt",
-                            description =
-                                     "The task description or prompt to send to Codex CLI.")
+                            description = "The task description or prompt to send to Codex CLI.")
                     String prompt,
             @ToolParam(
                             name = "cli_path",
@@ -147,15 +160,18 @@ public class InvokeCodexCliTool {
             @ToolParam(
                             name = "continue_last_session",
                             description =
-                                    "Whether to continue the last session (resume --last). Defaults to"
-                                            + " true.",
+                                    "Whether to continue the last session (resume --last). Defaults"
+                                            + " to true.",
                             required = false)
                     Boolean continueLastSession) {
         boolean effectiveContinue = continueLastSession == null || continueLastSession;
         LOGGER.log(
                 Level.INFO,
-                "InvokeCodexCli tool call initiated: promptLength={0}, model={1}, sandbox={2}, continueLastSession={3}",
-                new Object[] {prompt != null ? prompt.length() : 0, model, sandbox, effectiveContinue});
+                "InvokeCodexCli tool call initiated: promptLength={0}, model={1}, sandbox={2},"
+                        + " continueLastSession={3}",
+                new Object[] {
+                    prompt != null ? prompt.length() : 0, model, sandbox, effectiveContinue
+                });
 
         if (prompt == null || prompt.isBlank()) {
             LOGGER.warning("InvokeCodexCli tool call rejected: prompt is empty");
@@ -167,10 +183,7 @@ public class InvokeCodexCliTool {
                                                     "Prompt cannot be empty or blank.", -1))
                                     .build())
                     .state(ToolResultState.ERROR)
-                    .metadata(
-                            Map.of(
-                                    "exitCode", -1,
-                                    "error", "Prompt cannot be empty or blank."))
+                    .metadata(Map.of("exitCode", -1, "error", "Prompt cannot be empty or blank."))
                     .build();
         }
 
@@ -187,7 +200,12 @@ public class InvokeCodexCliTool {
                 "Launching Codex CLI tool execution: cliPath={0}, workingDir={1}, timeout={2}s,"
                         + " model={3}, sandbox={4}, continueLastSession={5}",
                 new Object[] {
-                    actualCliPath, targetWorkingDir, effectiveTimeout, model, sandbox, effectiveContinue
+                    actualCliPath,
+                    targetWorkingDir,
+                    effectiveTimeout,
+                    model,
+                    sandbox,
+                    effectiveContinue
                 });
 
         CodexExecutionResult result =
@@ -208,22 +226,21 @@ public class InvokeCodexCliTool {
 
         if (result.timedOut()) {
             String timeoutMessage =
-                    "Codex CLI execution timed out after "
-                            + effectiveTimeout
-                            + " seconds.";
+                    "Codex CLI execution timed out after " + effectiveTimeout + " seconds.";
             return ToolResultBlock.builder()
                     .output(
                             TextBlock.builder()
-                                    .text(
-                                            CodexJsonUtils.createErrorJson(
-                                                    timeoutMessage, -1))
+                                    .text(CodexJsonUtils.createErrorJson(timeoutMessage, -1))
                                     .build())
                     .state(ToolResultState.ERROR)
                     .metadata(
                             Map.of(
-                                    "exitCode", -1,
-                                    "timedOut", true,
-                                    "workingDirectory", targetWorkingDir.toString()))
+                                    "exitCode",
+                                    -1,
+                                    "timedOut",
+                                    true,
+                                    "workingDirectory",
+                                    targetWorkingDir.toString()))
                     .build();
         }
 
@@ -231,14 +248,11 @@ public class InvokeCodexCliTool {
             String error =
                     result.error() != null && !result.error().isBlank()
                             ? result.error()
-                            : "Codex CLI execution failed with exit code "
-                                    + result.exitCode();
+                            : "Codex CLI execution failed with exit code " + result.exitCode();
             return ToolResultBlock.builder()
                     .output(
                             TextBlock.builder()
-                                    .text(
-                                            CodexJsonUtils.createErrorJson(
-                                                    error, result.exitCode()))
+                                    .text(CodexJsonUtils.createErrorJson(error, result.exitCode()))
                                     .build())
                     .state(ToolResultState.ERROR)
                     .metadata(
@@ -272,8 +286,7 @@ public class InvokeCodexCliTool {
     private Path getProjectOrWorkspaceBase() {
         if (context != null && context.projectService() != null) {
             ProjectInfo project = context.projectService().currentDefault();
-            if (project.getBaseDirectory() != null
-                    && !project.getBaseDirectory().isBlank()) {
+            if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
                 Path projectDir =
                         Paths.get(project.getBaseDirectory()).toAbsolutePath().normalize();
                 if (Files.exists(projectDir) && Files.isDirectory(projectDir)) {

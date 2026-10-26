@@ -123,7 +123,8 @@ public class InvokeClaudeCodeCliPlugin extends AbstractToolPlugin {
                         ConfigFieldDescriptor.FieldType.TEXT,
                         false,
                         "bypassPermissions",
-                        "Default permission mode for automated execution (e.g. bypassPermissions, auto, plan).",
+                        "Default permission mode for automated execution (e.g. bypassPermissions,"
+                                + " auto, plan).",
                         "Security"));
     }
 }

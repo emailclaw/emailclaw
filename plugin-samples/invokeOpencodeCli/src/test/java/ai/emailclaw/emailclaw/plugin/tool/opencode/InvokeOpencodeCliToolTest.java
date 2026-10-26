@@ -35,7 +35,9 @@ class InvokeOpencodeCliToolTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
-    @DisplayName("Tool invocation should pass prompt, model flags, and working directory, returning ToolResultBlock")
+    @DisplayName(
+            "Tool invocation should pass prompt, model flags, and working directory, returning"
+                    + " ToolResultBlock")
     void testToolExecutionSuccess() throws Exception {
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
@@ -59,7 +61,8 @@ class InvokeOpencodeCliToolTest {
                     return new OpencodeExecutionResult(
                             0,
                             "```json\n"
-                                    + "{\"file\":\"main.py\",\"summary\":\"Entry point for the application\"}\n"
+                                    + "{\"file\":\"main.py\",\"summary\":\"Entry point for the"
+                                    + " application\"}\n"
                                     + "```",
                             "",
                             false,
@@ -67,17 +70,11 @@ class InvokeOpencodeCliToolTest {
                             null);
                 };
 
-        InvokeOpencodeCliTool tool =
-                new InvokeOpencodeCliTool(null, mockRunner, "opencode", 120);
+        InvokeOpencodeCliTool tool = new InvokeOpencodeCliTool(null, mockRunner, "opencode", 120);
 
         ToolResultBlock resultBlock =
                 tool.invokeOpencodeCli(
-                        "解释一下 main.py 这个文件的作用",
-                        null,
-                        "openai/gpt-4o",
-                        60,
-                        null,
-                        true);
+                        "解释一下 main.py 这个文件的作用", null, "openai/gpt-4o", 60, null, true);
 
         assertNotNull(resultBlock);
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
@@ -118,11 +115,9 @@ class InvokeOpencodeCliToolTest {
                                         + timeoutSeconds
                                         + " seconds.");
 
-        InvokeOpencodeCliTool tool =
-                new InvokeOpencodeCliTool(null, timeoutRunner, "opencode", 10);
+        InvokeOpencodeCliTool tool = new InvokeOpencodeCliTool(null, timeoutRunner, "opencode", 10);
         ToolResultBlock errorBlock =
-                tool.invokeOpencodeCli(
-                        "Long running coding task", null, null, 10, null, null);
+                tool.invokeOpencodeCli("Long running coding task", null, null, 10, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -140,8 +135,7 @@ class InvokeOpencodeCliToolTest {
     @DisplayName("Tool should reject empty prompts immediately with error ToolResultBlock")
     void testEmptyPromptHandling() throws Exception {
         InvokeOpencodeCliTool tool = new InvokeOpencodeCliTool(null);
-        ToolResultBlock errorBlock =
-                tool.invokeOpencodeCli("   ", null, null, null, null, null);
+        ToolResultBlock errorBlock = tool.invokeOpencodeCli("   ", null, null, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -172,8 +166,7 @@ class InvokeOpencodeCliToolTest {
         assertEquals(PluginStatus.Phase.INITIALIZED, plugin.status().phase());
 
         plugin.start();
-        assertEquals(
-                PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
+        assertEquals(PluginStatus.Phase.ERROR, plugin.status().phase()); // Context is null in test
 
         plugin.stop();
         assertEquals(PluginStatus.Phase.STOPPED, plugin.status().phase());
@@ -208,7 +201,8 @@ class InvokeOpencodeCliToolTest {
 
         // Mixed text surrounding JSON array
         String surroundedArray = "Prefix:\n[{\"id\":1},{\"id\":2}]\nSuffix";
-        assertEquals("[{\"id\":1},{\"id\":2}]", OpencodeJsonUtils.extractCleanJson(surroundedArray));
+        assertEquals(
+                "[{\"id\":1},{\"id\":2}]", OpencodeJsonUtils.extractCleanJson(surroundedArray));
 
         // Plain raw text fallback
         String raw = "Plain text output from command";
@@ -219,26 +213,42 @@ class InvokeOpencodeCliToolTest {
     }
 
     @Test
-    @DisplayName("DefaultOpencodeProcessRunner buildCommand should automatically inject --auto and --continue and format arguments")
+    @DisplayName(
+            "DefaultOpencodeProcessRunner buildCommand should automatically inject --auto and"
+                    + " --continue and format arguments")
     void testDefaultOpencodeProcessRunnerBuildCommand() {
         DefaultOpencodeProcessRunner runner = new DefaultOpencodeProcessRunner();
 
         // 1. Standard prompt with continueLastSession=true
         var cmd1 = runner.buildCommand("opencode", "say hello", null, null, true);
         assertEquals(
-                java.util.List.of("opencode", "run", "--continue", "--auto", "say hello"),
-                cmd1);
+                java.util.List.of("opencode", "run", "--continue", "--auto", "say hello"), cmd1);
 
         // 2. Prompt with model and continueLastSession=false
         var cmd2 = runner.buildCommand("opencode", "explain code", "openai/gpt-4o", null, false);
         assertEquals(
-                java.util.List.of("opencode", "run", "-m", "openai/gpt-4o", "--auto", "explain code"),
+                java.util.List.of(
+                        "opencode", "run", "-m", "openai/gpt-4o", "--auto", "explain code"),
                 cmd2);
 
         // 3. Extra args containing --auto and --continue should not duplicate flags
-        var cmd3 = runner.buildCommand("my-opencode", "test task", "claude-3-5", "--auto --verbose --continue", true);
+        var cmd3 =
+                runner.buildCommand(
+                        "my-opencode",
+                        "test task",
+                        "claude-3-5",
+                        "--auto --verbose --continue",
+                        true);
         assertEquals(
-                java.util.List.of("my-opencode", "run", "-m", "claude-3-5", "--auto", "--verbose", "--continue", "test task"),
+                java.util.List.of(
+                        "my-opencode",
+                        "run",
+                        "-m",
+                        "claude-3-5",
+                        "--auto",
+                        "--verbose",
+                        "--continue",
+                        "test task"),
                 cmd3);
     }
 }

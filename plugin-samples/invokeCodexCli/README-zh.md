@@ -72,7 +72,7 @@ Copy-Item invokeCodexCli\target\emailclaw-plugin-tool-invokeCodexCli-1.0.1.jar $
 
 Agent 将自动在后台以非交互模式执行以下命令（工作目录自动设置为当前工程根目录）：
 ```bash
-codex exec --color never --skip-git-repo-check "使用 Codex CLI 重构项目认证鉴权模块"
+codex exec --skip-git-repo-check "使用 Codex CLI 重构项目认证鉴权模块"
 ```
 工具自动关闭标准输入杜绝管道挂起，抽取纯净结构化 JSON（支持 JSON 对象、数组与 JSON Lines 流），并直接回传给 Agent。
 

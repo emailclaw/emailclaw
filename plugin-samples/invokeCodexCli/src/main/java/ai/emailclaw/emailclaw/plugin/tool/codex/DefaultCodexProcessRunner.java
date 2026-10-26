@@ -15,7 +15,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -35,7 +37,15 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
     private static final Logger LOGGER =
             Logger.getLogger(DefaultCodexProcessRunner.class.getName());
 
-    public DefaultCodexProcessRunner() {}
+    private final CodexPathResolver pathResolver;
+
+    public DefaultCodexProcessRunner() {
+        this(new DefaultCodexPathResolver());
+    }
+
+    public DefaultCodexProcessRunner(CodexPathResolver pathResolver) {
+        this.pathResolver = pathResolver != null ? pathResolver : new DefaultCodexPathResolver();
+    }
 
     /**
      * Builds the command arguments for codex exec.
@@ -54,7 +64,8 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
         List<String> command = new ArrayList<>();
         String effectiveCliPath =
                 (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "codex";
-        command.add(effectiveCliPath);
+        String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
+        command.add(resolvedCliPath);
         command.add("exec");
 
         boolean hasResume = false;
@@ -90,9 +101,6 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
             }
         }
 
-        command.add("--color");
-        command.add("never");
-
         if (!hasSkipGitCheck) {
             command.add("--skip-git-repo-check");
         }
@@ -126,7 +134,8 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
             int timeoutSeconds,
             String extraArgs,
             boolean continueLastSession) {
-        List<String> command = buildCommand(cliPath, prompt, model, sandbox, extraArgs, continueLastSession);
+        List<String> command =
+                buildCommand(cliPath, prompt, model, sandbox, extraArgs, continueLastSession);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -146,6 +155,7 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
         processBuilder.environment().put("TERM", "dumb");
         processBuilder.environment().remove("CI");
         processBuilder.environment().put("NO_COLOR", "1");
+        enrichSubprocessPath(processBuilder, command.get(0));
 
         LOGGER.log(
                 Level.INFO,
@@ -161,20 +171,9 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
             } catch (IOException ignored) {
             }
         } catch (IOException e) {
-            LOGGER.log(
-                    Level.SEVERE,
-                    "Failed to launch Codex CLI process: " + command.get(0),
-                    e);
-            return new CodexExecutionResult(
-                    -1,
-                    "",
-                    e.getMessage(),
-                    false,
-                    false,
-                    "Failed to start Codex CLI process ('"
-                            + command.get(0)
-                            + "'): "
-                            + e.getMessage());
+            LOGGER.log(Level.SEVERE, "Failed to launch Codex CLI process: " + command.get(0), e);
+            String diagnostic = buildLaunchFailureDiagnostic(command.get(0), e);
+            return new CodexExecutionResult(-1, "", diagnostic, false, false, diagnostic);
         }
 
         StringBuilder stdoutBuilder = new StringBuilder();
@@ -286,5 +285,77 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
                 new Object[] {exitCode, stdout.length(), stderr.length()});
 
         return new CodexExecutionResult(exitCode, stdout, stderr, false, success, errorMsg);
+    }
+
+    /**
+     * Enriches the subprocess environment {@code PATH} with essential directories such as
+     * the parent directory of the resolved executable and {@code $HOME/.local/bin},
+     * ensuring headless or daemon executions locate companion utilities.
+     *
+     * @param processBuilder ProcessBuilder instance being prepared
+     * @param executablePath Path of the resolved executable binary
+     */
+    private void enrichSubprocessPath(ProcessBuilder processBuilder, String executablePath) {
+        String existingPath = processBuilder.environment().get("PATH");
+        if (existingPath == null) {
+            existingPath = System.getenv("PATH");
+            if (existingPath == null) {
+                existingPath = "";
+            }
+        }
+
+        String userHome = System.getProperty("user.home");
+        List<String> extraDirs = new ArrayList<>();
+
+        if (executablePath != null
+                && (executablePath.contains("/") || executablePath.contains("\\"))) {
+            try {
+                Path parent = Paths.get(executablePath).toAbsolutePath().getParent();
+                if (parent != null && Files.isDirectory(parent)) {
+                    extraDirs.add(parent.normalize().toString());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (userHome != null && !userHome.isBlank()) {
+            Path localBin = Paths.get(userHome, ".local", "bin");
+            if (Files.isDirectory(localBin)) {
+                extraDirs.add(localBin.toAbsolutePath().normalize().toString());
+            }
+        }
+
+        if (!extraDirs.isEmpty()) {
+            String pathSeparator = File.pathSeparator;
+            StringBuilder newPath = new StringBuilder();
+            for (String extraDir : extraDirs) {
+                if (!existingPath.contains(extraDir)) {
+                    newPath.append(extraDir).append(pathSeparator);
+                }
+            }
+            newPath.append(existingPath);
+            processBuilder.environment().put("PATH", newPath.toString());
+            LOGGER.log(Level.FINE, "Enriched subprocess PATH: {0}", newPath);
+        }
+    }
+
+    /**
+     * Generates a clear, actionable diagnostic message when process spawning fails with {@link IOException}.
+     *
+     * @param binaryPath Binary path that failed to launch
+     * @param ex Caught IOException
+     * @return Formatted diagnostic guidance
+     */
+    private String buildLaunchFailureDiagnostic(String binaryPath, IOException ex) {
+        String errorMsg = ex.getMessage() != null ? ex.getMessage() : "";
+        if (errorMsg.contains("error=2") || errorMsg.contains("No such file")) {
+            return "Failed to start Codex CLI process ('"
+                    + binaryPath
+                    + "'): Executable not found. Please ensure Codex CLI is installed (e.g. via"
+                    + " 'curl -fsSL https://chatgpt.com/codex/install.sh | sh' or 'npm install -g"
+                    + " @openai/codex'), ensure $HOME/.local/bin is in your PATH, or configure the"
+                    + " 'cli_path' setting.";
+        }
+        return "Failed to start Codex CLI process ('" + binaryPath + "'): " + errorMsg;
     }
 }

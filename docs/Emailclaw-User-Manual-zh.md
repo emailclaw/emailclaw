@@ -19,7 +19,53 @@ Emailclaw 让你通过电子邮件使用 AI Agent。建议使用专门的邮箱�
 | Linux 便携部署 | `.tar.gz` | 执行 `mkdir -p ~/.local/ && cd ~/.local/ && wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.tar.gz && tar -xzf emailclaw-linux-latest.tar.gz -C ~/.local/ --no-same-owner`；启动 **Emailclaw** 运行 `~/.local/emailclaw/bin/emailclaw` |
 | Debian/Ubuntu Linux | `.deb` | 执行 `wget https://github.com/emailclaw/emailclaw/releases/latest/download/emailclaw-linux-latest.deb && sudo apt install ./emailclaw-linux-latest.deb`；从应用菜单启动 **Emailclaw**，或运行  `/opt/emailclaw/bin/emailclaw` |
 
-### 2.2 从源码构建
+### 2.2 原生 Linux 自动化安装脚本与基于 Docker Compose 的工业级容器化部署
+
+针对 Linux 物理机、云服务器（VPS）或 NAS 环境，推荐使用自动化安装脚本或容器化部署方案：
+
+#### 方案 A：原生 Linux 自动化安装脚本（推荐个人 Linux）
+
+通过官方一键脚本安装，脚本会自动检测系统架构（amd64 / arm64）、检查依赖、自动下载并解压部署到 `~/.local/emailclaw`，并可按需注册为 systemd 开机自启服务：
+
+```bash
+# 1. 桌面端：安装后直接启动图形界面应用
+curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash
+
+# 2. 服务器端：安装并注册为无头后台服务守护进程（--service）
+curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash -s -- --service
+
+# 3. 仅安装，不立即拉起程序
+curl -fsSL https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/install.sh | bash -s -- --no-run
+```
+
+#### 方案 B：基于 Docker Compose 的工业级容器化部署（推荐 24/7 服务器）
+
+适合云主机、轻量级 VPS 或私有云环境长期稳定无人值守运行后台服务。
+* **极简自包含运行时**：基于通用 `ubuntu:26.04` 镜像，利用 jpackage 打包产物自带的裁剪运行环境，**无需宿主机或容器单独安装 JDK**。
+* **无头浏览器与渲染支持**：容器内预装 Google Chrome Stable 与多国/中文字体（Noto Sans CJK、Color Emoji），完美支持 Playwright 动态网页抓取与反爬规避。
+* **工业级安全与生命周期管理**：以非 root 用户（`emailclaw:1000`）运行，遵循最小特权原则；以 `dumb-init` 作为 1 号进程，优雅捕获 `SIGTERM` 信号平滑退出，杜绝僵尸进程。
+* **内存保护与日志调优**：预分配 `shm_size: 2gb` 防止浏览器崩溃，设置日志切分大小（单文件 50MB，最多 5 个）。
+
+**快速启动步骤**：
+
+```bash
+# 1. 创建部署目录并下载配置
+mkdir -p emailclaw-docker && cd emailclaw-docker
+curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/Dockerfile
+curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/docker-compose.yml
+curl -O https://raw.githubusercontent.com/emailclaw/emailclaw/main/deploy/.env.example
+cp .env.example .env
+
+# 2. 一键构建并启动服务
+docker compose up -d
+
+# 3. 查看实时日志
+docker compose logs -f
+```
+
+容器数据与配置文件持久化保存在 Docker 命名卷 `emailclaw_data`（映射至容器内 `/data`，即 `EMAILCLAW_HOME`）。详细运维与模板初始化说明请见 [deploy 部署文档](../deploy/README-zh.md)。
+
+### 2.3 从源码构建
 
 仅在你需要自行编译时使用本节。构建要求 JDK 25、Maven 以及对应平台的打包能力。
 
@@ -84,9 +130,65 @@ Gmail、Outlook、iCloud、163、126、QQ、Foxmail、Yahoo 等常见地址会�
 可以通过 Java 系统属性 `emailclaw.home` 或环境变量 `EMAILCLAW_HOME` 更改。渠道配置位于 `.config/channels.json`；Provider、Agent、项目和定时任务也保存在同一 `.config/` 目录。优先使用图形界面修改配置，手工编辑前请先备份并停止并发修改。
 
 
-### 4.4 手工修改配置文件 channels.json
+### 4.4 手工修改配置文件 channels.json（无头服务/Docker 模式）
 
-若你使用自己的邮箱，请参考上面章节填写相关字段；若你想使用系统提供的Emailclaw Channel Service，前提是你是被邀请用户，你已发送邮件到 otp@emailclaw.email 后获取了一次性密码，且完全同意Emailclaw Channel Service Agreement，则只需填写三个字段：`sysEmailMode" : true, "registrantEmail" : "<YOUR EMAIL>", "oneTimePassword : "<YOUR OTP>"`。
+在没有图形界面的 Linux 服务器（`emailclaw --service` 模式）或 Docker 容器化环境中，所有邮箱通道配置均通过编辑 `~/.emailclaw/.config/channels.json`（Docker 容器中为 `/data/.config/channels.json`）实现。
+
+#### 1. 使用自有邮箱
+如果使用自有企业邮或个人邮箱（如 Gmail、Outlook、QQ、163 等），直接在 `mailboxes` 列表中填写连接信息：
+```json
+{
+  "emailclaw": {
+    "mailboxes": [
+      {
+        "id": "my-mailbox-01",
+        "name": "Work Email",
+        "enabled": true,
+        "emailAddress": "your-account@example.com",
+        "emailPassword": "YOUR_APP_PASSWORD",
+        "imapHost": "imap.example.com",
+        "imapPort": 993,
+        "imapSsl": true,
+        "smtpHost": "smtp.example.com",
+        "smtpPort": 465,
+        "smtpSsl": true,
+        "allowlistSenders": ["admin@example.com"]
+      }
+    ]
+  }
+}
+```
+
+#### 2. 使用系统提供的 Emailclaw Channel Service（后台自动注册与凭据回写）
+
+若你想使用系统提供的专属 `@emailclaw.email` 服务（前提是已向 `otp@emailclaw.email` 获取一次性密码凭据并同意服务协议），在无界面环境下无需任何复杂的命令行交互。系统在初始化时已在 `channels.json` 中为 `emailclaw` 预留了 `"mailboxes" : [ ]`，你只需将 `registrantEmail` 和 `oneTimePassword` 填入即可：
+
+```json
+[
+  {
+    "id": "emailclaw",
+    "name": "Emailclaw",
+    "pluginConfig": {
+      "mailboxes": [
+        {
+          "registrantEmail": "your-personal@example.com",
+          "oneTimePassword": "YOUR_ONE_TIME_PASSWORD"
+        }
+      ]
+    }
+  }
+]
+```
+
+后台守护进程在运行时，其 `processOneTimePasswordRegistrations` 机制会自动处理该注册请求：
+1. **防止雪崩重试风暴（Retry Storm）**：一旦尝试发起鉴权，无论成功还是失败，后台会立即从配置 Map 中彻底清除 `oneTimePassword`，确保不会因网络波动或验证码失效反复冲击后端注册接口。
+2. **自动白名单授权**：鉴权成功后，系统会自动将你的 `registrantEmail` 追加到该邮箱的 `allowlistSenders` 白名单列表中，保证你拥有向 Agent 发起任务的合法权限。
+3. **分配专属邮箱与预设绑定**：成功获取分配的专属账号后，自动写入 `emailAddress`（如 `user***@emailclaw.email`）和强随机 `emailPassword`，并由系统预设注册表自动绑定 IMAP (993) 与 SMTP (465) 配置。
+4. **自动写回持久化**：新状态被标记为变更并自动写回保存到 `channels.json` 磁盘文件中。
+
+> [!IMPORTANT]
+> **全自动凭据回写提示**：
+> 用户手工将 `registrantEmail`、`oneTimePassword` 写入 `channels.json` 后，**只需要等一分钟**（守护进程内部通道轮询与配置检查周期约为 30～60 秒），就能在 `channels.json` 文件中直接查看到自动填充好的 `emailAddress` 和 `emailPassword`，无需重启服务，邮箱通道即刻进入正常收发状态！
 
 ## 5. 最重要的使用方法：新主题即新项目
 

@@ -29,8 +29,7 @@ public class InvokeCodexCliPlugin extends AbstractToolPlugin {
     public static final String PLUGIN_NAME = "Invoke Codex CLI";
     public static final String TOOL_NAME = "invokeCodexCli";
 
-    private static final Logger LOGGER =
-            Logger.getLogger(InvokeCodexCliPlugin.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(InvokeCodexCliPlugin.class.getName());
 
     private InvokeCodexCliTool toolHandler;
     private volatile PluginStatus currentStatus = PluginStatus.registered();

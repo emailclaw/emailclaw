@@ -15,7 +15,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -35,7 +37,16 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
     private static final Logger LOGGER =
             Logger.getLogger(DefaultAntigravityProcessRunner.class.getName());
 
-    public DefaultAntigravityProcessRunner() {}
+    private final AntigravityPathResolver pathResolver;
+
+    public DefaultAntigravityProcessRunner() {
+        this(new DefaultAntigravityPathResolver());
+    }
+
+    public DefaultAntigravityProcessRunner(AntigravityPathResolver pathResolver) {
+        this.pathResolver =
+                pathResolver != null ? pathResolver : new DefaultAntigravityPathResolver();
+    }
 
     @Override
     public AntigravityExecutionResult execute(
@@ -48,9 +59,8 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             String extraArgs) {
         List<String> command = new ArrayList<>();
         String effectiveCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "agy";
-        command.add(effectiveCliPath);
-        command.add("-p");
-        command.add(prompt != null ? prompt : "");
+        String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
+        command.add(resolvedCliPath);
 
         if (dangerouslySkipPermissions) {
             command.add("--dangerously-skip-permissions");
@@ -66,6 +76,8 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 }
             }
         }
+        command.add("-p");
+        command.add(prompt != null ? prompt : "");
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -83,6 +95,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
         processBuilder.environment().put("TERM", "dumb");
         processBuilder.environment().remove("CI");
         processBuilder.environment().put("NO_COLOR", "1");
+        enrichSubprocessPath(processBuilder, command.get(0));
 
         LOGGER.log(
                 Level.INFO,
@@ -98,19 +111,9 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             }
         } catch (IOException e) {
             LOGGER.log(
-                    Level.SEVERE,
-                    "Failed to launch Antigravity CLI process: " + effectiveCliPath,
-                    e);
-            return new AntigravityExecutionResult(
-                    -1,
-                    "",
-                    e.getMessage(),
-                    false,
-                    false,
-                    "Failed to start Antigravity CLI process ('"
-                            + effectiveCliPath
-                            + "'): "
-                            + e.getMessage());
+                    Level.SEVERE, "Failed to launch Antigravity CLI process: " + command.get(0), e);
+            String diagnostic = buildLaunchFailureDiagnostic(command.get(0), e);
+            return new AntigravityExecutionResult(-1, "", diagnostic, false, false, diagnostic);
         }
 
         StringBuilder stdoutBuilder = new StringBuilder();
@@ -223,5 +226,74 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 new Object[] {exitCode, stdout.length(), stderr.length()});
 
         return new AntigravityExecutionResult(exitCode, stdout, stderr, false, success, errorMsg);
+    }
+
+    /**
+     * Enriches the subprocess environment {@code PATH} with the binary's parent directory and {@code ~/.local/bin}.
+     *
+     * @param processBuilder The ProcessBuilder to enrich
+     * @param executablePath The resolved binary path being executed
+     */
+    void enrichSubprocessPath(ProcessBuilder processBuilder, String executablePath) {
+        String existingPath = processBuilder.environment().get("PATH");
+        if (existingPath == null) {
+            existingPath = System.getenv("PATH");
+            if (existingPath == null) {
+                existingPath = "";
+            }
+        }
+
+        String userHome = System.getProperty("user.home");
+        List<String> extraDirs = new ArrayList<>();
+
+        if (executablePath != null
+                && (executablePath.contains("/") || executablePath.contains("\\"))) {
+            try {
+                Path parent = Paths.get(executablePath).toAbsolutePath().getParent();
+                if (parent != null && Files.isDirectory(parent)) {
+                    extraDirs.add(parent.normalize().toString());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (userHome != null && !userHome.isBlank()) {
+            Path localBin = Paths.get(userHome, ".local", "bin");
+            if (Files.isDirectory(localBin)) {
+                extraDirs.add(localBin.toAbsolutePath().normalize().toString());
+            }
+        }
+
+        if (!extraDirs.isEmpty()) {
+            String pathSeparator = File.pathSeparator;
+            StringBuilder newPath = new StringBuilder();
+            for (String extraDir : extraDirs) {
+                if (!existingPath.contains(extraDir)) {
+                    newPath.append(extraDir).append(pathSeparator);
+                }
+            }
+            newPath.append(existingPath);
+            processBuilder.environment().put("PATH", newPath.toString());
+            LOGGER.log(Level.FINE, "Enriched subprocess PATH: {0}", newPath);
+        }
+    }
+
+    /**
+     * Generates a clear, actionable diagnostic message when process spawning fails with {@link IOException}.
+     *
+     * @param binaryPath Binary path that failed to launch
+     * @param ex Caught IOException
+     * @return Formatted diagnostic guidance
+     */
+    private String buildLaunchFailureDiagnostic(String binaryPath, IOException ex) {
+        String errorMsg = ex.getMessage() != null ? ex.getMessage() : "";
+        if (errorMsg.contains("error=2") || errorMsg.contains("No such file")) {
+            return "Failed to start Antigravity CLI process ('"
+                    + binaryPath
+                    + "'): Executable not found. Please ensure Google Antigravity CLI is installed,"
+                    + " ensure $HOME/.local/bin is in your PATH, or configure the 'cli_path'"
+                    + " setting.";
+        }
+        return "Failed to start Antigravity CLI process ('" + binaryPath + "'): " + errorMsg;
     }
 }
