@@ -38,7 +38,7 @@ public class DatabaseManager implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
     private static final int VALIDATION_TIMEOUT_SECONDS = 2;
     private static final long IDLE_CHECK_THRESHOLD_MS = 10_000L;
-    private static final int TARGET_SCHEMA_VERSION = 4;
+    private static final int TARGET_SCHEMA_VERSION = 5;
 
     private final Path databasePath;
     private final String jdbcUrl;
@@ -437,6 +437,9 @@ public class DatabaseManager implements AutoCloseable {
                         if (currentVersion < 4) {
                             migrateToV4(conn);
                         }
+                        if (currentVersion < 5) {
+                            migrateToV5(conn);
+                        }
                     });
             schemaInitialized.set(true);
             LOGGER.info("SQLite database schema initialization finished successfully.");
@@ -573,6 +576,8 @@ public class DatabaseManager implements AutoCloseable {
                     CREATE TABLE IF NOT EXISTS cron_execution_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         job_id VARCHAR(255) NOT NULL,
+                        session_id VARCHAR(255) NOT NULL DEFAULT '',
+                        project_id VARCHAR(255) NOT NULL DEFAULT '',
                         run_at INTEGER NOT NULL,
                         status VARCHAR(64) NOT NULL,
                         error TEXT,
@@ -583,6 +588,9 @@ public class DatabaseManager implements AutoCloseable {
             stmt.execute(
                     "CREATE INDEX IF NOT EXISTS idx_cron_history_job ON"
                             + " cron_execution_history (job_id, run_at DESC);");
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_cron_history_session ON"
+                            + " cron_execution_history (session_id);");
 
             // 6. Memory notes table (migrated from memory/*.json)
             stmt.execute(
@@ -707,6 +715,45 @@ public class DatabaseManager implements AutoCloseable {
         }
         recordSchemaVersion(conn, 4, "Add artifacts table and session/project indexes");
         LOGGER.info("Schema migration to V4 completed successfully.");
+    }
+
+    /**
+     * Applies the V5 schema migration to add session_id and project_id to cron_execution_history.
+     *
+     * @param conn active connection within transaction
+     * @throws SQLException on DDL error
+     */
+    private void migrateToV5(Connection conn) throws SQLException {
+        LOGGER.info(
+                "Applying schema migration to V5 (session_id and project_id in"
+                        + " cron_execution_history)...");
+        try (Statement stmt = conn.createStatement()) {
+            try {
+                stmt.execute(
+                        "ALTER TABLE cron_execution_history ADD COLUMN session_id VARCHAR(255) NOT"
+                                + " NULL DEFAULT '';");
+            } catch (SQLException e) {
+                LOGGER.log(
+                        Level.FINE,
+                        "Column session_id already exists or failed to add: {0}",
+                        e.getMessage());
+            }
+            try {
+                stmt.execute(
+                        "ALTER TABLE cron_execution_history ADD COLUMN project_id VARCHAR(255) NOT"
+                                + " NULL DEFAULT '';");
+            } catch (SQLException e) {
+                LOGGER.log(
+                        Level.FINE,
+                        "Column project_id already exists or failed to add: {0}",
+                        e.getMessage());
+            }
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_cron_history_session ON"
+                            + " cron_execution_history (session_id);");
+        }
+        recordSchemaVersion(conn, 5, "Add session_id and project_id to cron_execution_history");
+        LOGGER.info("Schema migration to V5 completed successfully.");
     }
 
     /**

@@ -61,7 +61,14 @@ public class AgentRuntimeDispatcher {
             "You are a helpful and highly capable agentic assistant. You have access to tools."
                 + " IMPORTANT: You must act autonomously. NEVER ask for the user's permission to"
                 + " use a tool. If you need to check files, execute commands, or perform any"
-                + " actions, use the tools IMMEDIATELY without waiting for user confirmation.\n\n"
+                + " actions, use the tools IMMEDIATELY without waiting for user confirmation. When"
+                + " the user explicitly requests executing a specific shell command (such as `rm"
+                + " -fr ...`), call the `execute` tool with that exact command immediately without"
+                + " running preliminary directory listing or check commands first. If a tool call"
+                + " is denied or blocked by the active Permission Mode (for example, in `explore`"
+                + " read-only mode or `dont_ask` mode), do NOT retry alternative tools or commands"
+                + " — immediately stop calling tools and reply to the user explaining that the"
+                + " action was blocked by the current permission mode.\n\n"
                 + "# Async Background Tool Execution Rules\n"
                 + "When a tool execution exceeds the execution timeout, it is automatically"
                 + " offloaded to the background, and you will receive a `<system-reminder>` stating"
@@ -77,17 +84,33 @@ public class AgentRuntimeDispatcher {
      */
     private static final String ARTIFACT_DELIVERY_INSTRUCTION =
             "\n\n"
-                + "# Artifact Delivery Rules\n"
-                + "When your task produces any deliverable files (such as reports, documents,"
-                + " spreadsheets, images, archives, charts, or generated code), you MUST call the"
-                + " `deliver_artifact` tool to deliver each file to the user.\n"
-                + "- Deliver silently: the tool call itself records and attaches the deliverable"
-                + " for the user, so do not mention the delivery or the `deliver_artifact` tool in"
-                + " your reply to the user.\n"
-                + "- Only deliver final completed outputs; do not deliver temporary working files"
-                + " or sensitive credentials.\n"
-                + "- STRICTLY FORBIDDEN: never attempt to send emails, execute mutt/sendmail or run"
-                + " mail scripts yourself.";
+                    + "# Artifact & Attachment Delivery Rules (CRITICAL)\n"
+                    + "When your task produces any deliverable files (such as Markdown `.md`"
+                    + " documents, reports, spreadsheets, PDFs, images, archives, charts, or"
+                    + " generated code) — including when the user asks to send a file as an"
+                    + " email attachment (e.g. \"做为附件发给我\" / \"作为附件发给我\" / \"send as an"
+                    + " attachment\"):\n"
+                    + "1. First create/write the file in the Project Base Directory using"
+                    + " `write_file`.\n"
+                    + "2. Then you MUST immediately call the `deliver_artifact` tool"
+                    + " (`deliver_artifact(filePath=..., fileName=..., force=true)`) to stage"
+                    + " the file for delivery.\n"
+                    + "3. When your turn finishes, the Emailclaw channel automatically attaches"
+                    + " all files delivered via `deliver_artifact` to the outgoing reply email"
+                    + " sent to the user.\n"
+                    + "- Deliver silently: the tool call itself records and attaches the"
+                    + " deliverable for the user, so do not mention the `deliver_artifact` tool"
+                    + " in your reply to the user.\n"
+                    + "- Only deliver final completed outputs; do not deliver temporary working"
+                    + " files or sensitive credentials.\n"
+                    + "- STRICTLY FORBIDDEN: NEVER attempt to send emails yourself, NEVER use"
+                    + " `himalaya`, Python `smtplib`, `mutt`, or `sendmail`, and NEVER read"
+                    + " `channels.json` for SMTP credentials. Calling `deliver_artifact` is the"
+                    + " ONLY supported way to send email attachments.\n"
+                    + "- Note: Current Channel, Current User ID, Current Session ID, and"
+                    + " Current Project ID are already provided in `# Context Information`;"
+                    + " NEVER run `emailclaw chats list` when configuring cron jobs or replying"
+                    + " to the current session.";
 
     private final AppContext repository;
 
@@ -260,7 +283,6 @@ public class AgentRuntimeDispatcher {
                         projectRoot,
                         agentWorkspace);
 
-        sysPrompt += ARTIFACT_DELIVERY_INSTRUCTION;
         Toolkit toolkit = toolService.buildToolkit(toolRuntimeContext);
         // Load skills and append to sysPrompt
         List<SkillInfo> enabledSkills =
@@ -291,6 +313,7 @@ public class AgentRuntimeDispatcher {
             }
             sysPrompt = sysPrompt + skillsPrompt.toString();
         }
+        sysPrompt += ARTIFACT_DELIVERY_INSTRUCTION;
 
         java.util.List<Path> additionalRoots = new java.util.ArrayList<>();
         String sysUserHome = System.getProperty("user.home", "");
@@ -544,6 +567,11 @@ public class AgentRuntimeDispatcher {
     }
 
     private boolean skillAppliesToChannel(SkillInfo skill, String channel) {
+        if ("emailclaw".equalsIgnoreCase(channel)
+                && skill.name() != null
+                && skill.name().toLowerCase(java.util.Locale.ROOT).startsWith("himalaya")) {
+            return false;
+        }
         if (skill.channels() == null
                 || skill.channels().isEmpty()
                 || skill.channels().contains("all")) {

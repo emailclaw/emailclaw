@@ -62,6 +62,7 @@ This makes Emailclaw especially suitable for email lovers and those who need to 
 - **Local-first**: Configurations, projects, sessions, attachments, workspaces, logs, and plugins are saved on machines you control.
 - **Controlled Agent Actions**: Models, tools, Skills, MCP, cron jobs, and plugins can be composed; high-risk tool calls can be approved via a 4-digit confirmation code in email.
 - **Suitable for Long-running**: Supports Linux headless service mode, boot startup, Cron automation, and log troubleshooting.
+- **Universal Bridge to Top AI CLIs**: Uses everyday email as a zero-friction bridge (no extra mobile or desktop apps required) to orchestrate and drive cutting-edge AI coding and agent CLI tools, including **Google Antigravity CLI (`agy`)**, **Anthropic Claude Code CLI (`claude`)**, **OpenAI Codex CLI (`codex`)**, and **OpenCode CLI (`opencode`)**.
 - **Extensible**: Based on Java SPI and external JAR plugins; extensible for tools, Providers, hooks, MCP, UI, and channels.
 - **Powered by AgentScope Java**: Utilizes AgentScope Java 2.0's Agent, model, event, tool, permission, and Harness capabilities.
 
@@ -277,6 +278,19 @@ The default runtime data root directory is `~/emailclaw`, which can be modified 
 ## Extensions and Plugins
 
 Plugins can provide tools, model Providers, startup/shutdown hooks, MCP, UI, or channel capabilities. Please start with the [Plugin Developer Guide](./plugin-samples/PLUGIN-DEVELOPER-GUIDE.md) and [`plugin-samples/invokeAntigravityCli`](./plugin-samples/invokeAntigravityCli). Channel plugins are responsible for external session mapping, message forwarding, and (if needed) the secure delivery of approval requests.
+
+### Bridging 4 Top-Tier AI CLI Tools (Zero-Downtime Hot-Reload)
+
+Emailclaw provides out-of-the-box plugin tools connecting your agent directly with the industry's four leading AI coding and reasoning CLI environments:
+- **`invokeAntigravityCli`**: Executes Google Antigravity CLI (`agy`) for headless automated coding and project workflows.
+- **`invokeClaudeCodeCli`**: Executes Anthropic Claude Code CLI (`claude`) for deep code analysis and autonomous editing.
+- **`invokeCodexCli`**: Executes OpenAI Codex CLI (`codex`) for automated code generation, reviews, and tests.
+- **`invokeOpencodeCli`**: Executes OpenCode CLI (`opencode`) for running open-source and multi-model coding sessions.
+
+**Why this is a game changer:**
+- **Email as the Universal Zero-Install Bridge**: You don't need to install terminal emulators, mobile SSH apps, or proprietary chat software on your phone or tablet. Email is the universal communication protocol everyone already has. Whether on a commute or in a meeting, simply send a regular email from any device, and Emailclaw acts as the autonomous bridge—dispatching tasks to the local or server CLI and replying with complete results and artifacts directly to your inbox.
+- **Effortless Drop-in Deployment with Hot-Reload**: To enable a tool, simply copy the plugin JAR (e.g. `emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar`) into `~/emailclaw/plugins`. **No need to restart Emailclaw!** Thanks to built-in dynamic directory watching and hot-reloading (`Hot-Reload`), the new tool is recognized, initialized, and made available to agents immediately at runtime.
+- **Industrial-Grade PathResolver Strategy**: Each plugin incorporates intelligent executable discovery that automatically probes `$HOME/.local/bin`, `$HOME/.opencode/bin`, toolchain directories, and the system `PATH`, while enriching the child process execution environment so that nested commands and dependencies run flawlessly even in non-login headless server modes.
 
 ## Documentation
 

@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -178,6 +179,8 @@ public class ChatView implements ViewPane {
 
     private final CronJobService cronJobService;
 
+    private Consumer<ChatSessionInfo> onOpenTask;
+
     public ChatView(
             AgentService agentService,
             ProviderService providerService,
@@ -186,6 +189,38 @@ public class ChatView implements ViewPane {
             AgentInfo initialAgent,
             String sessionKind,
             ProjectInfo currentProject) {
+        this(
+                agentService,
+                providerService,
+                chatService,
+                cronJobService,
+                initialAgent,
+                sessionKind,
+                currentProject,
+                null);
+    }
+
+    /**
+     * Pure DI constructor accepting an onOpenTask navigation callback.
+     *
+     * @param agentService Service managing agent instances
+     * @param providerService Service managing LLM providers
+     * @param chatService Service managing chat sessions and messages
+     * @param cronJobService Service managing scheduled jobs
+     * @param initialAgent Active agent information
+     * @param sessionKind Session kind (CHAT or TASK)
+     * @param currentProject Current project information
+     * @param onOpenTask Callback invoked when a specific task session is requested to be opened
+     */
+    public ChatView(
+            AgentService agentService,
+            ProviderService providerService,
+            ChatService chatService,
+            CronJobService cronJobService,
+            AgentInfo initialAgent,
+            String sessionKind,
+            ProjectInfo currentProject,
+            Consumer<ChatSessionInfo> onOpenTask) {
         this.agentService = agentService;
         this.providerService = providerService;
         this.chatService = chatService;
@@ -196,6 +231,7 @@ public class ChatView implements ViewPane {
                 sessionKind == null
                         ? ai.emailclaw.emailclaw.model.ChatSessionInfo.KIND_CHAT
                         : sessionKind;
+        this.onOpenTask = onOpenTask;
         this.title.setText(defaultSessionTitle());
         initCodingModePane();
         initUi();
@@ -210,6 +246,32 @@ public class ChatView implements ViewPane {
                 .addChangeListener(
                         ai.emailclaw.emailclaw.storage.ConfigManager.EVENT_SESSIONS,
                         () -> Platform.runLater(this::refreshSessionTitle));
+    }
+
+    /**
+     * Sets or updates the navigation callback for opening a task session in TaskView.
+     *
+     * @param onOpenTask Callback accepting the target ChatSessionInfo
+     */
+    public void setOnOpenTask(Consumer<ChatSessionInfo> onOpenTask) {
+        this.onOpenTask = onOpenTask;
+    }
+
+    /**
+     * Open the specified task session. If a parent onOpenTask handler is registered, delegate
+     * to it; otherwise load the session directly in this view.
+     *
+     * @param targetSession Target session to open
+     */
+    private void openTaskSession(ChatSessionInfo targetSession) {
+        if (targetSession == null) {
+            return;
+        }
+        if (onOpenTask != null) {
+            onOpenTask.accept(targetSession);
+        } else {
+            loadSession(targetSession);
+        }
     }
 
     /**
@@ -2185,9 +2247,9 @@ public class ChatView implements ViewPane {
             taskStatusCombo.setValue(currentStatus);
             taskDescriptionInput.setText(currentSession.getDescription());
             // Build cron jobs table
-            ai.emailclaw.emailclaw.ui.CronJobListView tmpCronView =
-                    new ai.emailclaw.emailclaw.ui.CronJobListView(
-                            cronJobService, currentAgent, currentProject);
+            CronJobListView tmpCronView =
+                    new CronJobListView(
+                            cronJobService, currentAgent, currentProject, this::openTaskSession);
             List<CronJobSpec> taskJobs =
                     cronJobService.list().stream()
                             .filter(

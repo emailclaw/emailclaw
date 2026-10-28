@@ -48,6 +48,70 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 pathResolver != null ? pathResolver : new DefaultAntigravityPathResolver();
     }
 
+    /**
+     * Builds the command arguments for agy in print mode.
+     *
+     * <p>When {@code continueLastSession} is true, generates {@code agy -c --dangerously-skip-permissions ... -p [PROMPT]}
+     * to continue the most recent conversation.
+     *
+     * @param cliPath Path or binary name of the agy CLI
+     * @param prompt The prompt to execute in print mode
+     * @param model Optional model override
+     * @param dangerouslySkipPermissions Whether to skip permission prompting
+     * @param extraArgs Additional command line arguments
+     * @param continueLastSession Whether to continue the most recent conversation (-c / --continue)
+     * @return List of command line arguments
+     */
+    List<String> buildCommand(
+            String cliPath,
+            String prompt,
+            String model,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession) {
+        List<String> command = new ArrayList<>();
+        String effectiveCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "agy";
+        String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
+        command.add(resolvedCliPath);
+
+        boolean hasContinue = false;
+        boolean hasSkipPerms = false;
+        boolean hasModel = false;
+        List<String> extraTokens = new ArrayList<>();
+
+        if (extraArgs != null && !extraArgs.isBlank()) {
+            for (String token : extraArgs.trim().split("\\s+")) {
+                if (!token.isBlank()) {
+                    if ("-c".equals(token) || "--continue".equals(token)) {
+                        hasContinue = true;
+                    }
+                    if ("--dangerously-skip-permissions".equals(token)) {
+                        hasSkipPerms = true;
+                    }
+                    if ("--model".equals(token)) {
+                        hasModel = true;
+                    }
+                    extraTokens.add(token);
+                }
+            }
+        }
+
+        if (continueLastSession && !hasContinue) {
+            command.add("-c");
+        }
+        if (dangerouslySkipPermissions && !hasSkipPerms) {
+            command.add("--dangerously-skip-permissions");
+        }
+        if (model != null && !model.isBlank() && !hasModel) {
+            command.add("--model");
+            command.add(model.trim());
+        }
+        command.addAll(extraTokens);
+        command.add("-p");
+        command.add(prompt != null ? prompt : "");
+        return command;
+    }
+
     @Override
     public AntigravityExecutionResult execute(
             String cliPath,
@@ -57,27 +121,35 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             int timeoutSeconds,
             boolean dangerouslySkipPermissions,
             String extraArgs) {
-        List<String> command = new ArrayList<>();
-        String effectiveCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "agy";
-        String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
-        command.add(resolvedCliPath);
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                timeoutSeconds,
+                dangerouslySkipPermissions,
+                extraArgs,
+                true);
+    }
 
-        if (dangerouslySkipPermissions) {
-            command.add("--dangerously-skip-permissions");
-        }
-        if (model != null && !model.isBlank()) {
-            command.add("--model");
-            command.add(model.trim());
-        }
-        if (extraArgs != null && !extraArgs.isBlank()) {
-            for (String token : extraArgs.trim().split("\\s+")) {
-                if (!token.isBlank()) {
-                    command.add(token);
-                }
-            }
-        }
-        command.add("-p");
-        command.add(prompt != null ? prompt : "");
+    @Override
+    public AntigravityExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            int timeoutSeconds,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession) {
+        List<String> command =
+                buildCommand(
+                        cliPath,
+                        prompt,
+                        model,
+                        dangerouslySkipPermissions,
+                        extraArgs,
+                        continueLastSession);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -99,8 +171,9 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
 
         LOGGER.log(
                 Level.INFO,
-                "Launching Antigravity CLI process: command={0}, workingDir={1}, timeout={2}s",
-                new Object[] {command, workingDirectory, timeoutSeconds});
+                "Launching Antigravity CLI process: command={0}, workingDir={1}, timeout={2}s,"
+                        + " continueLastSession={3}",
+                new Object[] {command, workingDirectory, timeoutSeconds, continueLastSession});
 
         Process process;
         try {

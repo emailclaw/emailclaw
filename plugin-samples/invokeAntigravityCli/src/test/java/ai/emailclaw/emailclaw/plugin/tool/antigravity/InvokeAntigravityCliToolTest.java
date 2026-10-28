@@ -20,6 +20,7 @@ import ai.emailclaw.emailclaw.plugin.PluginStatus;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolResultState;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,7 @@ class InvokeAntigravityCliToolTest {
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
         AtomicReference<Boolean> capturedSkipPerms = new AtomicReference<>();
+        AtomicReference<Boolean> capturedContinueLastSession = new AtomicReference<>();
 
         AntigravityProcessRunner mockRunner =
                 (cliPath,
@@ -67,10 +69,12 @@ class InvokeAntigravityCliToolTest {
                         model,
                         timeoutSeconds,
                         dangerouslySkipPermissions,
-                        extraArgs) -> {
+                        extraArgs,
+                        continueLastSession) -> {
                     capturedCliPath.set(cliPath);
                     capturedPrompt.set(prompt);
                     capturedSkipPerms.set(dangerouslySkipPermissions);
+                    capturedContinueLastSession.set(continueLastSession);
                     return new AntigravityExecutionResult(
                             0,
                             "```json\n"
@@ -87,7 +91,14 @@ class InvokeAntigravityCliToolTest {
 
         ToolResultBlock resultBlock =
                 tool.invokeAntigravityCli(
-                        "Generate report", null, null, "gemini-2.5-pro", 60, true, "--verbose");
+                        "Generate report",
+                        null,
+                        null,
+                        "gemini-2.5-pro",
+                        60,
+                        true,
+                        "--verbose",
+                        true);
 
         assertNotNull(resultBlock);
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
@@ -95,6 +106,7 @@ class InvokeAntigravityCliToolTest {
         assertTrue(capturedPrompt.get().contains("Generate report"));
         assertTrue(capturedPrompt.get().endsWith(AntigravityJsonUtils.JSON_FORMAT_INSTRUCTION));
         assertTrue(capturedSkipPerms.get());
+        assertTrue(capturedContinueLastSession.get());
         assertEquals(0, resultBlock.getMetadata().get("exitCode"));
         assertEquals(false, resultBlock.getMetadata().get("timedOut"));
 
@@ -117,7 +129,8 @@ class InvokeAntigravityCliToolTest {
                         model,
                         timeoutSeconds,
                         dangerouslySkipPermissions,
-                        extraArgs) ->
+                        extraArgs,
+                        continueLastSession) ->
                         new AntigravityExecutionResult(
                                 -1,
                                 "",
@@ -131,7 +144,8 @@ class InvokeAntigravityCliToolTest {
         InvokeAntigravityCliTool tool =
                 new InvokeAntigravityCliTool(null, timeoutRunner, "agy", 10, true);
         ToolResultBlock errorBlock =
-                tool.invokeAntigravityCli("Long running task", null, null, null, 10, true, null);
+                tool.invokeAntigravityCli(
+                        "Long running task", null, null, null, 10, true, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -150,7 +164,7 @@ class InvokeAntigravityCliToolTest {
     void testEmptyPromptHandling() throws Exception {
         InvokeAntigravityCliTool tool = new InvokeAntigravityCliTool(null);
         ToolResultBlock errorBlock =
-                tool.invokeAntigravityCli("   ", null, null, null, null, null, null);
+                tool.invokeAntigravityCli("   ", null, null, null, null, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -212,5 +226,87 @@ class InvokeAntigravityCliToolTest {
         JsonNode rawNode = MAPPER.readTree(rawJson);
         assertTrue(rawNode.get("success").asBoolean());
         assertEquals("Plain text output from command", rawNode.get("rawOutput").asText());
+    }
+
+    @Test
+    @DisplayName(
+            "DefaultAntigravityProcessRunner buildCommand should correctly construct agy CLI"
+                    + " arguments")
+    void testDefaultAntigravityProcessRunnerBuildCommand() {
+        DefaultAntigravityProcessRunner runner = new DefaultAntigravityProcessRunner(path -> path);
+
+        // 1. Standard prompt without model, dangerouslySkipPermissions=false,
+        // continueLastSession=false
+        List<String> cmd1 = runner.buildCommand("agy", "fix bug", null, false, null, false);
+        assertEquals(List.of("agy", "-p", "fix bug"), cmd1);
+
+        // 2. Prompt with model and dangerouslySkipPermissions=true, continueLastSession=false
+        List<String> cmd2 =
+                runner.buildCommand("agy", "add feature", "gemini-2.5-pro", true, null, false);
+        assertEquals(
+                List.of(
+                        "agy",
+                        "--dangerously-skip-permissions",
+                        "--model",
+                        "gemini-2.5-pro",
+                        "-p",
+                        "add feature"),
+                cmd2);
+
+        // 3. Extra arguments specified with -c already present, continueLastSession=true
+        List<String> cmd3 =
+                runner.buildCommand("/custom/agy", "review code", null, true, "-c --verbose", true);
+        assertEquals(
+                List.of(
+                        "/custom/agy",
+                        "--dangerously-skip-permissions",
+                        "-c",
+                        "--verbose",
+                        "-p",
+                        "review code"),
+                cmd3);
+
+        // 4. continueLastSession=true (default behavior adds -c)
+        List<String> cmd4 =
+                runner.buildCommand("agy", "continue task", "gemini-2.5-pro", true, null, true);
+        assertEquals(
+                List.of(
+                        "agy",
+                        "-c",
+                        "--dangerously-skip-permissions",
+                        "--model",
+                        "gemini-2.5-pro",
+                        "-p",
+                        "continue task"),
+                cmd4);
+    }
+
+    @Test
+    @DisplayName("Tool invocation should default continueLastSession to true when null")
+    void testContinueLastSessionDefaultHandling() {
+        AtomicReference<Boolean> capturedContinue = new AtomicReference<>();
+        AntigravityProcessRunner mockRunner =
+                (cliPath,
+                        prompt,
+                        workingDirectory,
+                        model,
+                        timeoutSeconds,
+                        dangerouslySkipPermissions,
+                        extraArgs,
+                        continueLastSession) -> {
+                    capturedContinue.set(continueLastSession);
+                    return new AntigravityExecutionResult(0, "{}", "", false, true, null);
+                };
+
+        InvokeAntigravityCliTool tool =
+                new InvokeAntigravityCliTool(null, mockRunner, "agy", 10, true);
+
+        // null continueLastSession defaults to true
+        tool.invokeAntigravityCli("Continue test", null, null, null, 10, true, null, null);
+        assertTrue(capturedContinue.get(), "null continueLastSession should default to true");
+
+        // explicit false
+        tool.invokeAntigravityCli("Fresh test", null, null, null, 10, true, null, false);
+        assertFalse(capturedContinue.get(), "explicit false continueLastSession should be false");
     }
 }

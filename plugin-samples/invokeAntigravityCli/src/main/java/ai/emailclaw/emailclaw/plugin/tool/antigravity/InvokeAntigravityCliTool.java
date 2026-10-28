@@ -119,6 +119,7 @@ public class InvokeAntigravityCliTool {
      * @param timeoutSeconds Optional execution timeout in seconds (defaults to 300)
      * @param dangerouslySkipPermissions Whether to automatically pass --dangerously-skip-permissions
      * @param extraArgs Optional additional command-line arguments to pass to the agy binary
+     * @param continueLastSession Whether to continue the last session (-c / --continue). Defaults to true.
      * @return Structured {@link ToolResultBlock} containing output text, execution state, and metadata
      */
     @Tool(
@@ -175,12 +176,22 @@ public class InvokeAntigravityCliTool {
                                     "Optional additional command-line arguments to pass to the agy"
                                             + " binary.",
                             required = false)
-                    String extraArgs) {
+                    String extraArgs,
+            @ToolParam(
+                            name = "continue_last_session",
+                            description =
+                                    "Whether to continue the last session (-c / --continue)."
+                                            + " Defaults to true.",
+                            required = false)
+                    Boolean continueLastSession) {
+        boolean effectiveContinue = continueLastSession == null || continueLastSession;
         LOGGER.log(
                 Level.INFO,
                 "InvokeAntigravityCli tool call initiated: promptLength={0}, workingDir={1},"
-                        + " model={2}",
-                new Object[] {prompt != null ? prompt.length() : 0, workingDirectory, model});
+                        + " model={2}, continueLastSession={3}",
+                new Object[] {
+                    prompt != null ? prompt.length() : 0, workingDirectory, model, effectiveContinue
+                });
 
         if (prompt == null || prompt.isBlank()) {
             LOGGER.warning("InvokeAntigravityCli tool call rejected: prompt is empty");
@@ -210,8 +221,10 @@ public class InvokeAntigravityCliTool {
         LOGGER.log(
                 Level.INFO,
                 "Launching Antigravity CLI tool execution: workingDir={0}, timeout={1}s,"
-                        + " skipPermissions={2}",
-                new Object[] {targetWorkingDir, effectiveTimeout, skipPermissions});
+                        + " skipPermissions={2}, continueLastSession={3}",
+                new Object[] {
+                    targetWorkingDir, effectiveTimeout, skipPermissions, effectiveContinue
+                });
 
         String actualCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath : defaultCliPath;
 
@@ -223,7 +236,8 @@ public class InvokeAntigravityCliTool {
                         model,
                         effectiveTimeout,
                         skipPermissions,
-                        extraArgs);
+                        extraArgs,
+                        effectiveContinue);
 
         LOGGER.log(
                 Level.INFO,

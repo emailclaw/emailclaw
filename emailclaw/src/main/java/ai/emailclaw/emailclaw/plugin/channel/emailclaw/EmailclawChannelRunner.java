@@ -1087,6 +1087,23 @@ If you did not send this email, someone may be attempting to spoof your email ad
                         new Object[] {sendAttachments.size(), session.getId()});
             }
         }
+        if (sendAttachments.isEmpty() && session != null) {
+            ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
+            if (project != null && notBlank(project.getBaseDirectory())) {
+                Path projectDir =
+                        Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
+                                .toAbsolutePath()
+                                .normalize();
+                if (Files.isDirectory(projectDir)) {
+                    try (java.util.stream.Stream<Path> stream = Files.list(projectDir)) {
+                        stream.filter(Files::isRegularFile)
+                                .filter(p -> !p.getFileName().toString().startsWith("."))
+                                .forEach(sendAttachments::add);
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
+        }
         String finalContent = content != null ? content.trim() : "";
         try {
             sendMail(mailbox, mail.from(), subject, finalContent, sendAttachments);

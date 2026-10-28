@@ -17,6 +17,7 @@ import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChatService;
 import ai.emailclaw.emailclaw.service.CronJobService;
 import ai.emailclaw.emailclaw.service.ProviderService;
+import java.util.function.Consumer;
 
 public class TaskView extends ChatView {
 
@@ -29,6 +30,41 @@ public class TaskView extends ChatView {
             ChatService chatService,
             CronJobService cronJobService,
             Runnable onModelSettings) {
+        this(
+                taskInfo,
+                agent,
+                currentProject,
+                agentService,
+                providerService,
+                chatService,
+                cronJobService,
+                onModelSettings,
+                null);
+    }
+
+    /**
+     * Pure DI constructor accepting an onOpenTask navigation callback.
+     *
+     * @param taskInfo Initial task info to load
+     * @param agent Active agent information
+     * @param currentProject Current project information
+     * @param agentService Service managing agent instances
+     * @param providerService Service managing LLM providers
+     * @param chatService Service managing chat sessions and messages
+     * @param cronJobService Service managing scheduled jobs
+     * @param onModelSettings Callback invoked when model settings are requested
+     * @param onOpenTask Callback invoked when a specific task session is requested to be opened
+     */
+    public TaskView(
+            ChatSessionInfo taskInfo,
+            AgentInfo agent,
+            ProjectInfo currentProject,
+            AgentService agentService,
+            ProviderService providerService,
+            ChatService chatService,
+            CronJobService cronJobService,
+            Runnable onModelSettings,
+            Consumer<ChatSessionInfo> onOpenTask) {
         super(
                 agentService,
                 providerService,
@@ -36,7 +72,8 @@ public class TaskView extends ChatView {
                 cronJobService,
                 agent,
                 ChatSessionInfo.KIND_TASK,
-                currentProject);
+                currentProject,
+                onOpenTask);
         if (taskInfo != null) {
             this.loadSession(taskInfo);
         }
