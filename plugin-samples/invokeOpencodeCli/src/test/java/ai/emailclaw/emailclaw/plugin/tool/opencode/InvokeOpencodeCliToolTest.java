@@ -217,7 +217,7 @@ class InvokeOpencodeCliToolTest {
             "DefaultOpencodeProcessRunner buildCommand should automatically inject --auto and"
                     + " --continue and format arguments")
     void testDefaultOpencodeProcessRunnerBuildCommand() {
-        DefaultOpencodeProcessRunner runner = new DefaultOpencodeProcessRunner();
+        DefaultOpencodeProcessRunner runner = new DefaultOpencodeProcessRunner(path -> path);
 
         // 1. Standard prompt with continueLastSession=true
         var cmd1 = runner.buildCommand("opencode", "say hello", null, null, true);

@@ -30,6 +30,7 @@ public interface AntigravityProcessRunner {
      * @param timeoutSeconds Execution timeout limit in seconds
      * @param dangerouslySkipPermissions Whether to automatically pass --dangerously-skip-permissions
      * @param extraArgs Optional additional CLI flags or arguments
+     * @param continueLastSession Whether to resume the most recent conversation (-c / --continue)
      * @return An immutable {@link AntigravityExecutionResult} capturing the execution status and output
      */
     AntigravityExecutionResult execute(
@@ -39,5 +40,28 @@ public interface AntigravityProcessRunner {
             String model,
             int timeoutSeconds,
             boolean dangerouslySkipPermissions,
-            String extraArgs);
+            String extraArgs,
+            boolean continueLastSession);
+
+    /**
+     * Overload for backward compatibility defaulting {@code continueLastSession} to true.
+     */
+    default AntigravityExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            int timeoutSeconds,
+            boolean dangerouslySkipPermissions,
+            String extraArgs) {
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                timeoutSeconds,
+                dangerouslySkipPermissions,
+                extraArgs,
+                true);
+    }
 }

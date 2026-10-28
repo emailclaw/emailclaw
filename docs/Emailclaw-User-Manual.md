@@ -255,6 +255,37 @@ Enable suitable operational instructions for tasks in **Skills**, add vetted too
 
 Third-party plugins have the potential for code execution and network access. Install only from trusted sources, read their permissions and configuration instructions, and verify them first on a test account or a low-privilege Agent. Developers can refer to the `plugin-samples/PLUGIN_DEVELOPER_GUIDE.md` and `plugin-samples/invokeAntigravityCli` examples in the repository.
 
+### 8.1 Bridging Four Top-Tier AI CLI Tools (Email as the Sole Universal Bridge)
+
+Emailclaw natively integrates with the industry's four premier AI coding and reasoning command-line tools via modular plugins:
+- **`invokeAntigravityCli`**: Executes Google Antigravity CLI (`agy`) for headless automated coding and project generation.
+- **`invokeClaudeCodeCli`**: Executes Anthropic Claude Code CLI (`claude`) for automated code analysis, debugging, and precision refactoring.
+- **`invokeCodexCli`**: Executes OpenAI Codex CLI (`codex`) for autonomous non-interactive coding and reviews.
+- **`invokeOpencodeCli`**: Executes OpenCode CLI (`opencode`) for running open-source and multi-model coding sessions.
+
+#### Core Advantage: Email Is the Universal Bridge Everyone Already Has (Zero Extra Apps)
+Traditional AI CLI tools require developers to remain in front of a terminal or configure complex mobile SSH keys, terminal emulators, and network tunneling. Emailclaw completely redefines this workflow:
+1. **Zero App Overhead**: Everyone already has an email app on their smartphone, tablet, or work laptop. You never need to install proprietary chat apps, remote desktop viewers, or terminal software.
+2. **Asynchronous & Anywhere**: When traveling or in meetings, simply send an email to your Agent's address (e.g., *"Please invoke the invokeAntigravityCli tool to analyze dependencies and write a parser script"*). Emailclaw invokes the CLI inside an isolated project directory on your machine or cloud server, packages the results, and returns complete output and code artifacts straight to your inbox thread.
+
+#### Installation: Drop In to Enable, Zero-Downtime Hot-Reload
+Enabling these tools is as simple as copying the compiled plugin JAR:
+```bash
+# Copy the tool plugin JAR files into your runtime plugins directory:
+cp emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar ~/emailclaw/plugins/
+cp emailclaw-plugin-tool-invokeClaudeCodeCli-1.0.1.jar ~/emailclaw/plugins/
+cp emailclaw-plugin-tool-invokeCodexCli-1.0.1.jar ~/emailclaw/plugins/
+cp emailclaw-plugin-tool-invokeOpencodeCli-1.0.1.jar ~/emailclaw/plugins/
+```
+> [!IMPORTANT]
+> **No Need to Restart Emailclaw!**
+> Emailclaw features dynamic filesystem monitoring for plugins. Once a JAR file is copied into `~/emailclaw/plugins`, the system automatically hot-loads, parses SPI registrations, and enables the new tool in seconds—whether running the graphical desktop application or the headless background systemd daemon.
+
+#### Industrial-Grade PathResolver and Environment Enrichment
+Official installation scripts for CLI tools frequently place executables in user-specific locations such as `$HOME/.local/bin` (e.g. `agy`, `claude`) or `$HOME/.opencode/bin` (e.g. `opencode`). These paths are often missing from the default `PATH` of non-login shells and systemd services.
+- **Automated Discovery**: Every CLI plugin includes a dedicated `PathResolver` strategy that expands tilde (`~`), inspects system environment variables, scans the system `PATH`, and probes well-known candidate directories.
+- **Subprocess PATH Enrichment**: Before launching the process, the runner enriches the subprocess environment `PATH` with the executable's directory and standard local bin paths, guaranteeing that internal toolchains (such as Node, Python, and Git) resolve without `error=2: No such file or directory` issues.
+
 ## 9. Linux Background Service: A Complete Installation Guide for PC Beginners
 
 This section applies to Ubuntu, Debian, and other Debian-based Linux distributions using **systemd**. The background service is suitable for users who want their computer to automatically receive task emails after booting: it has no desktop window, but runs the Emailclaw Channel, cron jobs, and Agents continuously. You still interact with it via email.

@@ -216,6 +216,19 @@ public class CronJobService implements AutoCloseable {
     }
 
     /**
+     * Find a chat/task session by session ID.
+     *
+     * @param sessionId Session ID
+     * @return ChatSessionInfo if found, null otherwise
+     */
+    public ChatSessionInfo findSession(String sessionId) {
+        if (chatService != null && sessionId != null && !sessionId.isBlank()) {
+            return chatService.findSession(sessionId);
+        }
+        return null;
+    }
+
+    /**
      * Parse and complete the task session (ChatSessionInfo) associated with the job.
      *
      * <p>If {@code spec.taskId} is empty or {@code default}, a new task will be created
@@ -733,13 +746,17 @@ public class CronJobService implements AutoCloseable {
                     jobId,
                     CronJobStatus.SKIPPED,
                     "Reached maximum concurrency " + maxConcurrency,
-                    trigger);
+                    trigger,
+                    spec.taskId(),
+                    resolveJobProjectId(spec));
             return;
         }
         ZonedDateTime runAt = ZonedDateTime.now();
         String runAtStr = runAt.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
         // Update status: running
         updateState(jobId, null, runAtStr, CronJobStatus.RUNNING, null);
+        String resolvedProjectId = resolveJobProjectId(spec);
+        ChatSessionInfo session = null;
         try {
             LOGGER.log(
                     Level.INFO,
@@ -751,7 +768,6 @@ public class CronJobService implements AutoCloseable {
             }
             ProviderInfo provider = chatService.resolveEffectiveProvider(agent);
             String modelId = chatService.resolveEffectiveModelId(agent, provider);
-            ChatSessionInfo session;
             String targetTaskId = spec.taskId();
             if (targetTaskId != null
                     && !targetTaskId.isBlank()
@@ -770,10 +786,20 @@ public class CronJobService implements AutoCloseable {
                             Level.WARNING,
                             "Target task session not found, creating new session: taskId={0}",
                             targetTaskId);
-                    session = chatService.newSession(agent.getId());
+                    session =
+                            chatService.newSession(
+                                    agent.getId(),
+                                    ChatSessionInfo.KIND_TASK,
+                                    spec.name(),
+                                    resolvedProjectId);
                 }
             } else {
-                session = chatService.newSession(agent.getId());
+                session =
+                        chatService.newSession(
+                                agent.getId(),
+                                ChatSessionInfo.KIND_TASK,
+                                spec.name(),
+                                resolvedProjectId);
             }
             // Set dispatch channel and user ID
             String dispatchChannel = spec.dispatch() != null ? spec.dispatch().channel() : null;
@@ -809,7 +835,13 @@ public class CronJobService implements AutoCloseable {
                 CronJobStatus status = CronJobStatus.ERROR;
                 String error = "Task prompt cannot be empty";
                 updateState(jobId, null, runAtStr, status, error);
-                recordExecution(jobId, status, error, trigger);
+                recordExecution(
+                        jobId,
+                        status,
+                        error,
+                        trigger,
+                        session != null ? session.getId() : "",
+                        resolvedProjectId);
                 return;
             }
             int timeoutSeconds =
@@ -826,11 +858,12 @@ public class CronJobService implements AutoCloseable {
                     new Object[] {jobId, mode, session.getChannel()});
             CountDownLatch latch = new CountDownLatch(1);
             final Msg[] capturedMsg = new Msg[1];
+            final ChatSessionInfo activeSession = session;
             chatService.sendMessage(
                     agent,
                     provider,
                     modelId,
-                    session,
+                    activeSession,
                     prompt,
                     List.of(),
                     Map.of("deliveryMode", mode),
@@ -839,7 +872,7 @@ public class CronJobService implements AutoCloseable {
                         @Override
                         public void onPart(ChatMessagePart part, boolean startsNew) {
                             if (mode == DeliveryMode.STREAM) {
-                                deliverStreamChunk(session, part, startsNew);
+                                deliverStreamChunk(activeSession, part, startsNew);
                             }
                         }
 
@@ -873,7 +906,13 @@ public class CronJobService implements AutoCloseable {
                 status = CronJobStatus.SUCCESS;
             }
             updateState(jobId, null, runAtStr, status, error);
-            recordExecution(jobId, status, error, trigger);
+            recordExecution(
+                    jobId,
+                    status,
+                    error,
+                    trigger,
+                    session != null ? session.getId() : "",
+                    resolvedProjectId);
             LOGGER.log(
                     Level.INFO,
                     "Scheduled task execution complete: id={0}, status={1}",
@@ -892,7 +931,13 @@ public class CronJobService implements AutoCloseable {
             String error = e.getMessage();
             LOGGER.log(Level.WARNING, "Scheduled task execution failed: id=" + jobId, e);
             updateState(jobId, null, runAtStr, status, error);
-            recordExecution(jobId, status, error, trigger);
+            recordExecution(
+                    jobId,
+                    status,
+                    error,
+                    trigger,
+                    session != null ? session.getId() : "",
+                    resolvedProjectId);
         } finally {
             runningCounts.compute(jobId, (k, v) -> (v == null || v <= 1 ? 0 : v - 1));
             // Countdown logic
@@ -954,9 +999,20 @@ public class CronJobService implements AutoCloseable {
      * Record an execution history.
      */
     private void recordExecution(
-            String jobId, CronJobStatus status, String error, CronJobTrigger trigger) {
+            String jobId,
+            CronJobStatus status,
+            String error,
+            CronJobTrigger trigger,
+            String sessionId,
+            String projectId) {
         CronExecutionRecord record =
-                new CronExecutionRecord(System.currentTimeMillis(), status, error, trigger);
+                new CronExecutionRecord(
+                        System.currentTimeMillis(),
+                        status,
+                        error,
+                        trigger,
+                        sessionId != null ? sessionId : "",
+                        projectId != null ? projectId : "default");
         synchronized (historyLock) {
             List<CronExecutionRecord> records =
                     jobHistory.computeIfAbsent(jobId, k -> loadHistory(jobId));
@@ -968,6 +1024,11 @@ public class CronJobService implements AutoCloseable {
             }
             saveHistory(jobId, records);
         }
+    }
+
+    private void recordExecution(
+            String jobId, CronJobStatus status, String error, CronJobTrigger trigger) {
+        recordExecution(jobId, status, error, trigger, "", "default");
     }
 
     /**

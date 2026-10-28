@@ -55,6 +55,7 @@ Emailclaw 把 AI Agent 放进每个人都熟悉的邮箱。它不是把电子邮
 - **本地优先**：配置、项目、会话、附件、工作区、日志与插件保存在你控制的机器上。
 - **受控的 Agent 行动**：模型、工具、Skills、MCP、定时任务和插件可组合使用；高风险工具调用可通过邮件四位确认码审批。
 - **适合长期运行**：支持 Linux 无界面服务模式、开机启动、Cron 自动化和日志排障。
+- **连接顶级 AI CLI 的天然桥梁**：以所有人每天都在使用的电子邮件为桥梁（无需安装任何额外 App），连接并无缝调度 Google Antigravity CLI (`agy`)、Claude Code CLI (`claude`)、OpenAI Codex CLI (`codex`) 与 OpenCode CLI (`opencode`) 等前沿编程工具。
 - **可扩展**：基于 Java SPI 与外部 JAR 插件；可扩展工具、Provider、钩子、MCP、界面和渠道。
 - **基于 AgentScope Java**：使用 AgentScope Java 2.0 的 Agent、模型、事件、工具、权限与 Harness 能力。
 
@@ -270,6 +271,19 @@ docs/                      产品功能、架构和用户手册
 ## 扩展与插件
 
 插件可以提供工具、模型 Provider、启动/关闭钩子、MCP、界面或渠道能力。请从 [插件开发指南](./plugin-samples/PLUGIN-DEVELOPER-GUIDE-zh.md) 与 [`plugin-samples/invokeAntigravityCli`](./plugin-samples/invokeAntigravityCli) 开始。渠道插件需要负责外部会话映射、消息转发和（如需要）审批请求的安全投递。
+
+### 桥接四大顶级 AI CLI 工具插件（免重启热加载）
+
+Emailclaw 以开箱即用的插件形式提供了连接业界四大顶级 AI 编码与自主 Agent CLI 的工具：
+- **`invokeAntigravityCli`**：调用 Google Antigravity CLI (`agy`) 执行无头自动化编程与开发任务。
+- **`invokeClaudeCodeCli`**：调用 Anthropic Claude Code CLI (`claude`) 进行精准代码分析与自主重构。
+- **`invokeCodexCli`**：调用 OpenAI Codex CLI (`codex`) 自动化执行非交互式编码与审查。
+- **`invokeOpencodeCli`**：调用 OpenCode CLI (`opencode`) 运行开源及多模型编码工作流。
+
+**为什么这是颠覆性的？**
+- **Email 作为全民通用的无感桥梁**：你不需要在移动设备上安装复杂的终端应用、SSH 客户端或专有聊天软件。无论你在上下班路上用手机邮箱，还是在会议中用笔记本电脑，只需发送一封常规邮件，Emailclaw 就能作为桥梁驱动服务器或本地电脑上的强大 CLI 为你工作，并将完整运行结果直接回复到你的收件箱。
+- **极简安装与即时热加载（免重启）**：使用前，只需将对应工具编译生成的 JAR 包（如 `emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar`）直接复制到数据目录的 `~/emailclaw/plugins` 下即可。**Emailclaw 具备全动态插件目录热监听（Hot-Reload）能力，无需重启服务或应用，复制后系统立即自动识别并加载生效！**
+- **内置工业级 PathResolver**：工具插件内置智能路径自适应策略，自动探测 `$HOME/.local/bin`、`$HOME/.opencode/bin`、环境变量以及系统 `PATH`，并自动补全子进程运行环境，即使在非登录无头服务下也能精准找到并成功执行命令。
 
 ## 文档
 

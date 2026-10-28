@@ -256,6 +256,37 @@ Subject: 为 8 月产品评审整理竞品摘要
 
 第三方插件拥有代码执行和网络访问的可能性。只从可信来源安装，阅读其权限和配置说明，并先在测试账户或低权限 Agent 上验证。开发者可参考仓库中的 `plugin-samples/PLUGIN_DEVELOPER_GUIDE.md` 与 `plugin-samples/invokeAntigravityCli` 示例。
 
+### 8.1 桥接四大顶级 AI CLI 工具（以 Email 为唯一桥梁）
+
+Emailclaw 以独立插件的形式原生支持调度业界四大顶级 AI 编码与自主 Agent CLI：
+- **`invokeAntigravityCli`**：调用 Google Antigravity CLI (`agy`) 进行非交互式编码与自动化开发。
+- **`invokeClaudeCodeCli`**：调用 Anthropic Claude Code CLI (`claude`) 执行代码分析、漏洞排查与精准重构。
+- **`invokeCodexCli`**：调用 OpenAI Codex CLI (`codex`) 自动化执行编程任务与代码审查。
+- **`invokeOpencodeCli`**：调用 OpenCode CLI (`opencode`) 运行开源与多模型编程工作流。
+
+#### 核心优势：Email 是人人皆有的无感桥梁（无需安装任何额外 App）
+传统 CLI 工具通常需要开发者守在终端前输入命令，或在移动端配置复杂的 SSH 客户端、密钥与网络穿透。Emailclaw 彻底重塑了这种交互方式：
+1. **人人有邮箱，随时随地可用**：无论你是在通勤地铁上使用手机自带邮箱，还是在会议现场使用任意轻薄本，只需向你的 Agent 邮箱发一封邮件（例如：“请调用 invokeAntigravityCli 工具，编写一个解析 CSV 报表的 Python 脚本”），Emailclaw 即可在受控隔离的项目目录中唤起本地或服务器上的 CLI 工具执行任务。
+2. **无需安装任何专有客户端**：无需安装新的即时通讯软件或远程桌面软件，整个任务生命周期（派发任务、输入确认码、接收代码文件与日志报告）全部在日常邮件线程中自然流转。
+
+#### 安装与使用：复制即用，免重启热加载（Hot-Reload）
+启用这些 CLI 工具极其简单，仅需一步文件复制：
+```bash
+# 将编译好的工具插件 JAR 复制到用户数据目录的 plugins/ 下即可：
+cp emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar ~/emailclaw/plugins/
+cp emailclaw-plugin-tool-invokeClaudeCodeCli-1.0.1.jar ~/emailclaw/plugins/
+cp emailclaw-plugin-tool-invokeCodexCli-1.0.1.jar ~/emailclaw/plugins/
+cp emailclaw-plugin-tool-invokeOpencodeCli-1.0.1.jar ~/emailclaw/plugins/
+```
+> [!IMPORTANT]
+> **完全无需重启 Emailclaw！**
+> Emailclaw 后台内置了动态插件目录监听服务。当把 JAR 包复制到 `~/emailclaw/plugins` 目录后，系统会在数秒内自动完成热加载（Hot-Reload）、类加载与工具注册，已启动的桌面端或后台守护进程均会立即自动识别新工具。
+
+#### 工业级 PathResolver 与智能环境补全
+用户通过各官方脚本安装 CLI 工具时，可执行程序通常落在 `$HOME/.local/bin`（如 `agy`、`claude`）或 `$HOME/.opencode/bin`（如 `opencode`），这些路径往往不在非登录或 systemd 后台服务的系统默认 `PATH` 中。
+- **自动定位**：插件全部内置工业级 `PathResolver` 策略，自动识别波浪号（`~`）展开、环境变量探测、系统 `PATH` 与标准用户脚本目录，避免找不到命令的报错。
+- **环境丰富（Subprocess PATH Enrichment）**：启动底层进程前，插件会自动将可执行文件所在目录注入子进程的 `PATH` 环境变量，确保 CLI 内部依赖的其它子工具链（如 Node、Python、Git）均能正常运行。
+
 ## 9. Linux 后台服务：给电脑入门者的完整安装指南
 
 本节适用于 Ubuntu、Debian 及其他使用 **systemd** 的 Debian 系 Linux。后台服务适合希望电脑开机后自动收取任务邮件的用户：它没有桌面窗口，但会持续运行 Emailclaw Channel、定时任务和 Agent。你仍然通过邮件与它交互。

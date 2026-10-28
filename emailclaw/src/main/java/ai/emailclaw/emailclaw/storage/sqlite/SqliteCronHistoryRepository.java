@@ -72,7 +72,7 @@ public class SqliteCronHistoryRepository {
         }
         String sql =
                 """
-                SELECT run_at, status, error, trigger_type
+                SELECT run_at, status, error, trigger_type, session_id, project_id
                 FROM cron_execution_history
                 WHERE job_id = ?
                 ORDER BY id DESC
@@ -90,7 +90,12 @@ public class SqliteCronHistoryRepository {
                                 CronJobStatus status = parseStatus(rs.getString("status"));
                                 String error = rs.getString("error");
                                 CronJobTrigger trigger = parseTrigger(rs.getString("trigger_type"));
-                                list.add(new CronExecutionRecord(runAt, status, error, trigger));
+                                String sessionId = rs.getString("session_id");
+                                String projectId = rs.getString("project_id");
+                                list.add(
+                                        new CronExecutionRecord(
+                                                runAt, status, error, trigger, sessionId,
+                                                projectId));
                             }
                         }
                     }
@@ -131,8 +136,8 @@ public class SqliteCronHistoryRepository {
                     if (records != null && !records.isEmpty()) {
                         String insertSql =
                                 """
-                                INSERT INTO cron_execution_history (job_id, run_at, status, error, trigger_type, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?);
+                                INSERT INTO cron_execution_history (job_id, run_at, status, error, trigger_type, session_id, project_id, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                                 """;
                         try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
                             for (CronExecutionRecord r : records) {
@@ -150,7 +155,10 @@ public class SqliteCronHistoryRepository {
                                             r.trigger() != null
                                                     ? r.trigger().getCode()
                                                     : CronJobTrigger.SCHEDULED.getCode());
-                                    ps.setLong(6, now);
+                                    ps.setString(6, r.sessionId() != null ? r.sessionId() : "");
+                                    ps.setString(
+                                            7, r.projectId() != null ? r.projectId() : "default");
+                                    ps.setLong(8, now);
                                     ps.addBatch();
                                 }
                             }
@@ -180,8 +188,8 @@ public class SqliteCronHistoryRepository {
                 conn -> {
                     String insertSql =
                             """
-                            INSERT INTO cron_execution_history (job_id, run_at, status, error, trigger_type, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?);
+                            INSERT INTO cron_execution_history (job_id, run_at, status, error, trigger_type, session_id, project_id, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                             """;
                     try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
                         ps.setString(1, jobId);
@@ -197,7 +205,10 @@ public class SqliteCronHistoryRepository {
                                 record.trigger() != null
                                         ? record.trigger().getCode()
                                         : CronJobTrigger.SCHEDULED.getCode());
-                        ps.setLong(6, now);
+                        ps.setString(6, record.sessionId() != null ? record.sessionId() : "");
+                        ps.setString(
+                                7, record.projectId() != null ? record.projectId() : "default");
+                        ps.setLong(8, now);
                         ps.executeUpdate();
                     }
 

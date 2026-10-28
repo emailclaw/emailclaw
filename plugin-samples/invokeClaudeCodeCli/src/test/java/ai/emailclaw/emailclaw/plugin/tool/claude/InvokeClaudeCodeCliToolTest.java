@@ -246,7 +246,7 @@ class InvokeClaudeCodeCliToolTest {
             "DefaultClaudeCodeProcessRunner buildCommand should correctly construct claude -p CLI"
                     + " arguments")
     void testDefaultClaudeCodeProcessRunnerBuildCommand() {
-        DefaultClaudeCodeProcessRunner runner = new DefaultClaudeCodeProcessRunner();
+        DefaultClaudeCodeProcessRunner runner = new DefaultClaudeCodeProcessRunner(path -> path);
 
         // 1. Standard prompt without model or permissionMode, continueLastSession = false
         List<String> cmd1 = runner.buildCommand("claude", "fix bug", null, null, null, false);

@@ -413,15 +413,42 @@ public final class CronJobModel {
 
     // ======================== Execution Record ========================
     /**
-     * Single execution record.
+     * Single execution record representing a job run instance.
      *
-     * @param runAt   Execution time (UTC epoch milliseconds)
-     * @param status  Execution status
-     * @param error   Error message
-     * @param trigger Trigger mode: "scheduled" or "manual"
+     * @param runAt     Execution time (UTC epoch milliseconds)
+     * @param status    Execution status
+     * @param error     Error message
+     * @param trigger   Trigger mode: "scheduled" or "manual"
+     * @param sessionId Associated task/chat session ID for viewing execution process and result
+     * @param projectId Associated project ID
      */
     public record CronExecutionRecord(
-            long runAt, CronJobStatus status, String error, CronJobTrigger trigger) {
+            long runAt,
+            CronJobStatus status,
+            String error,
+            CronJobTrigger trigger,
+            String sessionId,
+            String projectId) {
+
+        public CronExecutionRecord {
+            if (sessionId == null) {
+                sessionId = "";
+            }
+            if (projectId == null || projectId.isBlank()) {
+                projectId = "default";
+            }
+            if (error == null) {
+                error = "";
+            }
+        }
+
+        /**
+         * Backward-compatible constructor for existing callers and tests.
+         */
+        public CronExecutionRecord(
+                long runAt, CronJobStatus status, String error, CronJobTrigger trigger) {
+            this(runAt, status, error, trigger, "", "default");
+        }
 
         /**
          * Returns a human-readable formatted execution time in the system default timezone.

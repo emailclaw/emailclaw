@@ -30,10 +30,13 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.application.Platform;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -100,6 +103,8 @@ public class CronJobListView implements ViewPane {
 
     private ProjectInfo currentProject;
 
+    private Consumer<ChatSessionInfo> onOpenTask;
+
     /**
      * Currently filtered schedule type.
      */
@@ -127,14 +132,32 @@ public class CronJobListView implements ViewPane {
             String channel) {}
 
     public CronJobListView(CronJobService cronService, AgentInfo agent) {
-        this(cronService, agent, ProjectService.PROJECT_DEFAULT);
+        this(cronService, agent, ProjectService.PROJECT_DEFAULT, null);
     }
 
     public CronJobListView(CronJobService cronService, AgentInfo agent, ProjectInfo project) {
+        this(cronService, agent, project, null);
+    }
+
+    public CronJobListView(
+            CronJobService cronService,
+            AgentInfo agent,
+            ProjectInfo project,
+            Consumer<ChatSessionInfo> onOpenTask) {
         this.cronService = cronService;
         this.currentAgent = agent;
         this.currentProject = project;
+        this.onOpenTask = onOpenTask;
         initUi();
+    }
+
+    /**
+     * Sets or updates the navigation callback for opening a task session in TaskView.
+     *
+     * @param onOpenTask Callback accepting the target ChatSessionInfo
+     */
+    public void setOnOpenTask(Consumer<ChatSessionInfo> onOpenTask) {
+        this.onOpenTask = onOpenTask;
     }
 
     /**
@@ -984,10 +1007,10 @@ public class CronJobListView implements ViewPane {
         TableColumn<CronExecutionRecord, String> runAtCol = new TableColumn<>("Run At");
         runAtCol.setCellValueFactory(
                 cd -> new SimpleStringProperty(cd.getValue().formattedRunAt()));
-        runAtCol.setPrefWidth(220);
+        runAtCol.setPrefWidth(200);
         TableColumn<CronExecutionRecord, CronJobStatus> statusCol = new TableColumn<>("Status");
         statusCol.setCellValueFactory(cd -> new SimpleObjectProperty<>(cd.getValue().status()));
-        statusCol.setPrefWidth(100);
+        statusCol.setPrefWidth(90);
         statusCol.setCellFactory(
                 col ->
                         new TableCell<>() {
@@ -998,16 +1021,31 @@ public class CronJobListView implements ViewPane {
                                     setText(null);
                                     setGraphic(null);
                                     setStyle("");
+                                    setTooltip(null);
                                 } else {
                                     setText(item.getCode());
                                     if (CronJobStatus.SUCCESS == item) {
                                         setStyle("-fx-text-fill: #15a763; -fx-font-weight: 600;");
+                                        setTooltip(null);
                                     } else if (CronJobStatus.ERROR == item) {
                                         setStyle("-fx-text-fill: #e74c3c; -fx-font-weight: 600;");
+                                        CronExecutionRecord record =
+                                                getTableRow() != null
+                                                        ? getTableRow().getItem()
+                                                        : null;
+                                        if (record != null
+                                                && record.error() != null
+                                                && !record.error().isBlank()) {
+                                            setTooltip(new Tooltip(record.error()));
+                                        } else {
+                                            setTooltip(null);
+                                        }
                                     } else if (CronJobStatus.RUNNING == item) {
                                         setStyle("-fx-text-fill: #f59e0b; -fx-font-weight: 600;");
+                                        setTooltip(null);
                                     } else {
                                         setStyle("-fx-text-fill: #999;");
+                                        setTooltip(null);
                                     }
                                 }
                             }
@@ -1015,23 +1053,92 @@ public class CronJobListView implements ViewPane {
         TableColumn<CronExecutionRecord, String> triggerCol = new TableColumn<>("Trigger");
         triggerCol.setCellValueFactory(
                 cd -> new SimpleStringProperty(cd.getValue().trigger().getCode()));
-        triggerCol.setPrefWidth(100);
-        TableColumn<CronExecutionRecord, String> errorCol = new TableColumn<>("Error");
-        errorCol.setCellValueFactory(
-                cd ->
-                        new SimpleStringProperty(
-                                cd.getValue().error() != null ? cd.getValue().error() : "-"));
-        errorCol.setPrefWidth(300);
-        table.getColumns().addAll(runAtCol, statusCol, triggerCol, errorCol);
+        triggerCol.setPrefWidth(90);
+
+        TableColumn<CronExecutionRecord, Void> actionsCol = new TableColumn<>("Actions");
+        actionsCol.setPrefWidth(120);
+        actionsCol.setCellFactory(
+                col ->
+                        new TableCell<>() {
+                            private final Button detailsBtn = new Button("See details");
+
+                            {
+                                detailsBtn.getStyleClass().add("chip-btn");
+                                detailsBtn.setStyle(
+                                        "-fx-font-size: 11px; -fx-padding: 3 8; -fx-cursor: hand;");
+                                detailsBtn.setOnAction(
+                                        e -> {
+                                            CronExecutionRecord record =
+                                                    getTableRow() != null
+                                                            ? getTableRow().getItem()
+                                                            : null;
+                                            if (record != null) {
+                                                openSessionDetails(job, record, dialog);
+                                            }
+                                        });
+                            }
+
+                            @Override
+                            protected void updateItem(Void item, boolean empty) {
+                                super.updateItem(item, empty);
+                                if (empty
+                                        || getTableRow() == null
+                                        || getTableRow().getItem() == null) {
+                                    setGraphic(null);
+                                } else {
+                                    setGraphic(detailsBtn);
+                                }
+                            }
+                        });
+
+        table.getColumns().addAll(runAtCol, statusCol, triggerCol, actionsCol);
         ObservableList<CronExecutionRecord> items = FXCollections.observableArrayList(records);
         table.setItems(items);
         table.setPrefHeight(300);
         VBox content = new VBox(12, summaryBox, new Label("Execution Records:"), table);
         content.setPadding(new Insets(16));
         dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().setPrefWidth(700);
-        dialog.getDialogPane().setPrefHeight(500);
+        dialog.getDialogPane().setPrefWidth(560);
+        dialog.getDialogPane().setPrefHeight(460);
         dialog.showAndWait();
+    }
+
+    private void openSessionDetails(
+            CronJobSpec job, CronExecutionRecord record, Dialog<Void> dialog) {
+        if (onOpenTask == null) {
+            LOGGER.warning("Unable to open task details: onOpenTask handler is null");
+            return;
+        }
+        String targetSessionId = record.sessionId();
+        if (targetSessionId == null || targetSessionId.isBlank()) {
+            targetSessionId = job.taskId();
+        }
+        ChatSessionInfo targetSession = null;
+        if (targetSessionId != null && !targetSessionId.isBlank()) {
+            targetSession = cronService.findSession(targetSessionId);
+        }
+        if (targetSession == null && job.taskId() != null && !job.taskId().isBlank()) {
+            targetSession = cronService.findSession(job.taskId());
+        }
+        if (targetSession != null) {
+            LOGGER.log(
+                    Level.INFO,
+                    "Navigating to task session from cron history: jobId={0}, sessionId={1}",
+                    new Object[] {job.id(), targetSession.getId()});
+            final ChatSessionInfo sessionToOpen = targetSession;
+            dialog.close();
+            Platform.runLater(() -> onOpenTask.accept(sessionToOpen));
+        } else {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Session not found for cron execution: jobId={0}, sessionId={1}",
+                    new Object[] {job.id(), targetSessionId});
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle("Session Not Found");
+            alert.setHeaderText(null);
+            alert.setContentText("The execution session could not be found.");
+            alert.showAndWait();
+        }
     }
 
     // ======================== Template Selection ========================

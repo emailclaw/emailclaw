@@ -202,7 +202,8 @@ public class MainWindow extends BorderPane {
                                 cronJobService,
                                 currentAgent,
                                 ChatSessionInfo.KIND_CHAT,
-                                currentProject));
+                                currentProject,
+                                this::showTaskView));
         factories.put(ViewIds.INBOX, () -> new InboxView(messageBusService));
         factories.put(
                 ViewIds.SESSIONS_TASK,
@@ -228,7 +229,8 @@ public class MainWindow extends BorderPane {
                                 () -> {
                                     showSystemSettingsSidebar();
                                     showView(ViewIds.MODELS);
-                                }));
+                                },
+                                this::showTaskView));
         factories.put(
                 ViewIds.SESSIONS_CHAT,
                 () ->
@@ -292,7 +294,9 @@ public class MainWindow extends BorderPane {
         factories.put(ViewIds.CHANNELS, () -> new ChannelsView(channelService));
         factories.put(
                 ViewIds.CRON_JOBS,
-                () -> new CronJobListView(cronJobService, currentAgent, currentProject));
+                () ->
+                        new CronJobListView(
+                                cronJobService, currentAgent, currentProject, this::showTaskView));
         factories.put(ViewIds.HEARTBEAT, () -> new HeartbeatView(repository, currentAgent));
         factories.put(ViewIds.MCP, () -> new McpView(mcpService));
         factories.put(ViewIds.ACP, () -> new AcpView(acpService));
@@ -1061,6 +1065,10 @@ public class MainWindow extends BorderPane {
     }
 
     private void showTaskView(ChatSessionInfo task) {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> showTaskView(task));
+            return;
+        }
         String logId = task == null ? "new" : task.getId();
         LOGGER.log(java.util.logging.Level.INFO, "Switch task view: {0}", logId);
         if (task != null && !task.getProjectId().isBlank()) {
@@ -1075,9 +1083,7 @@ public class MainWindow extends BorderPane {
         taskView.onProjectChanged(currentProject);
         taskView.loadSession(task);
         showView(ViewIds.TASK);
-        if (task == null) {
-            renderTasksList();
-        }
+        renderTasksList();
         refreshMenuSelection();
     }
 
