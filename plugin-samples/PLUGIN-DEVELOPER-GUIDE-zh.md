@@ -1,5 +1,10 @@
 # Emailclaw 插件开发指南
 
+<p align="center">
+  <a href="https://emailclaw.email/">Official Website (emailclaw.email)</a> ·
+  <a href="./PLUGIN-DEVELOPER-GUIDE.md">English</a>
+</p>
+
 本文面向第三方插件开发者，说明 Emailclaw 插件的入口、生命周期、配置、Channel 插件接入方式，以及 ToolGuard 审批能力的集成约定。
 
 ## 1. 插件入口

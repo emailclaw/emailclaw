@@ -11,8 +11,9 @@ ARG TARGETARCH=amd64
 
 LABEL org.opencontainers.image.title="Emailclaw" \
       org.opencontainers.image.description="Personal AI Email Assistant - Headless Daemon" \
-      org.opencontainers.image.url="https://github.com/emailclaw/emailclaw" \
-      org.opencontainers.image.documentation="https://github.com/emailclaw/emailclaw#readme" \
+      org.opencontainers.image.url="https://emailclaw.email" \
+      org.opencontainers.image.source="https://github.com/emailclaw/emailclaw" \
+      org.opencontainers.image.documentation="https://emailclaw.email" \
       org.opencontainers.image.licenses="MIT"
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -84,6 +85,7 @@ RUN printf '%s\n' \
 'fi' \
 'echo "================================================================================"' \
 'echo " Starting Emailclaw Daemon (Headless Service Mode)"' \
+'echo " Official Website:       https://emailclaw.email"' \
 'echo " Base Image:             Ubuntu 26.04 LTS"' \
 'echo " Repository:             https://github.com/emailclaw/emailclaw"' \
 'echo " Data Directory:         $DATA_DIR"' \

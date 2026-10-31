@@ -1088,21 +1088,7 @@ If you did not send this email, someone may be attempting to spoof your email ad
             }
         }
         if (sendAttachments.isEmpty() && session != null) {
-            ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
-            if (project != null && notBlank(project.getBaseDirectory())) {
-                Path projectDir =
-                        Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
-                                .toAbsolutePath()
-                                .normalize();
-                if (Files.isDirectory(projectDir)) {
-                    try (java.util.stream.Stream<Path> stream = Files.list(projectDir)) {
-                        stream.filter(Files::isRegularFile)
-                                .filter(p -> !p.getFileName().toString().startsWith("."))
-                                .forEach(sendAttachments::add);
-                    } catch (IOException ignored) {
-                    }
-                }
-            }
+            sendAttachments.addAll(collectProjectAttachments(session));
         }
         String finalContent = content != null ? content.trim() : "";
         try {
@@ -1110,6 +1096,29 @@ If you did not send this email, someone may be attempting to spoof your email ad
         } catch (Exception e) {
             throw new IOException("Failed to send reply email", e);
         }
+    }
+
+    List<Path> collectProjectAttachments(ChatSessionInfo session) {
+        List<Path> result = new ArrayList<>();
+        if (session == null || this.projectService == null) {
+            return result;
+        }
+        ai.emailclaw.emailclaw.model.ProjectInfo project = findSessionProject(session);
+        if (project != null && notBlank(project.getBaseDirectory())) {
+            Path projectDir =
+                    Path.of(FileNameUtils.expandUserHome(project.getBaseDirectory()))
+                            .toAbsolutePath()
+                            .normalize();
+            if (Files.isDirectory(projectDir)) {
+                try (java.util.stream.Stream<Path> stream = Files.list(projectDir)) {
+                    stream.filter(Files::isRegularFile)
+                            .filter(p -> !p.getFileName().toString().startsWith("."))
+                            .forEach(result::add);
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        return result;
     }
 
     /**

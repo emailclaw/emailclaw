@@ -768,7 +768,17 @@ public class CronJobService implements AutoCloseable {
             }
             ProviderInfo provider = chatService.resolveEffectiveProvider(agent);
             String modelId = chatService.resolveEffectiveModelId(agent, provider);
-            String targetTaskId = spec.taskId();
+            String resolvedTaskId = spec.taskId();
+            if ((resolvedTaskId == null
+                            || resolvedTaskId.isBlank()
+                            || "default".equals(resolvedTaskId))
+                    && spec.dispatch() != null
+                    && spec.dispatch().target() != null
+                    && spec.dispatch().target().sessionId() != null
+                    && !spec.dispatch().target().sessionId().isBlank()) {
+                resolvedTaskId = spec.dispatch().target().sessionId().trim();
+            }
+            final String targetTaskId = resolvedTaskId;
             if (targetTaskId != null
                     && !targetTaskId.isBlank()
                     && !"default".equals(targetTaskId)) {
@@ -801,13 +811,30 @@ public class CronJobService implements AutoCloseable {
                                 spec.name(),
                                 resolvedProjectId);
             }
-            // Set dispatch channel and user ID
+            // Determine effective channel and target user
             String dispatchChannel = spec.dispatch() != null ? spec.dispatch().channel() : null;
-            session.setChannel(
-                    dispatchChannel != null && !dispatchChannel.isBlank()
-                            ? dispatchChannel
-                            : SessionDefaults.DEFAULT_CHANNEL);
-            if (ChannelIds.CONSOLE.equals(session.getChannel())) {
+            String dispatchUserId =
+                    (spec.dispatch() != null && spec.dispatch().target() != null)
+                            ? spec.dispatch().target().userId()
+                            : null;
+            if (dispatchChannel == null
+                    || dispatchChannel.isBlank()
+                    || ChannelIds.CONSOLE.equals(dispatchChannel)) {
+                // If the target task session originated from a specific channel (e.g. emailclaw),
+                // preserve it
+                if (session.getChannel() != null
+                        && !SessionDefaults.DEFAULT_CHANNEL.equals(session.getChannel())) {
+                    dispatchChannel = session.getChannel();
+                } else if (dispatchUserId != null && dispatchUserId.contains("@")) {
+                    dispatchChannel = ChannelIds.EMAILCLAW;
+                } else {
+                    dispatchChannel = SessionDefaults.DEFAULT_CHANNEL;
+                }
+            }
+            session.setChannel(dispatchChannel);
+            if (dispatchUserId != null && !dispatchUserId.isBlank()) {
+                session.setUserId(dispatchUserId);
+            } else if (ChannelIds.CONSOLE.equals(session.getChannel())) {
                 session.setUserId(SessionDefaults.LOCAL_USER_ID);
             }
             chatService.updateSession(session);

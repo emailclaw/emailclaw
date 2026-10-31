@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Emailclaw - Portable One-Click Installer for Linux
+# Website: https://emailclaw.email
 # Repository: https://github.com/emailclaw/emailclaw
 # ==============================================================================
 
@@ -92,6 +93,7 @@ for arg in "$@"; do
             ;;
         --help|-h)
             echo "Emailclaw One-Click Installer"
+            echo "Website: https://emailclaw.email"
             echo "Usage: [curl ... |] bash [options]"
             echo ""
             echo "Options:"
