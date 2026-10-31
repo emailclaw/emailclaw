@@ -345,6 +345,8 @@ public class MainWindow extends BorderPane {
         versionBox.setAlignment(Pos.CENTER_LEFT);
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
+        MenuItem websiteItem = new MenuItem("Official Website");
+        websiteItem.setOnAction(e -> openUrl("https://emailclaw.email/"));
         MenuItem tutorialItem = new MenuItem("Tutorial");
         tutorialItem.setOnAction(e -> openUrl("https://github.com/emailclaw/emailclaw"));
         MenuItem demosItem = new MenuItem("Feature Demos");
@@ -355,7 +357,13 @@ public class MainWindow extends BorderPane {
         faqItem.setOnAction(e -> openUrl("https://github.com/emailclaw/emailclaw/issues"));
         MenuButton documentation =
                 new MenuButton(
-                        "Documentation", null, tutorialItem, demosItem, changelogItem, faqItem);
+                        "Documentation",
+                        null,
+                        websiteItem,
+                        tutorialItem,
+                        demosItem,
+                        changelogItem,
+                        faqItem);
         documentation.getStyleClass().add("link-btn");
         top.getChildren().addAll(brand, versionBox, spacer, documentation);
         top.getChildren().add(navLink("GitHub", "https://github.com/emailclaw/emailclaw"));
@@ -1193,5 +1201,37 @@ public class MainWindow extends BorderPane {
             projectService.saveAll(allProjects);
             renderProjectsList();
         }
+    }
+
+    /**
+     * Get the ID of the currently displayed view.
+     *
+     * @return Current view ID (e.g. {@link ViewIds#TASK}, {@link ViewIds#CRON_JOBS})
+     */
+    public String getCurrentViewId() {
+        return currentViewId;
+    }
+
+    /**
+     * Get the cached view pane instance by its view ID if already initialized.
+     *
+     * @param viewId View ID constant
+     * @return {@link ViewPane} instance, or null if not yet created
+     */
+    public ViewPane getView(String viewId) {
+        return views.get(viewId);
+    }
+
+    /**
+     * Programmatically switch the visible view to the specified view ID.
+     *
+     * @param viewId View ID constant
+     */
+    public void navigateTo(String viewId) {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> navigateTo(viewId));
+            return;
+        }
+        showView(viewId);
     }
 }

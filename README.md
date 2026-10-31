@@ -10,8 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="./README-zh.md">中文版</a> ·
-  <a href="./docs/Emailclaw-User-Manual.md">Installation & Usage</a>
+  <a href="https://emailclaw.email/">Official Website (emailclaw.email)</a> ·
+  <a href="./docs/Emailclaw-User-Manual.md">Installation & Usage</a> ·
+  <a href="./README-zh.md">中文版</a>
 </p>
 
 ## See It in Action: From Inbox to Automation                                                                                                                                                        

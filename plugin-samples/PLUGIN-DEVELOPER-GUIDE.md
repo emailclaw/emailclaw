@@ -1,5 +1,10 @@
 # Emailclaw Plugin Developer Guide
 
+<p align="center">
+  <a href="https://emailclaw.email/">Official Website (emailclaw.email)</a> ·
+  <a href="./PLUGIN-DEVELOPER-GUIDE-zh.md">中文版</a>
+</p>
+
 This document is for third-party plugin developers and explains the Emailclaw plugin entry point, lifecycle, configuration, Channel plugin integration methods, and the ToolGuard approval integration conventions.
 
 ## 1. Plugin Entry Point

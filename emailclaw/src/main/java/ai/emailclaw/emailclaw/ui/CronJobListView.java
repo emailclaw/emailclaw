@@ -121,6 +121,29 @@ public class CronJobListView implements ViewPane {
     private Dialog<Void> historyDialog;
 
     /**
+     * Currently active confirmation alert for immediate execution.
+     */
+    private Dialog<?> activeConfirmationAlert;
+
+    /**
+     * Get the active confirmation alert dialog if currently displayed.
+     *
+     * @return Active confirmation dialog, or null
+     */
+    public Dialog<?> getActiveConfirmationAlert() {
+        return activeConfirmationAlert;
+    }
+
+    /**
+     * Get the active history dialog if currently displayed.
+     *
+     * @return Active history dialog, or null
+     */
+    public Dialog<Void> getActiveHistoryDialog() {
+        return historyDialog;
+    }
+
+    /**
      * Built-in template record
      */
     record Template(
@@ -416,7 +439,8 @@ public class CronJobListView implements ViewPane {
                     if (onRefresh != null) onRefresh.run();
                 });
         Button historyBtn = new Button("History");
-        historyBtn.getStyleClass().add("chip-btn");
+        historyBtn.setId("btn-history-job-" + (job.name() != null ? job.name() : job.id()));
+        historyBtn.getStyleClass().addAll("chip-btn", "btn-history-job");
         historyBtn.setStyle("-fx-font-size: 11px; -fx-padding: 4 8;");
         historyBtn.setOnAction(e -> showHistoryDialog(job));
         Button editBtn = new Button("Edit");
@@ -950,7 +974,7 @@ public class CronJobListView implements ViewPane {
     }
 
     // ======================== Execute Immediately Confirmation ========================
-    private void confirmExecuteNow(CronJobSpec job) {
+    public void confirmExecuteNow(CronJobSpec job) {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.setTitle("Execute Job Now");
         alert.setHeaderText("Trigger this job immediately?");
@@ -958,23 +982,31 @@ public class CronJobListView implements ViewPane {
                 "Job: "
                         + job.name()
                         + "\nThe job will run right now outside of its normal schedule.");
-        alert.showAndWait()
-                .ifPresent(
-                        btn -> {
-                            if (btn == ButtonType.OK) {
-                                cronService.executeNow(job.id());
-                                showToast("Job \"" + job.name() + "\" has been triggered.");
-                                renderJobs();
-                            }
-                        });
+        alert.getDialogPane().setId("dialog-execute-job-now");
+        this.activeConfirmationAlert = alert;
+        try {
+            alert.showAndWait()
+                    .ifPresent(
+                            btn -> {
+                                if (btn == ButtonType.OK) {
+                                    cronService.executeNow(job.id());
+                                    showToast("Job \"" + job.name() + "\" has been triggered.");
+                                    renderJobs();
+                                }
+                            });
+        } finally {
+            this.activeConfirmationAlert = null;
+        }
     }
 
     // ======================== Execution History Dialog ========================
-    private void showHistoryDialog(CronJobSpec job) {
+    public void showHistoryDialog(CronJobSpec job) {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Execution History");
         dialog.setHeaderText("History for: " + job.name());
+        dialog.getDialogPane().setId("dialog-cron-history");
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        this.historyDialog = dialog;
         List<CronExecutionRecord> records = cronService.getHistory(job.id());
         CronJobState state = cronService.getState(job.id());
         // ===== Status Summary =====
@@ -1003,6 +1035,7 @@ public class CronJobListView implements ViewPane {
         }
         // ===== History Records Table =====
         TableView<CronExecutionRecord> table = new TableView<>();
+        table.setId("table-cron-history");
         table.setPlaceholder(new Label("No execution history yet."));
         TableColumn<CronExecutionRecord, String> runAtCol = new TableColumn<>("Run At");
         runAtCol.setCellValueFactory(
@@ -1063,7 +1096,8 @@ public class CronJobListView implements ViewPane {
                             private final Button detailsBtn = new Button("See details");
 
                             {
-                                detailsBtn.getStyleClass().add("chip-btn");
+                                detailsBtn.setId("btn-see-details");
+                                detailsBtn.getStyleClass().addAll("chip-btn", "btn-see-details");
                                 detailsBtn.setStyle(
                                         "-fx-font-size: 11px; -fx-padding: 3 8; -fx-cursor: hand;");
                                 detailsBtn.setOnAction(
@@ -1072,6 +1106,11 @@ public class CronJobListView implements ViewPane {
                                                     getTableRow() != null
                                                             ? getTableRow().getItem()
                                                             : null;
+                                            if (record == null
+                                                    && table.getItems() != null
+                                                    && !table.getItems().isEmpty()) {
+                                                record = table.getItems().get(0);
+                                            }
                                             if (record != null) {
                                                 openSessionDetails(job, record, dialog);
                                             }
@@ -1100,10 +1139,14 @@ public class CronJobListView implements ViewPane {
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().setPrefWidth(560);
         dialog.getDialogPane().setPrefHeight(460);
-        dialog.showAndWait();
+        try {
+            dialog.showAndWait();
+        } finally {
+            this.historyDialog = null;
+        }
     }
 
-    private void openSessionDetails(
+    public void openSessionDetails(
             CronJobSpec job, CronExecutionRecord record, Dialog<Void> dialog) {
         if (onOpenTask == null) {
             LOGGER.warning("Unable to open task details: onOpenTask handler is null");
@@ -1113,12 +1156,24 @@ public class CronJobListView implements ViewPane {
         if (targetSessionId == null || targetSessionId.isBlank()) {
             targetSessionId = job.taskId();
         }
+        if ((targetSessionId == null || targetSessionId.isBlank())
+                && job.dispatch() != null
+                && job.dispatch().target() != null) {
+            targetSessionId = job.dispatch().target().sessionId();
+        }
         ChatSessionInfo targetSession = null;
         if (targetSessionId != null && !targetSessionId.isBlank()) {
             targetSession = cronService.findSession(targetSessionId);
         }
         if (targetSession == null && job.taskId() != null && !job.taskId().isBlank()) {
             targetSession = cronService.findSession(job.taskId());
+        }
+        if (targetSession == null
+                && job.dispatch() != null
+                && job.dispatch().target() != null
+                && job.dispatch().target().sessionId() != null
+                && !job.dispatch().target().sessionId().isBlank()) {
+            targetSession = cronService.findSession(job.dispatch().target().sessionId());
         }
         if (targetSession != null) {
             LOGGER.log(

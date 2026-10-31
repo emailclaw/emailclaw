@@ -1,5 +1,6 @@
 # Emailclaw 用户安装使用说明书
-
+<a href="https://emailclaw.email/">Official Website (emailclaw.email)</a> ·
+<a href="./Emailclaw-User-Manual.md">English</a>
 ## 1. 开始前须知
 
 Emailclaw 让你通过电子邮件使用 AI Agent。建议使用专门的邮箱账号，并在该邮箱服务商中启用 IMAP、SMTP 和应用专用密码/授权码。请不要把个人主邮箱密码、模型 API Key 或其他密钥放进邮件正文或转发给他人。

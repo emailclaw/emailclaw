@@ -10,7 +10,9 @@
 </p>
 
 <p align="center">
+  <a href="https://emailclaw.email/">Official Website (emailclaw.email)</a> ·
   <a href="./docs/Emailclaw-User-Manual-zh.md">安装与使用</a> ·
+  <a href="./README.md">English</a>
 </p>
 
 ## 看它如何工作：从收件箱到自动化

@@ -43,6 +43,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -1438,6 +1439,15 @@ public class ChatView implements ViewPane {
 
     public ChatSessionInfo getCurrentSession() {
         return currentSession;
+    }
+
+    /**
+     * Get the unmodifiable list of current chat message records.
+     *
+     * @return unmodifiable list of ChatMessageRecord
+     */
+    public List<ChatMessageRecord> getMessages() {
+        return Collections.unmodifiableList(messages);
     }
 
     // Model selection logic extracted to ModelSelectionComponent

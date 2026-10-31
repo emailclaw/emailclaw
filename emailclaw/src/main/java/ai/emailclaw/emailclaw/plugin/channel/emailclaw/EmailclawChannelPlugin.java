@@ -133,6 +133,9 @@ public class EmailclawChannelPlugin extends AbstractChannelPlugin {
                             new Object[] {sendAttachments.size(), sessionId});
                 }
             }
+            if (sendAttachments.isEmpty()) {
+                sendAttachments.addAll(runner.collectProjectAttachments(session));
+            }
             runner.sendMail(mailbox, to, subject, content, sendAttachments);
             LOGGER.log(
                     Level.INFO,

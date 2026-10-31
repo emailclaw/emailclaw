@@ -110,7 +110,12 @@ public class AgentRuntimeDispatcher {
                     + "- Note: Current Channel, Current User ID, Current Session ID, and"
                     + " Current Project ID are already provided in `# Context Information`;"
                     + " NEVER run `emailclaw chats list` when configuring cron jobs or replying"
-                    + " to the current session.";
+                    + " to the current session. When converting the current task into a scheduled"
+                    + " task (`cron`), bind `--task` and `--session` to the Current Session ID,"
+                    + " `--channel` to the Current Channel, `--target-user` to the Current User"
+                    + " ID, and preserve the complete original task instructions (including"
+                    + " writing any Markdown/attachment files and calling `deliver_artifact`) in"
+                    + " `--prompt`.";
 
     private final AppContext repository;
 

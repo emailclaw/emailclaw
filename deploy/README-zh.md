@@ -1,5 +1,10 @@
 # Emailclaw Deployment Guide (Docker & Shell)
 
+<p align="center">
+  <a href="https://emailclaw.email/">Official Website (emailclaw.email)</a> ·
+  <a href="./README.md">English</a>
+</p>
+
 本目录提供 **Emailclaw** 的一键部署解决方案，包含原生 Linux 自动化安装脚本与基于 **Docker Compose** 的工业级容器化部署方案。
 
 ---
