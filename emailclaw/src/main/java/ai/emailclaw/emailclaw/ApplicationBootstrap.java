@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.channel.ChannelIds;
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.AgentRuntimeStatus;
@@ -81,7 +82,6 @@ import ai.emailclaw.emailclaw.tools.fetch.LocalHttpFetcher;
 import ai.emailclaw.emailclaw.tools.fetch.ParallelMcpFetchProvider;
 import ai.emailclaw.emailclaw.tools.fetch.RemoteMcpProviderConfig;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
-import ai.emailclaw.emailclaw.util.PlaywrightManager;
 import ai.emailclaw.emailclaw.util.WebViewUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.harness.agent.bus.BusEntry;
@@ -192,7 +192,8 @@ public final class ApplicationBootstrap {
         // failure
         paths.ensureStructure();
         DatabaseManager databaseManager = new DatabaseManager(paths.databaseFile);
-        PlaywrightManager.setBrowserDataDir(paths.browserDataDir);
+        BrowserSessionManager browserSessionManager =
+                new BrowserSessionManager(paths.browserDataDir);
         WebViewUtils.setWebviewDataDir(paths.webviewDir);
         SqliteChatSessionRepository sqliteChatSessionRepository =
                 new SqliteChatSessionRepository(databaseManager);
@@ -320,7 +321,12 @@ public final class ApplicationBootstrap {
                         remoteFetchEnabled);
 
         ToolService toolService =
-                new ToolService(repository, pluginRegistry, mcpService, webFetchCoordinator);
+                new ToolService(
+                        repository,
+                        pluginRegistry,
+                        mcpService,
+                        webFetchCoordinator,
+                        browserSessionManager);
         SkillService skillService = new SkillService(repository);
         GovernanceService governanceService = new GovernanceService(repository);
         RateLimitMiddleware rateLimitMiddleware = new RateLimitMiddleware(Duration.ofMillis(1000));
@@ -410,7 +416,8 @@ public final class ApplicationBootstrap {
                         providerService,
                         repository.configManager(),
                         projectService,
-                        sessionArtifactStagingService);
+                        sessionArtifactStagingService,
+                        browserSessionManager);
         PluginManager pluginManager =
                 new PluginManager(pluginContext, paths.pluginsDir, pluginRegistry);
         pluginManager.discoverAndLoadAll();

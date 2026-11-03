@@ -2119,6 +2119,9 @@ public class ChatView implements ViewPane {
                 part.getTitle() == null || part.getTitle().isBlank()
                         ? type.toUpperCase()
                         : part.getTitle();
+        if (ChatMessagePart.THINKING.equals(type)) {
+            displayText = ChatService.sanitizeThinkingText(displayText);
+        }
         html.append("<div class='content content-")
                 .append(cssClass)
                 .append(" expandable-container' onclick='toggleExpand(this)'>");

@@ -10,8 +10,8 @@
  */
 package ai.emailclaw.emailclaw.tools;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.service.ToolService;
-import ai.emailclaw.emailclaw.util.PlaywrightManager;
 import ai.emailclaw.emailclaw.util.WebExtractUtils;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.TimeoutError;
@@ -43,7 +43,22 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
 
     private static final long NAVIGATE_TIMEOUT_MS = 10_000L;
 
-    public BrowserAutomationTool() {}
+    private final BrowserSessionManager browserSessionManager;
+
+    public BrowserAutomationTool() {
+        this(null);
+    }
+
+    public BrowserAutomationTool(BrowserSessionManager browserSessionManager) {
+        this.browserSessionManager = browserSessionManager;
+    }
+
+    private BrowserSessionManager resolveSessionManager() {
+        if (browserSessionManager != null) {
+            return browserSessionManager;
+        }
+        return BrowserSessionManager.getDefault();
+    }
 
     @Tool(
             name = BuiltInToolNames.BROWSER_USE,
@@ -52,6 +67,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                         + " scroll, screenshot, hover, select_option, go_back, go_forward, wait,"
                         + " evaluate, extract_text, get_html. Returns text and/or screenshot"
                         + " image.",
+            readOnly = false,
             concurrencySafe = false)
     public ToolResultBlock browserUse(
             @ToolParam(name = "url", description = "URL to open or navigate to", required = false)
@@ -165,10 +181,11 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
 
         String agentId =
                 this.context.currentAgent != null ? this.context.currentAgent.getId() : "default";
-        synchronized (PlaywrightManager.PLAYWRIGHT_MUTEX) {
-            PlaywrightManager.initPlaywrightIfNeeded(agentId);
+        BrowserSessionManager sessionManager = resolveSessionManager();
+        synchronized (sessionManager.getMutex()) {
             try {
                 return executeBrowserUseAction(
+                        sessionManager,
                         agentId,
                         normalizedAction,
                         url,
@@ -183,7 +200,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                         waitMs,
                         jsExpression);
             } catch (TimeoutError e) {
-                return recoverBrowserUseAfterTimeout(normalizedAction, agentId);
+                return recoverBrowserUseAfterTimeout(sessionManager, normalizedAction, agentId);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "browser_use execution failed", e);
                 return ToolResultBlock.error("Browser action failed: " + e.getMessage());
@@ -233,8 +250,9 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
         return action == BrowserAction.EXTRACT_TEXT || action == BrowserAction.NAVIGATE;
     }
 
-    private static void navigateActivePage(String agentId, String url) {
-        Page page = PlaywrightManager.getOrCreateActivePage(agentId);
+    private static void navigateActivePage(
+            BrowserSessionManager sessionManager, String agentId, String url) {
+        Page page = sessionManager.getOrCreateActivePage(agentId);
         LOGGER.log(Level.INFO, "Playwright preparing to open URL: {0}", url);
         page.navigate(
                 url,
@@ -243,15 +261,16 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                         .setTimeout(15000));
     }
 
-    private static void ensurePageAtUrl(String agentId, Page page, String url) {
+    private static void ensurePageAtUrl(
+            BrowserSessionManager sessionManager, String agentId, Page page, String url) {
         if (url == null || url.isBlank()) return;
         String currentUrl = page.url();
         if (currentUrl == null || currentUrl.isBlank() || "about:blank".equals(currentUrl)) {
-            navigateActivePage(agentId, url);
+            navigateActivePage(sessionManager, agentId, url);
             return;
         }
         if (!currentUrl.equals(url)) {
-            navigateActivePage(agentId, url);
+            navigateActivePage(sessionManager, agentId, url);
         }
     }
 
@@ -272,6 +291,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
     }
 
     private ToolResultBlock executeBrowserUseAction(
+            BrowserSessionManager sessionManager,
             String agentId,
             BrowserAction action,
             String url,
@@ -285,17 +305,17 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
             String value,
             Integer waitMs,
             String jsExpression) {
-        Page page = PlaywrightManager.getOrCreateActivePage(agentId);
+        Page page = sessionManager.getOrCreateActivePage(agentId);
         if (action == null) return ToolResultBlock.error("Invalid action");
         switch (action) {
             case NAVIGATE:
                 if (url == null || url.isBlank())
                     return ToolResultBlock.error("url is required for navigate action.");
-                navigateActivePage(agentId, url);
+                navigateActivePage(sessionManager, agentId, url);
                 return ToolResultBlock.text(
                         "Navigated to " + page.url() + "\n\n" + extractVisibleTextFromPage(page));
             case EXTRACT_TEXT:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 if (url == null || url.isBlank()) {
                     if ("about:blank".equals(page.url()))
                         return ToolResultBlock.error(
@@ -303,7 +323,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                 }
                 return ToolResultBlock.text(extractVisibleTextFromPage(page));
             case GET_HTML:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 if (url == null || url.isBlank()) {
                     if ("about:blank".equals(page.url()))
                         return ToolResultBlock.error(
@@ -311,7 +331,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                 }
                 return ToolResultBlock.text(page.content());
             case CLICK:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 if (selector != null && !selector.isBlank()) {
                     page.locator(selector).first().click();
                 } else if (x != null && y != null) {
@@ -324,7 +344,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                         LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(5000));
                 return ToolResultBlock.text("Click completed. Current URL: " + page.url());
             case TYPE:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 if (text != null && !text.isBlank()) {
                     if (selector != null && !selector.isBlank()) {
                         page.locator(selector).first().fill(text);
@@ -342,24 +362,24 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                 }
                 return ToolResultBlock.text("Type completed. Current URL: " + page.url());
             case SCROLL:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 int deltaX = scrollX == null ? 0 : scrollX;
                 int deltaY = scrollY == null ? 0 : scrollY;
                 page.mouse().wheel(deltaX, deltaY);
                 return ToolResultBlock.text(
                         "Scrolled by (" + deltaX + ", " + deltaY + "). Current URL: " + page.url());
             case SCREENSHOT:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 return screenshotActivePage(page);
             case HOVER:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 if (selector == null || selector.isBlank()) {
                     return ToolResultBlock.error("hover requires selector.");
                 }
                 page.locator(selector).first().hover();
                 return ToolResultBlock.text("Hover completed on selector: " + selector);
             case SELECT_OPTION:
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 if (selector == null || selector.isBlank()) {
                     return ToolResultBlock.error("select_option requires selector.");
                 }
@@ -393,7 +413,7 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
                 if (jsExpression == null || jsExpression.isBlank()) {
                     return ToolResultBlock.error("evaluate requires js_expression.");
                 }
-                ensurePageAtUrl(agentId, page, url);
+                ensurePageAtUrl(sessionManager, agentId, page, url);
                 Object result = evaluateJavaScript(page, jsExpression);
                 return ToolResultBlock.text(result == null ? "null" : result.toString());
             default:
@@ -401,12 +421,13 @@ public class BrowserAutomationTool extends BaseEmailclawTool {
         }
     }
 
-    private ToolResultBlock recoverBrowserUseAfterTimeout(BrowserAction action, String agentId) {
+    private ToolResultBlock recoverBrowserUseAfterTimeout(
+            BrowserSessionManager sessionManager, BrowserAction action, String agentId) {
         if (action != BrowserAction.EXTRACT_TEXT && action != BrowserAction.NAVIGATE) {
             return ToolResultBlock.error("Browser action timed out.");
         }
         try {
-            Page page = PlaywrightManager.getActivePageIfExists(agentId);
+            Page page = sessionManager.getActivePageIfExists(agentId);
             if (page != null && !page.isClosed()) {
                 String text = extractVisibleTextFromPage(page);
                 if (!text.isBlank()) {

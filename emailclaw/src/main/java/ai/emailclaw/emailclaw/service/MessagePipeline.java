@@ -765,7 +765,8 @@ public class MessagePipeline {
                     break;
                 case ChatMessagePart.THINKING:
                     if (part.getText() != null && !part.getText().isEmpty()) {
-                        blocks.add(ThinkingBlock.builder().thinking(part.getText()).build());
+                        String cleanThinking = ChatService.sanitizeThinkingText(part.getText());
+                        blocks.add(ThinkingBlock.builder().thinking(cleanThinking).build());
                     }
                     break;
                 case ChatMessagePart.TOOL_CALL:

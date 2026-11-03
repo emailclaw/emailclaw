@@ -22,6 +22,7 @@ import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.ExecutionConfig;
@@ -770,6 +771,7 @@ public class AgentRuntimeDispatcher {
                 "url_fetch",
                 "curl",
                 "web_fetch",
+                BuiltInToolNames.BROWSER_USE,
                 "env_set",
                 "set_env");
     }

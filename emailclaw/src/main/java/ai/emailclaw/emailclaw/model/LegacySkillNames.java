@@ -17,8 +17,12 @@ package ai.emailclaw.emailclaw.model;
  */
 public final class LegacySkillNames {
 
+    @Deprecated(forRemoval = true)
     public static final String BROWSER_CDP = "browser_cdp";
+
+    @Deprecated(forRemoval = true)
     public static final String BROWSER_VISIBLE = "browser_visible";
+
     public static final String FILE_READER = "file_reader";
     public static final String QA_SOURCE_INDEX = "QA_source_index";
 

@@ -1012,9 +1012,9 @@ public class ChatService {
                 String text = MessagePipeline.cutEmbeddedTitleInstruction(tb.getText());
                 appendLoadedPart(parts, ChatMessagePart.text(text));
             } else if (block instanceof io.agentscope.core.message.ThinkingBlock tb) {
+                String cleanThinking = sanitizeThinkingText(tb.getThinking());
                 ChatMessagePart part =
-                        ChatMessagePart.block(
-                                ChatMessagePart.THINKING, "THINKING", tb.getThinking());
+                        ChatMessagePart.block(ChatMessagePart.THINKING, "THINKING", cleanThinking);
                 appendLoadedPart(parts, part);
             } else if (block instanceof io.agentscope.core.message.ToolUseBlock tub) {
                 if (tub.getName() == null
@@ -1222,6 +1222,84 @@ public class ChatService {
     private static String toolBlockTitle(String prefix, String toolName) {
         String safeName = toolName == null || toolName.isBlank() ? "unknown" : toolName;
         return prefix + ": " + safeName;
+    }
+
+    /**
+     * Sanitizes thinking and reasoning text by removing aberrant newlines introduced by
+     * LLM tokenizers (such as isolated line breaks between CJK characters) and collapsing
+     * excessive consecutive blank lines into clean paragraph boundaries.
+     *
+     * @param rawText raw reasoning or thinking output from the model
+     * @return cleaned, human-readable thinking text
+     */
+    public static String sanitizeThinkingText(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return "";
+        }
+        String text = rawText;
+        // 1. Collapse 3 or more consecutive newlines to double newline
+        text = text.replaceAll("(\\r?\\n\\s*){3,}", "\n\n");
+
+        // 2. Remove newlines immediately before sentence punctuation (e.g. word\n。 -> word。)
+        text = text.replaceAll("\\s*[\\r\\n]+\\s*(?=[。，、！？：；”’）》\\.,;:!?])", "");
+
+        // 3. Remove newlines immediately after opening punctuation (e.g. “\nword -> “word)
+        text = text.replaceAll("(?<=[“‘（《])\\s*[\\r\\n]+\\s*", "");
+
+        // 4. Remove newlines between CJK and CJK characters/punctuation
+        text =
+                text.replaceAll(
+                        "(?<=[\\u4e00-\\u9fa5])\\s*[\\r"
+                            + "\\n"
+                            + "]+\\s*(?=[\\u4e00-\\u9fa5\\u3000-\\u303f\\uff00-\\uffef\\u2018-\\u201f])",
+                        "");
+        text =
+                text.replaceAll(
+                        "(?<=[\\u4e00-\\u9fa5\\u3000-\\u303f\\uff00-\\uffef\\u2018-\\u201f])\\s*[\\r"
+                            + "\\n"
+                            + "]+\\s*(?=[\\u4e00-\\u9fa5])",
+                        "");
+
+        // 5. Remove newlines between CJK and alphanumeric words (insert clean space)
+        text =
+                text.replaceAll(
+                        "(?<=[\\u4e00-\\u9fa5\\u3000-\\u303f\\uff00-\\uffef\\u2018-\\u201f])\\s*[\\r"
+                            + "\\n"
+                            + "]+\\s*(?=[a-zA-Z0-9])",
+                        " ");
+        text =
+                text.replaceAll(
+                        "(?<=[a-zA-Z0-9])\\s*[\\r"
+                            + "\\n"
+                            + "]+\\s*(?=[\\u4e00-\\u9fa5\\u3000-\\u303f\\uff00-\\uffef\\u2018-\\u201f])",
+                        " ");
+
+        // 6. Clean newlines between English words
+        text = text.replaceAll("(?<=[a-zA-Z0-9])\\s*[\\r\\n]+\\s+(?=[a-zA-Z0-9])", " ");
+
+        // 7. Collapse any remaining excessive newlines
+        text = text.replaceAll("(\\r?\\n\\s*){3,}", "\n\n");
+
+        // 8. Trim lines and normalize empty lines
+        String[] lines = text.split("\\r?\\n");
+        StringBuilder sb = new StringBuilder();
+        boolean prevBlank = false;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                if (!prevBlank && sb.length() > 0) {
+                    sb.append("\n");
+                    prevBlank = true;
+                }
+            } else {
+                if (sb.length() > 0) {
+                    sb.append("\n");
+                }
+                sb.append(trimmed);
+                prevBlank = false;
+            }
+        }
+        return sb.toString().trim();
     }
 
     /**
