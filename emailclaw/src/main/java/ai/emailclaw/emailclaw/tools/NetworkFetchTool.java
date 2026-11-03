@@ -10,9 +10,9 @@
  */
 package ai.emailclaw.emailclaw.tools;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.service.ToolService;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
-import ai.emailclaw.emailclaw.util.PlaywrightManager;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.WaitUntilState;
@@ -33,9 +33,25 @@ public class NetworkFetchTool extends BaseEmailclawTool {
 
     private final WebFetchFallbackCoordinator fallbackCoordinator;
 
+    private final BrowserSessionManager browserSessionManager;
+
     public NetworkFetchTool(WebFetchFallbackCoordinator fallbackCoordinator) {
+        this(fallbackCoordinator, null);
+    }
+
+    public NetworkFetchTool(
+            WebFetchFallbackCoordinator fallbackCoordinator,
+            BrowserSessionManager browserSessionManager) {
         this.fallbackCoordinator =
                 Objects.requireNonNull(fallbackCoordinator, "fallbackCoordinator must not be null");
+        this.browserSessionManager = browserSessionManager;
+    }
+
+    private BrowserSessionManager resolveSessionManager() {
+        if (browserSessionManager != null) {
+            return browserSessionManager;
+        }
+        return BrowserSessionManager.getDefault();
     }
 
     /**
@@ -116,11 +132,11 @@ public class NetworkFetchTool extends BaseEmailclawTool {
                 this.context != null && this.context.currentAgent != null
                         ? this.context.currentAgent.getId()
                         : "default";
-        synchronized (PlaywrightManager.PLAYWRIGHT_MUTEX) {
-            PlaywrightManager.initPlaywrightIfNeeded(agentId);
+        BrowserSessionManager sessionManager = resolveSessionManager();
+        synchronized (sessionManager.getMutex()) {
             Page page = null;
             try {
-                page = PlaywrightManager.createEphemeralPage(agentId);
+                page = sessionManager.createEphemeralPage(agentId);
                 LOGGER.log(Level.INFO, "Playwright preparing to open URL: {0}", url);
                 page.navigate(
                         url,
@@ -137,7 +153,7 @@ public class NetworkFetchTool extends BaseEmailclawTool {
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING, "Playwright text extraction failed", ex);
                     if (isConnectionFailure(ex)) {
-                        PlaywrightManager.reset(agentId);
+                        sessionManager.reset(agentId);
                     }
                 }
                 return "Page read timeout and failed to extract text.";

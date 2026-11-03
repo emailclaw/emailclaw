@@ -10,214 +10,91 @@
  */
 package ai.emailclaw.emailclaw.util;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.storage.AppPaths;
-import com.microsoft.playwright.BrowserContext;
-import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.Playwright;
-import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-public class PlaywrightManager {
-
-    private static final Logger LOGGER = Logger.getLogger(PlaywrightManager.class.getName());
-
-    private static final double DEFAULT_TIMEOUT_MS = 15_000d;
-
-    private static Playwright playwright = null;
-
-    private static final ConcurrentMap<String, BrowserContext> browserContextMap =
-            new ConcurrentHashMap<>();
-
-    private static final ConcurrentMap<String, Page> activePageMap = new ConcurrentHashMap<>();
+/**
+ * Legacy static browser manager adapter delegating to instantiated {@link BrowserSessionManager}.
+ *
+ * @deprecated Use instantiated {@link BrowserSessionManager} injected via Pure DI instead.
+ */
+@Deprecated(since = "26.10.23", forRemoval = true)
+public final class PlaywrightManager {
 
     /**
      * Global synchronization mutex for all Playwright operations.
-     *
-     * <p>Playwright Java's underlying IPC Connection to Chromium is strictly not thread-safe. All
-     * calls that touch Page, BrowserContext, or Playwright across threads (e.g. concurrent
-     * web_fetch calls or parallel browser_use interactions) must synchronize on this mutex to
-     * prevent internal driver object handle collisions.
      */
-    public static final Object PLAYWRIGHT_MUTEX = PlaywrightManager.class;
+    public static final Object PLAYWRIGHT_MUTEX = BrowserSessionManager.getDefaultMutex();
 
-    private static volatile Path browserDataDir = null;
+    private PlaywrightManager() {}
 
     /**
-     * Sets the root browser user data directory.
+     * Sets the root browser user data directory by initializing a new default manager.
      *
      * @param dir the browser data root directory
      */
     public static void setBrowserDataDir(Path dir) {
-        browserDataDir = dir;
+        if (dir != null) {
+            BrowserSessionManager.setDefault(new BrowserSessionManager(dir));
+        }
     }
 
     /**
-     * Gets the root browser user data directory, falling back to default AppPaths if unconfigured.
+     * Gets the root browser user data directory.
      *
      * @return the browser data root directory
      */
     public static Path getBrowserDataDir() {
-        if (browserDataDir == null) {
-            return AppPaths.fromDefault().browserDataDir;
-        }
-        return browserDataDir;
-    }
-
-    public static synchronized void initPlaywrightIfNeeded(String agentId) {
-        if (playwright == null) {
-            String executablePath = ChromeBrowserSupport.LOCAL_CHROME_EDGE_EXECUTABLE;
-            if (executablePath == null) {
-                String installGuide = ChromeBrowserSupport.INSTALL_GUIDE;
-                LOGGER.warning(
-                        "Playwright initialization pre-check failed, reason: official Chrome/Edge"
-                                + " not detected.");
-                throw new RuntimeException(installGuide);
-            }
-            LOGGER.info("Initializing Playwright using physical browser: " + executablePath);
-            playwright =
-                    Playwright.create(
-                            new Playwright.CreateOptions()
-                                    .setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")));
-            Runtime.getRuntime()
-                    .addShutdownHook(
-                            new Thread(
-                                    () -> {
-                                        try {
-                                            for (Page p : activePageMap.values()) {
-                                                if (p != null) p.close();
-                                            }
-                                            for (BrowserContext c : browserContextMap.values()) {
-                                                if (c != null) c.close();
-                                            }
-                                            if (playwright != null) playwright.close();
-                                        } catch (Exception ignored) {
-                                        }
-                                    }));
-        }
-        if (!browserContextMap.containsKey(agentId)) {
-            String executablePath = ChromeBrowserSupport.LOCAL_CHROME_EDGE_EXECUTABLE;
-            Path userDataDir = getBrowserDataDir().resolve(agentId);
-
-            boolean headless =
-                    System.getenv("EMAILCLAW_BROWSER_HEADLESS") != null
-                            || GraphicsEnvironment.isHeadless();
-            BrowserType.LaunchPersistentContextOptions options =
-                    new BrowserType.LaunchPersistentContextOptions()
-                            .setHeadless(headless)
-                            .setArgs(
-                                    List.of(
-                                            "--disable-blink-features=AutomationControlled",
-                                            "--no-sandbox",
-                                            "--disable-dev-shm-usage",
-                                            "--disable-infobars",
-                                            "--window-size=1920,1080",
-                                            "--start-maximized",
-                                            "--disable-extensions",
-                                            "--disable-popup-blocking",
-                                            "--profile-directory=Default",
-                                            "--ignore-certificate-errors",
-                                            "--disable-plugins-discovery",
-                                            "--lang=en-US,en"))
-                            .setExecutablePath(Paths.get(executablePath))
-                            .setViewportSize(1920, 1080)
-                            .setIgnoreHTTPSErrors(true);
-            String customUserAgent = System.getenv("EMAILCLAW_BROWSER_USER_AGENT");
-            if (customUserAgent != null && !customUserAgent.isBlank()) {
-                LOGGER.info("Using configured custom browser User-Agent");
-                options.setUserAgent(customUserAgent.trim());
-            }
-            LOGGER.log(
-                    Level.INFO,
-                    "Initializing browser persistent context: {0}",
-                    userDataDir.toAbsolutePath());
-            BrowserContext context =
-                    playwright.chromium().launchPersistentContext(userDataDir, options);
-            BrowserStealthSupport.applyStealth(context);
-            context.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
-            context.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
-            browserContextMap.put(agentId, context);
-        }
-    }
-
-    public static synchronized Page getOrCreateActivePage(String agentId) {
-        Page page = activePageMap.get(agentId);
-        BrowserContext ctx = browserContextMap.get(agentId);
-        if (page == null || page.isClosed()) {
-            if (ctx != null && !ctx.pages().isEmpty()) {
-                page = ctx.pages().get(0);
-                LOGGER.log(Level.INFO, "Reusing existing browser page: URL={0}", page.url());
-            } else if (ctx != null) {
-                page = ctx.newPage();
-                LOGGER.log(Level.INFO, "Creating new browser page");
-            }
-            if (page != null) {
-                activePageMap.put(agentId, page);
-            }
-        }
-        return page;
-    }
-
-    public static synchronized Page getActivePageIfExists(String agentId) {
-        return activePageMap.get(agentId);
+        return AppPaths.fromDefault().browserDataDir;
     }
 
     /**
-     * Create a fresh short-lived page inside the agent's persistent browser context. The caller
-     * owns the returned page and must close it when done. Unlike {@link #getOrCreateActivePage},
-     * the page is NOT registered as the agent's active page, so concurrent ephemeral pages never
-     * interfere with each other or with the interactive page used by browser_use.
+     * Initializes the browser driver and context if needed for the given agent.
      *
-     * <p>{@link #initPlaywrightIfNeeded} must have completed for the given agentId before calling
-     * this method.
+     * @param agentId unique agent identifier
      */
-    public static synchronized Page createEphemeralPage(String agentId) {
-        BrowserContext ctx = browserContextMap.get(agentId);
-        if (ctx == null) {
-            throw new IllegalStateException("Browser context not initialized: agent=" + agentId);
-        }
-        return ctx.newPage();
+    public static void initPlaywrightIfNeeded(String agentId) {
+        BrowserSessionManager.getDefault().getOrCreateActivePage(agentId);
     }
 
     /**
-     * Reset the browser state after a connection-level failure (e.g. the browser process died or
-     * its IPC pipe broke). Closes the broken global connection and clears all cached pages and
-     * contexts so the next call re-initializes a fresh browser.
+     * Gets or creates the primary active browser page for the specified agent.
      *
-     * @param agentId the agent triggering the reset (logged for diagnosis)
+     * @param agentId unique agent identifier
+     * @return active Playwright Page
      */
-    public static synchronized void reset(String agentId) {
-        LOGGER.log(
-                Level.INFO,
-                "Resetting Playwright browser state after connection failure: agent={0}",
-                agentId);
-        for (Page p : activePageMap.values()) {
-            try {
-                if (p != null) p.close();
-            } catch (Exception ignored) {
-            }
-        }
-        activePageMap.clear();
-        for (BrowserContext c : browserContextMap.values()) {
-            try {
-                if (c != null) c.close();
-            } catch (Exception ignored) {
-            }
-        }
-        browserContextMap.clear();
-        try {
-            if (playwright != null) {
-                playwright.close();
-            }
-        } catch (Exception ignored) {
-        }
-        playwright = null;
+    public static Page getOrCreateActivePage(String agentId) {
+        return BrowserSessionManager.getDefault().getOrCreateActivePage(agentId);
+    }
+
+    /**
+     * Gets the active page for the specified agent if one is currently open.
+     *
+     * @param agentId unique agent identifier
+     * @return active Page or null
+     */
+    public static Page getActivePageIfExists(String agentId) {
+        return BrowserSessionManager.getDefault().getActivePageIfExists(agentId);
+    }
+
+    /**
+     * Creates a fresh short-lived ephemeral page for one-off operations.
+     *
+     * @param agentId unique agent identifier
+     * @return ephemeral Page
+     */
+    public static Page createEphemeralPage(String agentId) {
+        return BrowserSessionManager.getDefault().createEphemeralPage(agentId);
+    }
+
+    /**
+     * Resets the browser state for the agent after connection-level failures.
+     *
+     * @param agentId unique agent identifier
+     */
+    public static void reset(String agentId) {
+        BrowserSessionManager.getDefault().reset(agentId);
     }
 }

@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.service;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.model.McpClientInfo;
 import ai.emailclaw.emailclaw.model.ToolInfo;
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
@@ -49,6 +50,7 @@ public class ToolService {
     private final PluginRegistry pluginRegistry;
     private final McpService mcpService;
     private final WebFetchFallbackCoordinator webFetchCoordinator;
+    private final BrowserSessionManager browserSessionManager;
 
     /** Default vision model name, used for multi-modal tools. */
     private String defaultVisionModel = "gpt-4o";
@@ -61,13 +63,25 @@ public class ToolService {
             PluginRegistry pluginRegistry,
             McpService mcpService,
             WebFetchFallbackCoordinator webFetchCoordinator) {
+        this(configManager, pluginRegistry, mcpService, webFetchCoordinator, null);
+    }
+
+    public ToolService(
+            ConfigManager configManager,
+            PluginRegistry pluginRegistry,
+            McpService mcpService,
+            WebFetchFallbackCoordinator webFetchCoordinator,
+            BrowserSessionManager browserSessionManager) {
         this.configManager =
                 Objects.requireNonNull(configManager, "configManager must not be null");
         this.pluginRegistry =
                 Objects.requireNonNull(pluginRegistry, "pluginRegistry must not be null");
         this.mcpService = mcpService;
         this.webFetchCoordinator = webFetchCoordinator;
-        LOGGER.info("ToolService initialized with singleton WebFetchFallbackCoordinator");
+        this.browserSessionManager = browserSessionManager;
+        LOGGER.info(
+                "ToolService initialized with WebFetchFallbackCoordinator and"
+                        + " BrowserSessionManager");
     }
 
     public ToolService(
@@ -79,7 +93,22 @@ public class ToolService {
                 Objects.requireNonNull(repository, "repository must not be null").configManager(),
                 pluginRegistry,
                 mcpService,
-                webFetchCoordinator);
+                webFetchCoordinator,
+                null);
+    }
+
+    public ToolService(
+            AppContext repository,
+            PluginRegistry pluginRegistry,
+            McpService mcpService,
+            WebFetchFallbackCoordinator webFetchCoordinator,
+            BrowserSessionManager browserSessionManager) {
+        this(
+                Objects.requireNonNull(repository, "repository must not be null").configManager(),
+                pluginRegistry,
+                mcpService,
+                webFetchCoordinator,
+                browserSessionManager);
     }
 
     public List<ToolInfo> list() {
@@ -149,7 +178,8 @@ public class ToolService {
                         .map(item -> item.name())
                         .collect(Collectors.toSet());
         Toolkit toolkit = new Toolkit();
-        ToolRegistry.registerAll(toolkit, context, enabled, webFetchCoordinator);
+        ToolRegistry.registerAll(
+                toolkit, context, enabled, webFetchCoordinator, browserSessionManager);
 
         for (Map.Entry<String, Object> entry : pluginRegistry.getTools().entrySet()) {
             if (enabled.contains(entry.getKey())) {
@@ -211,7 +241,8 @@ public class ToolService {
                         .map(ToolInfo::name)
                         .collect(Collectors.toSet());
         if (enabled.contains(BuiltInToolNames.WEB_FETCH) && webFetchCoordinator != null) {
-            NetworkFetchTool networkFetchTool = new NetworkFetchTool(webFetchCoordinator);
+            NetworkFetchTool networkFetchTool =
+                    new NetworkFetchTool(webFetchCoordinator, browserSessionManager);
             networkFetchTool.init(context, enabled);
             agentToolkit.registerTool(networkFetchTool);
             LOGGER.info(

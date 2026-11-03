@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.plugin;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
@@ -28,6 +29,7 @@ public class DefaultPluginContext implements PluginContext {
     private final ConfigManager configManager;
     private final ProjectService projectService;
     private final SessionArtifactStagingService stagingService;
+    private final BrowserSessionManager browserSessionManager;
 
     public DefaultPluginContext(
             ChannelService channelService,
@@ -37,6 +39,26 @@ public class DefaultPluginContext implements PluginContext {
             ConfigManager configManager,
             ProjectService projectService,
             SessionArtifactStagingService stagingService) {
+        this(
+                channelService,
+                chatService,
+                agentService,
+                providerService,
+                configManager,
+                projectService,
+                stagingService,
+                null);
+    }
+
+    public DefaultPluginContext(
+            ChannelService channelService,
+            ChatService chatService,
+            AgentService agentService,
+            ProviderService providerService,
+            ConfigManager configManager,
+            ProjectService projectService,
+            SessionArtifactStagingService stagingService,
+            BrowserSessionManager browserSessionManager) {
         this.channelService = channelService;
         this.chatService = chatService;
         this.agentService = agentService;
@@ -44,6 +66,14 @@ public class DefaultPluginContext implements PluginContext {
         this.configManager = configManager;
         this.projectService = projectService;
         this.stagingService = stagingService;
+        this.browserSessionManager = browserSessionManager;
+    }
+
+    @Override
+    public BrowserSessionManager browserSessionManager() {
+        return browserSessionManager != null
+                ? browserSessionManager
+                : BrowserSessionManager.getDefault();
     }
 
     @Override

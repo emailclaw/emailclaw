@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.tools;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import io.agentscope.core.tool.Toolkit;
@@ -26,13 +27,22 @@ public class ToolRegistry {
             ToolRuntimeContext context,
             Set<String> enabled,
             WebFetchFallbackCoordinator webFetchCoordinator) {
+        registerAll(toolkit, context, enabled, webFetchCoordinator, null);
+    }
+
+    public static void registerAll(
+            Toolkit toolkit,
+            ToolRuntimeContext context,
+            Set<String> enabled,
+            WebFetchFallbackCoordinator webFetchCoordinator,
+            BrowserSessionManager browserSessionManager) {
         LOGGER.info("Registering unified tools...");
         Objects.requireNonNull(webFetchCoordinator, "webFetchCoordinator must not be null");
 
         EmailclawTool[] tools =
                 new EmailclawTool[] {
-                    new BrowserAutomationTool(),
-                    new NetworkFetchTool(webFetchCoordinator),
+                    new BrowserAutomationTool(browserSessionManager),
+                    new NetworkFetchTool(webFetchCoordinator, browserSessionManager),
                     new SystemCommandTool(),
                     new AgentManagementTool(),
                     new MemoryTools()

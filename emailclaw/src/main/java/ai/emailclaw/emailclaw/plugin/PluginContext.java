@@ -10,6 +10,7 @@
  */
 package ai.emailclaw.emailclaw.plugin;
 
+import ai.emailclaw.emailclaw.browser.BrowserSessionManager;
 import ai.emailclaw.emailclaw.model.ChannelInfo;
 import ai.emailclaw.emailclaw.service.AgentService;
 import ai.emailclaw.emailclaw.service.ChannelService;
@@ -65,4 +66,11 @@ public interface PluginContext {
      * Gets the SessionArtifactStagingService instance.
      */
     SessionArtifactStagingService stagingService();
+
+    /**
+     * Gets the BrowserSessionManager instance coordinating browser sessions.
+     */
+    default BrowserSessionManager browserSessionManager() {
+        return BrowserSessionManager.getDefault();
+    }
 }
