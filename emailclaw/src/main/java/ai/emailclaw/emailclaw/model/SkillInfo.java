@@ -31,7 +31,51 @@ public record SkillInfo(
         String updatedAt,
         List<String> channels,
         List<String> tags,
-        Map<String, Object> config) {
+        Map<String, Object> config,
+        String lifecycleState,
+        int useCount,
+        int viewCount,
+        int patchCount,
+        String lastUsedAt) {
+
+    /**
+     * Backward-compatible constructor for basic skill metadata without runtime telemetry.
+     */
+    public SkillInfo(
+            String name,
+            String title,
+            String description,
+            String content,
+            String source,
+            String installedFrom,
+            String storageName,
+            boolean builtIn,
+            boolean enabled,
+            String updatedAt,
+            List<String> channels,
+            List<String> tags,
+            Map<String, Object> config) {
+        this(
+                name,
+                title,
+                description,
+                content,
+                source,
+                installedFrom,
+                storageName,
+                builtIn,
+                enabled,
+                updatedAt,
+                channels,
+                tags,
+                config,
+                "",
+                0,
+                0,
+                0,
+                "");
+    }
+
     public SkillInfo {
         if (name == null) name = "";
         if (title == null) title = "";
@@ -44,5 +88,7 @@ public record SkillInfo(
         if (channels == null) channels = new ArrayList<>();
         if (tags == null) tags = new ArrayList<>();
         if (config == null) config = new LinkedHashMap<>();
+        if (lifecycleState == null) lifecycleState = "";
+        if (lastUsedAt == null) lastUsedAt = "";
     }
 }

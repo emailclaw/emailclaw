@@ -10,8 +10,13 @@
  */
 package ai.emailclaw.emailclaw.service;
 
+import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
+import ai.emailclaw.emailclaw.model.ProviderInfo;
+import ai.emailclaw.emailclaw.service.memory.DialecticUserModelingService;
 import ai.emailclaw.emailclaw.service.memory.MemoAutoSync;
+import ai.emailclaw.emailclaw.service.skill.ExperienceReflectionService;
+import ai.emailclaw.emailclaw.storage.sqlite.Fts5SearchService;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import java.util.logging.Level;
@@ -63,15 +68,39 @@ final class PostStreamHandler {
     /** Session title generator. */
     private final SessionTitleGenerator titleGenerator;
 
+    /** SQLite FTS5 cross-session and memory full-text search service. */
+    private final Fts5SearchService fts5SearchService;
+
+    /** Closed-loop experience-to-skill reflection and draft promotion service. */
+    private final ExperienceReflectionService experienceReflectionService;
+
+    /** Honcho-inspired Dual-Peer Dialectic User Modeling service. */
+    private final DialecticUserModelingService dialecticUserModelingService;
+
+    /** Current agent entity. */
+    private final AgentInfo agent;
+
+    /** Current model provider entity. */
+    private final ProviderInfo provider;
+
+    /** Current model identifier. */
+    private final String modelId;
+
     /**
      * Construct a streaming chat post-processor.
      *
-     * @param sessionStore   Session storage service
-     * @param sessionInfo    Session info
-     * @param agentId        Agent ID
-     * @param memoAutoSync   MEMORY.md automatic synchronization service
-     * @param chatService    ChatService instance
-     * @param titleGenerator Session title generator
+     * @param sessionStore                 Session storage service
+     * @param sessionInfo                  Session info
+     * @param agentId                      Agent ID
+     * @param memoAutoSync                 MEMORY.md automatic synchronization service
+     * @param chatService                  ChatService instance
+     * @param titleGenerator               Session title generator
+     * @param fts5SearchService            SQLite FTS5 cross-session search service
+     * @param experienceReflectionService  Closed-loop skill reflection and promotion service
+     * @param dialecticUserModelingService Honcho dialectic user modeling service
+     * @param agent                        Current agent entity
+     * @param provider                     Current provider entity
+     * @param modelId                      Current model identifier
      */
     PostStreamHandler(
             AgentStateStore sessionStore,
@@ -79,13 +108,25 @@ final class PostStreamHandler {
             String agentId,
             MemoAutoSync memoAutoSync,
             ChatService chatService,
-            SessionTitleGenerator titleGenerator) {
+            SessionTitleGenerator titleGenerator,
+            Fts5SearchService fts5SearchService,
+            ExperienceReflectionService experienceReflectionService,
+            DialecticUserModelingService dialecticUserModelingService,
+            AgentInfo agent,
+            ProviderInfo provider,
+            String modelId) {
         this.sessionStore = sessionStore;
         this.sessionInfo = sessionInfo;
         this.agentId = agentId;
         this.memoAutoSync = memoAutoSync;
         this.chatService = chatService;
         this.titleGenerator = titleGenerator;
+        this.fts5SearchService = fts5SearchService;
+        this.experienceReflectionService = experienceReflectionService;
+        this.dialecticUserModelingService = dialecticUserModelingService;
+        this.agent = agent;
+        this.provider = provider;
+        this.modelId = modelId;
         LOGGER.log(
                 Level.FINE,
                 "PostStreamHandler initialization completed: agent={0}, session={1}",
@@ -103,7 +144,10 @@ final class PostStreamHandler {
      * @param autoGenerateTitle Whether to automatically generate session title
      */
     void executePostProcessing(
-            String completedText, boolean firstUserMessage, boolean autoGenerateTitle) {
+            String userPrompt,
+            String completedText,
+            boolean firstUserMessage,
+            boolean autoGenerateTitle) {
         LOGGER.log(
                 Level.INFO,
                 "Started executing streaming chat post-processing: session={0}",
@@ -120,10 +164,80 @@ final class PostStreamHandler {
         // 3. Internal Agent communication reply
         drainAndReplyAgentChat(completedText);
 
+        // 4. SQLite FTS5 (with CJK hybrid tokenization) cross-session indexing
+        indexTurnToFts5(userPrompt, completedText);
+
+        // 5. Hermes closed-loop skill draft promotion & asynchronous experience reflection
+        triggerExperienceReflectionAndDraftPromotion(userPrompt, completedText);
+
+        // 6. Honcho Dual-Peer Dialectic User Modeling synthesis pass
+        triggerDialecticUserModeling(userPrompt, completedText);
+
         LOGGER.log(
                 Level.INFO,
                 "Streaming chat post-processing completed: session={0}",
                 sessionInfo != null ? sessionInfo.getId() : "null");
+    }
+
+    /**
+     * Index the completed user-assistant conversation turn into SQLite FTS5.
+     */
+    private void indexTurnToFts5(String userPrompt, String completedText) {
+        if (fts5SearchService == null || sessionInfo == null || sessionInfo.getId() == null) {
+            return;
+        }
+        try {
+            fts5SearchService.indexConversationTurn(
+                    sessionInfo.getId(),
+                    agentId,
+                    sessionInfo.getProjectId(),
+                    sessionInfo.getName(),
+                    userPrompt,
+                    completedText);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "SQLite FTS5 turn indexing failed (non-critical)", e);
+        }
+    }
+
+    /**
+     * Promote security-verified draft skills and schedule asynchronous experience-to-skill reflection.
+     */
+    private void triggerExperienceReflectionAndDraftPromotion(
+            String userPrompt, String completedText) {
+        if (experienceReflectionService == null
+                || sessionInfo == null
+                || sessionInfo.getId() == null) {
+            return;
+        }
+        try {
+            experienceReflectionService.onTurnCompleted(
+                    agent, provider, modelId, sessionInfo.getId(), userPrompt, completedText);
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Experience reflection and draft promotion failed (non-critical)",
+                    e);
+        }
+    }
+
+    /**
+     * Schedule asynchronous Honcho Dual-Peer Dialectic User Modeling synthesis pass.
+     */
+    private void triggerDialecticUserModeling(String userPrompt, String completedText) {
+        if (dialecticUserModelingService == null
+                || sessionInfo == null
+                || sessionInfo.getId() == null) {
+            return;
+        }
+        try {
+            dialecticUserModelingService.schedulePostTurnDialecticPass(
+                    agent, provider, modelId, sessionInfo.getId(), userPrompt, completedText);
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Honcho dialectic user modeling trigger failed (non-critical)",
+                    e);
+        }
     }
 
     /**

@@ -52,6 +52,7 @@ import ai.emailclaw.emailclaw.service.ToolResultDiffMiddleware;
 import ai.emailclaw.emailclaw.service.ToolRuntimeContext;
 import ai.emailclaw.emailclaw.service.ToolService;
 import ai.emailclaw.emailclaw.service.WakeupDispatcherService;
+import ai.emailclaw.emailclaw.service.memory.DialecticUserModelingService;
 import ai.emailclaw.emailclaw.service.memory.MemoAutoSync;
 import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.memory.MemoryService;
@@ -63,11 +64,14 @@ import ai.emailclaw.emailclaw.service.plan.PlanService;
 import ai.emailclaw.emailclaw.service.plan.PlanStore;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
+import ai.emailclaw.emailclaw.service.skill.EmailclawSkillCuratorService;
+import ai.emailclaw.emailclaw.service.skill.ExperienceReflectionService;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.AppHomeResolver;
 import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.storage.sqlite.DatabaseManager;
+import ai.emailclaw.emailclaw.storage.sqlite.Fts5SearchService;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStateStore;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteAgentStatsRepository;
 import ai.emailclaw.emailclaw.storage.sqlite.SqliteArtifactRepository;
@@ -161,7 +165,11 @@ public final class ApplicationBootstrap {
             MessageBusService messageBusService,
             ChatSessionRepository chatSessionRepository,
             AppPaths paths,
-            WebFetchFallbackCoordinator webFetchCoordinator) {}
+            WebFetchFallbackCoordinator webFetchCoordinator,
+            Fts5SearchService fts5SearchService,
+            DialecticUserModelingService dialecticUserModelingService,
+            ExperienceReflectionService experienceReflectionService,
+            EmailclawSkillCuratorService skillCuratorService) {}
 
     /**
      * Execute the complete core application initialization and assembly process.
@@ -253,6 +261,9 @@ public final class ApplicationBootstrap {
         MessageBusService messageBusService = new MessageBusService(projectService);
         SpawnRegistryService spawnRegistryService = new SpawnRegistryService(databaseManager);
         MemoryService memoryService = new MemoryService(sqliteMemoryRepository, projectService);
+        Fts5SearchService fts5SearchService = new Fts5SearchService(databaseManager);
+        DialecticUserModelingService dialecticUserModelingService =
+                new DialecticUserModelingService(databaseManager, repository);
         ToolRuntimeContext toolRuntimeContext =
                 new ToolRuntimeContext(
                         repository,
@@ -261,7 +272,9 @@ public final class ApplicationBootstrap {
                         messageBusService,
                         spawnRegistryService,
                         projectService,
-                        memoryService);
+                        memoryService,
+                        fts5SearchService,
+                        dialecticUserModelingService);
         PluginRegistry pluginRegistry = new PluginRegistry();
         McpService mcpService = new McpService(repository);
 
@@ -382,6 +395,11 @@ public final class ApplicationBootstrap {
                         toolRuntimeContext,
                         governanceService,
                         agentRuntimeDispatcher);
+        ExperienceReflectionService experienceReflectionService =
+                new ExperienceReflectionService(repository, skillService);
+        EmailclawSkillCuratorService skillCuratorService =
+                new EmailclawSkillCuratorService(
+                        repository, providerService, experienceReflectionService);
         MessagePipeline messagePipeline =
                 new MessagePipeline(
                         repository,
@@ -394,7 +412,10 @@ public final class ApplicationBootstrap {
                         messageBusService,
                         memoAutoSync,
                         titleGenerator,
-                        chatService);
+                        chatService,
+                        fts5SearchService,
+                        experienceReflectionService,
+                        dialecticUserModelingService);
         chatService.setMessagePipeline(messagePipeline);
         // Other modular services
         ChannelService channelService = new ChannelService(repository, pluginRegistry);
@@ -448,7 +469,11 @@ public final class ApplicationBootstrap {
                 messageBusService,
                 chatSessionRepository,
                 paths,
-                webFetchCoordinator);
+                webFetchCoordinator,
+                fts5SearchService,
+                dialecticUserModelingService,
+                experienceReflectionService,
+                skillCuratorService);
     }
 
     /**
@@ -674,6 +699,15 @@ public final class ApplicationBootstrap {
             return;
         }
         LOGGER.info("Closing application, executing cleanup tasks...");
+        if (result.skillCuratorService() != null) {
+            result.skillCuratorService().close();
+        }
+        if (result.experienceReflectionService() != null) {
+            result.experienceReflectionService().close();
+        }
+        if (result.dialecticUserModelingService() != null) {
+            result.dialecticUserModelingService().close();
+        }
         if (result.cronJobService() != null) {
             result.cronJobService().stop();
         }

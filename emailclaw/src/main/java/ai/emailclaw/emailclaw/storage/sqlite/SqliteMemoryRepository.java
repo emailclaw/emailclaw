@@ -68,17 +68,42 @@ public class SqliteMemoryRepository {
                     content = excluded.content,
                     updated_at = excluded.updated_at;
                 """;
-        databaseManager.executeUpdate(
+        String compositeId = agentId + "|" + pId + "|" + scope.name() + "|" + key;
+        String safeContent = content != null ? content : "";
+        String cjkTokens = CjkFtsTokenizer.tokenizeForIndex(key + " " + safeContent);
+        databaseManager.executeTransaction(
                 conn -> {
                     try (PreparedStatement ps = conn.prepareStatement(sql)) {
                         ps.setString(1, agentId);
                         ps.setString(2, pId);
                         ps.setString(3, scope.name());
                         ps.setString(4, key);
-                        ps.setString(5, content != null ? content : "");
+                        ps.setString(5, safeContent);
                         ps.setLong(6, now);
                         ps.setLong(7, now);
                         ps.executeUpdate();
+                    }
+                    try (PreparedStatement del =
+                            conn.prepareStatement(
+                                    "DELETE FROM memory_notes_fts WHERE note_id = ?")) {
+                        del.setString(1, compositeId);
+                        del.executeUpdate();
+                    }
+                    try (PreparedStatement ins =
+                            conn.prepareStatement(
+                                    """
+                                    INSERT INTO memory_notes_fts
+                                        (note_id, agent_id, project_id, scope, note_key_raw, note_key, cjk_tokens)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    """)) {
+                        ins.setString(1, compositeId);
+                        ins.setString(2, agentId);
+                        ins.setString(3, pId);
+                        ins.setString(4, scope.name());
+                        ins.setString(5, key);
+                        ins.setString(6, CjkFtsTokenizer.tokenizeForIndex(key));
+                        ins.setString(7, cjkTokens);
+                        ins.executeUpdate();
                     }
                 });
         LOGGER.log(
@@ -178,7 +203,8 @@ public class SqliteMemoryRepository {
         String sql =
                 "DELETE FROM memory_notes WHERE agent_id = ? AND project_id = ? AND scope = ? AND"
                         + " key = ?";
-        databaseManager.executeUpdate(
+        String compositeId = agentId + "|" + pId + "|" + scope.name() + "|" + key;
+        databaseManager.executeTransaction(
                 conn -> {
                     try (PreparedStatement ps = conn.prepareStatement(sql)) {
                         ps.setString(1, agentId);
@@ -186,6 +212,12 @@ public class SqliteMemoryRepository {
                         ps.setString(3, scope.name());
                         ps.setString(4, key);
                         ps.executeUpdate();
+                    }
+                    try (PreparedStatement delFts =
+                            conn.prepareStatement(
+                                    "DELETE FROM memory_notes_fts WHERE note_id = ?")) {
+                        delFts.setString(1, compositeId);
+                        delFts.executeUpdate();
                     }
                 });
         LOGGER.log(

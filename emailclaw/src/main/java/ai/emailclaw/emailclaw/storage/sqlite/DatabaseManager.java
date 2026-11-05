@@ -38,7 +38,7 @@ public class DatabaseManager implements AutoCloseable {
     private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
     private static final int VALIDATION_TIMEOUT_SECONDS = 2;
     private static final long IDLE_CHECK_THRESHOLD_MS = 10_000L;
-    private static final int TARGET_SCHEMA_VERSION = 5;
+    private static final int TARGET_SCHEMA_VERSION = 6;
 
     private final Path databasePath;
     private final String jdbcUrl;
@@ -440,6 +440,9 @@ public class DatabaseManager implements AutoCloseable {
                         if (currentVersion < 5) {
                             migrateToV5(conn);
                         }
+                        if (currentVersion < 6) {
+                            migrateToV6(conn);
+                        }
                     });
             schemaInitialized.set(true);
             LOGGER.info("SQLite database schema initialization finished successfully.");
@@ -754,6 +757,125 @@ public class DatabaseManager implements AutoCloseable {
         }
         recordSchemaVersion(conn, 5, "Add session_id and project_id to cron_execution_history");
         LOGGER.info("Schema migration to V5 completed successfully.");
+    }
+
+    /**
+     * Applies the V6 schema migration for Hermes FTS5 (CJK) cross-session search and Honcho
+     * dialectic user modeling tables.
+     *
+     * @param conn active connection within transaction
+     * @throws SQLException on DDL error
+     */
+    private void migrateToV6(Connection conn) throws SQLException {
+        LOGGER.info(
+                "Applying schema migration to V6 (Hermes FTS5 CJK search & Honcho dialectic user"
+                        + " modeling)...");
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS session_messages (
+                        id VARCHAR(255) PRIMARY KEY,
+                        session_id VARCHAR(255) NOT NULL,
+                        agent_id VARCHAR(255) NOT NULL,
+                        project_id VARCHAR(255) NOT NULL DEFAULT '',
+                        turn_index INTEGER NOT NULL DEFAULT 0,
+                        role VARCHAR(32) NOT NULL,
+                        session_title TEXT NOT NULL DEFAULT '',
+                        raw_content TEXT NOT NULL,
+                        cjk_tokens TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );
+                    """);
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages"
+                            + " (session_id, turn_index);");
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_session_messages_agent_time ON"
+                            + " session_messages (agent_id, created_at DESC);");
+
+            stmt.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS session_messages_fts USING fts5(
+                        message_id UNINDEXED,
+                        session_id UNINDEXED,
+                        agent_id UNINDEXED,
+                        role UNINDEXED,
+                        session_title,
+                        cjk_tokens,
+                        tokenize = 'unicode61 remove_diacritics 2'
+                    );
+                    """);
+
+            stmt.execute(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS memory_notes_fts USING fts5(
+                        note_id UNINDEXED,
+                        agent_id UNINDEXED,
+                        project_id UNINDEXED,
+                        scope UNINDEXED,
+                        note_key_raw UNINDEXED,
+                        note_key,
+                        cjk_tokens,
+                        tokenize = 'unicode61 remove_diacritics 2'
+                    );
+                    """);
+
+            stmt.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS dialectic_claims (
+                        id VARCHAR(255) PRIMARY KEY,
+                        agent_id VARCHAR(255) NOT NULL,
+                        peer_type VARCHAR(32) NOT NULL DEFAULT 'USER',
+                        dimension VARCHAR(64) NOT NULL,
+                        thesis_statement TEXT NOT NULL,
+                        context_condition VARCHAR(255) NOT NULL DEFAULT 'general',
+                        confidence REAL NOT NULL DEFAULT 0.6,
+                        evidence_count INTEGER NOT NULL DEFAULT 1,
+                        contradiction_count INTEGER NOT NULL DEFAULT 0,
+                        supporting_quotes TEXT NOT NULL DEFAULT '[]',
+                        source_session_id VARCHAR(255),
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    );
+                    """);
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_dialectic_claims_agent_dim ON dialectic_claims"
+                            + " (agent_id, peer_type, dimension, confidence DESC);");
+
+            stmt.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS dialectic_syntheses (
+                        id VARCHAR(255) PRIMARY KEY,
+                        agent_id VARCHAR(255) NOT NULL,
+                        session_id VARCHAR(255) NOT NULL,
+                        prior_thesis TEXT,
+                        observed_antithesis TEXT NOT NULL,
+                        resolved_synthesis TEXT NOT NULL,
+                        reasoning_trace TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    );
+                    """);
+            stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_dialectic_syntheses_agent ON"
+                            + " dialectic_syntheses (agent_id, created_at DESC);");
+
+            stmt.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS dialectic_peer_snapshots (
+                        agent_id VARCHAR(255) PRIMARY KEY,
+                        user_peer_markdown TEXT NOT NULL DEFAULT '',
+                        agent_peer_markdown TEXT NOT NULL DEFAULT '',
+                        version INTEGER NOT NULL DEFAULT 1,
+                        updated_at INTEGER NOT NULL
+                    );
+                    """);
+        }
+        recordSchemaVersion(
+                conn,
+                6,
+                "Add Hermes FTS5 CJK session/memory search tables and Honcho dialectic user"
+                        + " modeling tables");
+        LOGGER.info("Schema migration to V6 completed successfully.");
     }
 
     /**
