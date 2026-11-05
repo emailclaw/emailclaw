@@ -168,6 +168,47 @@
   -fx-background-radius: 4;
 }
 
+.lifecycle-active {
+  -fx-background-color: #dcfce7;
+  -fx-text-fill: #15803d;
+  -fx-padding: 2 8;
+  -fx-background-radius: 4;
+  -fx-font-weight: 600;
+  -fx-font-size: 11px;
+}
+
+.lifecycle-stale {
+  -fx-background-color: #fef3c7;
+  -fx-text-fill: #b45309;
+  -fx-padding: 2 8;
+  -fx-background-radius: 4;
+  -fx-font-weight: 600;
+  -fx-font-size: 11px;
+}
+
+.lifecycle-archived {
+  -fx-background-color: #f3f4f6;
+  -fx-text-fill: #6b7280;
+  -fx-padding: 2 8;
+  -fx-background-radius: 4;
+  -fx-font-weight: 600;
+  -fx-font-size: 11px;
+}
+
+.lifecycle-draft {
+  -fx-background-color: #dbeafe;
+  -fx-text-fill: #1d4ed8;
+  -fx-padding: 2 8;
+  -fx-background-radius: 4;
+  -fx-font-weight: 600;
+  -fx-font-size: 11px;
+}
+
+.telemetry-meta {
+  -fx-text-fill: #6b7280;
+  -fx-font-size: 11px;
+}
+
 .inline-key-input {
   -fx-alignment: center-left;
 }

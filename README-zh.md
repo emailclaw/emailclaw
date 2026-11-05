@@ -58,6 +58,7 @@ Emailclaw 把 AI Agent 放进每个人都熟悉的邮箱。它不是把电子邮
 - **受控的 Agent 行动**：模型、工具、Skills、MCP、定时任务和插件可组合使用；高风险工具调用可通过邮件四位确认码审批。
 - **适合长期运行**：支持 Linux 无界面服务模式、开机启动、Cron 自动化和日志排障。
 - **连接顶级 AI CLI 的天然桥梁**：以所有人每天都在使用的电子邮件为桥梁（无需安装任何额外 App），连接并无缝调度 Google Antigravity CLI (`agy`)、Claude Code CLI (`claude`)、OpenAI Codex CLI (`codex`) 与 OpenCode CLI (`opencode`) 等前沿编程工具。
+- **Hermes 闭环自学习与技能自演进**：告别静态固化的配置文件，构建“经验反思沉淀 → 技能草稿创建（安全扫描门禁）→ 运行时遥测 → 实时热修补 → 后台 Curator 归档与 LLM 伞状合并”完整自演进闭环；结合 SQLite FTS5（含 CJK 双字切分）跨会话全文检索与 Honcho 辩证用户建模，随使用愈发精准。
 - **可扩展**：基于 Java SPI 与外部 JAR 插件；可扩展工具、Provider、钩子、MCP、界面和渠道。
 - **基于 AgentScope Java**：使用 AgentScope Java 2.0 的 Agent、模型、事件、工具、权限与 Harness 能力。
 
@@ -286,6 +287,43 @@ Emailclaw 以开箱即用的插件形式提供了连接业界四大顶级 AI 编
 - **Email 作为全民通用的无感桥梁**：你不需要在移动设备上安装复杂的终端应用、SSH 客户端或专有聊天软件。无论你在上下班路上用手机邮箱，还是在会议中用笔记本电脑，只需发送一封常规邮件，Emailclaw 就能作为桥梁驱动服务器或本地电脑上的强大 CLI 为你工作，并将完整运行结果直接回复到你的收件箱。
 - **极简安装与即时热加载（免重启）**：使用前，只需将对应工具编译生成的 JAR 包（如 `emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar`）直接复制到数据目录的 `~/emailclaw/plugins` 下即可。**Emailclaw 具备全动态插件目录热监听（Hot-Reload）能力，无需重启服务或应用，复制后系统立即自动识别并加载生效！**
 - **内置工业级 PathResolver**：工具插件内置智能路径自适应策略，自动探测 `$HOME/.local/bin`、`$HOME/.opencode/bin`、环境变量以及系统 `PATH`，并自动补全子进程运行环境，即使在非登录无头服务下也能精准找到并成功执行命令。
+
+## Hermes 闭环自学习与技能自演进
+
+传统 AI Agent 高度依赖静态人工编写的 Prompt 和配置文件，无法随任务运行自动沉淀经验。Emailclaw 借鉴 [Hermes Agent](https://github.com/nousresearch/hermes-agent) 工业级机制，构建了完整的 **闭环技能自演进系统（Closed-Loop Skill Self-Evolution）**：
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Emailclaw 闭环技能自演进架构                          │
+│                                                                             │
+│   经验反思沉淀 ──────► 技能草稿生成 ──────► 严格安全门禁晋升                │
+│        ▲                                            │                       │
+│        │                                            ▼                       │
+│   就地热修补 (Patch) ◄── 运行时遥测统计 ◄── 渐进式感知 (Progressive)        │
+│        │                 (调用/查看次数)            │                       │
+│        ▼                                            ▼                       │
+│   每日审计日志 (.audit/)                   Curator Phase 1 (STALE/ARCHIVED) │
+│                                            Curator Phase 2 (Umbrella 伞状)  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **经验反思与技能沉淀（`ExperienceReflectionService`）**：
+   - 当任务包含多步执行、故障排查修复或高质量输出时，系统自动在后台调度轻量级反思子智能体，将成功经验提炼沉淀为规范的 `skills/_drafts/<name>/SKILL.md` 草稿。
+   - 候选草稿经 `SkillSecurityScanner` 安全扫描（`SAFE` / `CAUTION` / `DANGEROUS`），通过安全门禁后自动晋升为正式技能。
+2. **渐进式感知与运行时遥测（`SkillVisibilityFilter` & `SkillUsageStore`）**：
+   - 告别在 Prompt 中盲目全量塞入大段技能正文的做法。系统默认仅注入技能名称与简要描述，模型按需调用 `read_skill_detail` 动态载入具体正文，大幅降低上下文 Token 消耗。
+   - 自动在 `.usage.jsonl` 中追踪技能的调用次数（`useCount`）、检索查看（`viewCount`）、修补次数（`patchCount`）及最后使用时间。
+3. **就地实时热修补与审计日志（`SkillManageTool`）**：
+   - 当技能在运行中遇到边缘 Case 时，Agent 可通过 `skill_manage` 工具直接对技能进行就地定向修补（热更新并支持原子回滚），所有变动均被记录在每日审计日志（`skills/.audit/YYYY-MM-DD.jsonl`）中。
+4. **后台 Curator 技能管家（`EmailclawSkillCuratorService`）**：
+   - **第一阶段（生命周期自动流转）**：后台守护进程周期性评估技能遥测数据，将长期闲置未用的技能从 `ACTIVE` 自动标记为 `STALE`，逾期后自动流转为 `ARCHIVED` 并移入 `skills/.archive/` 目录，防止上下文和技能池无限膨胀。
+   - **第二阶段（LLM 伞状技能合并）**：自动检测具有相同前缀的同类细碎子技能（如多个邮件处理小技能），调用配置的 LLM 将其合并升维为统一的 `<prefix>-umbrella` 伞状技能，原分散子技能自动安全归档。
+5. **跨会话 SQLite FTS5（含 CJK 双字切分）全文检索**：
+   - 基于 SQLite 虚拟表与自研混合分词器（`CjkFtsTokenizer`），对中日韩字符进行重叠二元分词（Bigram）与边界单字（Unigram）索引，结合 BM25 算法与时间衰减（Time-Decay）机制，支持智能体跨历史会话（`session_search`）和长效记忆（`memory_search`）高精度秒级召回。
+6. **Honcho 辩证双对等体用户建模（`DialecticUserModelingService`）**：
+   - 借鉴 Honcho 认知建模，通过黑格尔辩证法（正题 Thesis → 反题 Antithesis → 合题 Synthesis）持续从对话中提炼用户认知事实与 Agent 行为契约，动态生成 `USER.md` 与 `PROFILE.md` 并缓存注入 Prompt。
+7. **技能视图 UI 状态可视化与一键还原（`SkillsView`）**：
+   - 界面直观展示技能的 `ACTIVE`、`STALE`、`ARCHIVED`、`DRAFT` 彩色状态徽章及使用遥测指标，支持按生命周期状态快速筛选，并提供一键 `Restore` 还原按钮，可将已归档技能秒级唤醒恢复至活跃池。
 
 ## 文档
 

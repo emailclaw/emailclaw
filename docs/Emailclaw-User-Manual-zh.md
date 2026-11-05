@@ -288,6 +288,94 @@ cp emailclaw-plugin-tool-invokeOpencodeCli-1.0.1.jar ~/emailclaw/plugins/
 - **自动定位**：插件全部内置工业级 `PathResolver` 策略，自动识别波浪号（`~`）展开、环境变量探测、系统 `PATH` 与标准用户脚本目录，避免找不到命令的报错。
 - **环境丰富（Subprocess PATH Enrichment）**：启动底层进程前，插件会自动将可执行文件所在目录注入子进程的 `PATH` 环境变量，确保 CLI 内部依赖的其它子工具链（如 Node、Python、Git）均能正常运行。
 
+### 8.2 Hermes 闭环自学习与技能自演进系统
+
+传统 AI Agent 通常依赖静态固化的人工 Prompt 与预置配置文件，无法从执行错误中自动学习、无法沉淀领域工作流，更无法适应使用场景的演进。Emailclaw 借鉴 [Hermes Agent](https://github.com/nousresearch/hermes-agent) 工业级机制，构建了**完整的闭环技能自演进系统（Closed-Loop Skill Self-Evolution System）**，让智能体在使用过程中随时间推移越来越精准、高效：
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        Hermes 闭环技能自演进全生命周期架构                             │
+│                                                                                        │
+│   ┌────────────────────────┐      ┌────────────────────────┐      ┌──────────────────┐ │
+│   │ 1. 任务流转执行        │─────►│ 2. 轮次后经验反思提炼  │─────►│ 3. 候选草稿暂存  │ │
+│   │    (多步协同/容错修复) │      │    (子智能体异步萃取)  │      │ skills/_drafts/  │ │
+│   └────────────────────────┘      └────────────────────────┘      └────────┬─────────┘ │
+│                                                                            │           │
+│                                      安全扫描门禁 (SAFE 判定) ◄────────────┘           │
+│                                                │                                       │
+│                                                ▼                                       │
+│   ┌────────────────────────┐      ┌────────────────────────┐                           │
+│   │ 5. 就地实时热修补      │◄─────│ 4. 渐进式感知注入      │                           │
+│   │    & 每日不可变审计日志│      │    & 运行时遥测统计    │                           │
+│   └────────────────────────┘      └────────────┬───────────┘                           │
+│                                                │                                       │
+│                                                ▼                                       │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │ 6. 后台技能管家 Curator 守护进程（定时执行）                                   │   │
+│   │    • 第一阶段：生命周期自动流转 (ACTIVE ──► STALE ──► ARCHIVED)                │   │
+│   │    • 第二阶段：LLM 伞状技能合并 (公共前缀聚类 ──► 统一 Umbrella 技能)          │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 8.2.1 闭环自演进全流程解析
+
+1. **经验反思与技能沉淀（`ExperienceReflectionService`）**：
+   - 在每个会话轮次或邮件任务结束后，系统自动评估任务执行复杂度（多步工具调用链条、异常修复恢复记录、产出成果物充实度）。
+   - 一旦识别到高价值可复用经验且未触发 Agent 冷却限制，Emailclaw 将在后台异步派发轻量级反思子智能体，调用 `propose_skill` 与 `skill_manage` 将工作流模式提炼为标准 Markdown 技能，暂存于 `skills/_drafts/<skill-name>/SKILL.md`。
+
+2. **安全扫描与晋升门禁（`SkillPromotionGate` & `SkillSecurityScanner`）**：
+   - 候选技能草稿绝不盲目进入生产运行。所有草稿均由内置的 `SkillSecurityScanner` 进行自动化静态代码与指令安全扫描，排查恶意注入、危险系统指令与提权风险。
+   - 扫描结果分为 `SAFE`、`CAUTION` 与 `DANGEROUS`。仅有被严格判定为 `SAFE` 的草稿才会被允许自动晋升至工作区主技能目录（`skills/<skill-name>/SKILL.md`），完成注册并生效。
+
+3. **渐进式感知与运行时遥测（`SkillVisibilityFilter` & `SkillUsageStore`）**：
+   - 彻底打破传统 Agent 盲目在 Prompt 中拼接成百上千行技能正文导致的 Token 浪费与注意力稀释。系统采用 **渐进式感知（Progressive Disclosure）** 机制，默认仅向系统提示词注入精炼的技能名称、职责摘要与触发标签。
+   - 模型在推理过程中发现需要某项技能时，主动调用 `read_skill_detail` 按需加载完整实现说明。
+   - 技能在运行期的每一次调用、检索查看与修补均在 `skills/.usage.jsonl` 中以原子方式持久化：
+     - `useCount`：技能实际被 Agent 调用执行的累计次数。
+     - `viewCount`：技能通过渐进式感知被动态加载查看的累计次数。
+     - `patchCount`：技能被就地实时热修补的累计次数。
+     - `lastUsedAt`：最近一次被调用的时间戳。
+
+4. **就地实时热修补与审计日志（`SkillManageTool`）**：
+   - 任务运行期间，若技能描述因外部接口变动或业务场景调整出现偏差，Agent 可通过 `skill_manage`（`action="patch"`）在不重启服务的前提下对技能正文进行就地热更新。
+   - 热更新具备原子替换与失败自动回滚保护机制，且所有修订操作均被不可篡改地记录于 `skills/.audit/YYYY-MM-DD.jsonl` 每日审计日志中，满足企业级可追溯性与合规审计要求。
+
+5. **后台 Curator 技能管家守护进程（`EmailclawSkillCuratorService`）**：
+   后台守护线程定期巡检各 Agent 工作区，维护技能池的精简与健康度：
+   - **第一阶段（生命周期自动流转）**：基于 `.usage.jsonl` 遥测数据，对长期未被调用的技能按时间衰减阶梯自动流转。超过 `staleAfterDays`（默认 14 天）未用的技能从 `ACTIVE` 标记为 `STALE`；若继续闲置超过 `archiveAfterStaleDays`（默认 14 天），系统自动将其流转至 `ARCHIVED` 状态并移入 `skills/.archive/<name>-<timestamp>` 物理目录。
+   - **第二阶段（LLM 伞状技能合并）**：当检测到同类细粒度子技能共享连字符前缀（如 `hermesmail-draft`、`hermesmail-send`、`hermesmail-search`、`hermesmail-verify` 达到合并阈值），Curator 自动聚合上下文并调度配置的大模型，将其融合成一个功能完备的统一 `<prefix>-umbrella` 伞状技能，原分散子技能自动归档，兼顾技能完备性与目录清爽度。
+
+#### 8.2.2 跨会话 SQLite FTS5 全文检索（CJK 混合分词）
+
+Emailclaw 集成了基于 SQLite FTS5 的高性能跨会话记忆检索能力：
+- **零外部依赖的 CJK 混合分词器（`CjkFtsTokenizer`）**：针对中文、日文、韩文字符构建重叠二元切分（Bigram，如 `"邮件代理"` → `"邮件 件代 代理"`）结合首尾边界单字（Unigram）与规范化英数字符。无需安装任何重量级本地 C 库或外挂分词词典，即可在原生 SQLite FTS5 虚拟表上实现高召回率的中英文混合毫秒级检索。
+- **BM25 结合指数时间衰减复合评分**：在 `session_messages_fts` 与 `memory_notes_fts` 的检索排序中，引入工业级衰减公式：
+  $$\text{FinalScore} = \text{BM25Score} \times 0.5^{\Delta t_{\text{days}} / 30.0}$$
+  优先推荐近期高频互动上下文，同时保证关键历史经验能被精准召回。
+- **即插即用检索工具**：为 Agent 注入 `@Tool(name = "session_search")` 与 `@Tool(name = "memory_search")`，支持随时跨会话回溯数月前的配置细节、决策依据与任务交付物。
+
+#### 8.2.3 Honcho 辩证双对等体用户建模
+
+为使 Agent 能够深度契合用户的个性化沟通风格与习惯，Emailclaw 深度融合了 Honcho 的黑格尔辩证建模引擎（`DialecticUserModelingService`）：
+- **黑格尔辩证法循环**：持续从对话中提炼出原子认知主张（针对 `USER` 与 `AGENT` 对等体）。当捕捉到冲突观点或偏好演进时，引擎自动发起辩证反思，推导生成高阶合题（`正题 Thesis → 反题 Antithesis → 合题 Synthesis`）。
+- **动态上下文快照沉淀**：合成结果自动生成为高命中率、便于提示词缓存（Prompt Cache）的 Markdown 认知文档：
+  - `USER.md`：沉淀用户的交互沟通偏好、代码规范要求、常用业务术语与任务约束。
+  - `PROFILE.md`：确立 Agent 的回复调性契约、行为边界与专业职责准则。
+- 这些文档持久化于 Agent 工作区，并在每次推理时以 `<user_peer_profile>` 与 `<agent_peer_contract>` 结构化标签无感注入系统提示词。
+
+#### 8.2.4 在桌面端管理技能全生命周期（SkillsView）
+
+在 Emailclaw 桌面图形界面中，点击导航栏中的 **Skills** 即可全面查看并管理自演进技能体系：
+- **生命周期状态徽章**：每张技能卡片均带有清晰的色彩徽章，直观表达技能当前状态：
+  - <span style="background-color:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-weight:600;">ACTIVE</span>：活跃状态，在系统提示词中可见且可被正常调用。
+  - <span style="background-color:#fef3c7;color:#b45309;padding:2px 8px;border-radius:4px;font-weight:600;">STALE</span>：闲置陈旧状态，提示该技能长期未被使用，处于被归档预警期。
+  - <span style="background-color:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:4px;font-weight:600;">ARCHIVED</span>：已归档状态，卡片呈半透明微暗显示，技能物理存储于 `.archive/` 目录中。
+  - <span style="background-color:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600;">DRAFT</span>：提炼出的候选草稿，等待安全晋升验证。
+- **运行时遥测统计栏**：卡片上实时呈现 `Uses: X · Views: Y · Patches: Z` 核心使用指标。
+- **状态过滤筛选下拉框**：顶部筛选栏支持选择 `All States`、`ACTIVE`、`STALE`、`ARCHIVED` 或 `DRAFT` 快速聚焦指定生命周期的技能。
+- **一键无缝还原（Restore）**：针对处于 `ARCHIVED` 状态的技能，卡片上的操作按钮自动切换为 **Restore**。点击后系统自动将技能目录从 `skills/.archive/` 原子移回 `skills/`，并将其状态重置为 `ACTIVE` 重新启用，无需任何终端操作即可实现秒级激活。
+
 ## 9. Linux 后台服务：给电脑入门者的完整安装指南
 
 本节适用于 Ubuntu、Debian 及其他使用 **systemd** 的 Debian 系 Linux。后台服务适合希望电脑开机后自动收取任务邮件的用户：它没有桌面窗口，但会持续运行 Emailclaw Channel、定时任务和 Agent。你仍然通过邮件与它交互。
@@ -513,6 +601,14 @@ rm -rf ~/emailclaw
 ### 我能用自己的 Provider 吗？
 
 可以。创建 Provider 时填写服务商提供的 Base URL、API Key 和模型 ID。确保所选模型与所需的工具调用、流式输出或多模态能力兼容。
+
+### Agent 如何随使用自动提炼和优化技能？
+
+Emailclaw 内置 Hermes 闭环技能自演进流水线。当 Agent 完成复杂的多步任务或故障修复后，后台异步反思子智能体会将工作流总结为候选技能草稿存入 `skills/_drafts/`。在通过自动化 `SkillSecurityScanner` 安全扫描后，草稿自动晋升为正式技能。在后续执行中，Agent 可对技能进行就地热修补，而后台 Curator 守护进程会自动淘汰闲置技能并将相似子技能聚类合并为统一的伞状技能。
+
+### 被归档的技能存放在哪里，如何还原？
+
+长期闲置被 Curator 归档的技能会被移至 `<workspace>/skills/.archive/<name>-<timestamp>`。你可以在桌面界面的 **Skills** 标签页中，通过将状态筛选器切换为 `ARCHIVED` 来查看所有归档技能。如果需要重新激活该技能，只需直接点击卡片上的 **Restore** 按钮，系统便会自动将其移回 `skills/` 主目录，将状态重置为 `ACTIVE` 并立即生效。
 
 ## 11. 安全检查清单
 

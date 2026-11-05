@@ -17,8 +17,11 @@ import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
+import ai.emailclaw.emailclaw.tools.Fts5MemorySearchTool;
+import ai.emailclaw.emailclaw.tools.Fts5SessionSearchTool;
 import ai.emailclaw.emailclaw.tools.NetworkFetchTool;
 import ai.emailclaw.emailclaw.tools.ToolRegistry;
+import ai.emailclaw.emailclaw.tools.UserPeerDialecticTool;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -248,6 +251,24 @@ public class ToolService {
             LOGGER.info(
                     "Successfully re-registered Emailclaw NetworkFetchTool onto agent toolkit,"
                             + " replacing default AgentScope WebFetchTool.");
+        }
+
+        if (context != null && context.getFts5SearchService() != null) {
+            agentToolkit.removeTool("session_search");
+            agentToolkit.registerTool(
+                    new Fts5SessionSearchTool(context.getFts5SearchService(), context));
+            agentToolkit.removeTool("memory_search");
+            agentToolkit.registerTool(
+                    new Fts5MemorySearchTool(context.getFts5SearchService(), context));
+            LOGGER.info(
+                    "Replaced default session_search and memory_search with SQLite FTS5 CJK"
+                            + " tools.");
+        }
+
+        if (context != null && context.getDialecticUserModelingService() != null) {
+            agentToolkit.registerTool(
+                    new UserPeerDialecticTool(context.getDialecticUserModelingService(), context));
+            LOGGER.info("Registered Honcho query_user_model tool onto agent toolkit.");
         }
     }
 

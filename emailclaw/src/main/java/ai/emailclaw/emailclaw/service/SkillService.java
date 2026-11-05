@@ -14,6 +14,9 @@ import ai.emailclaw.emailclaw.model.GlobalConfig;
 import ai.emailclaw.emailclaw.model.SkillInfo;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
+import io.agentscope.harness.agent.filesystem.local.LocalFilesystem;
+import io.agentscope.harness.agent.skill.curator.SkillUsageRecord;
+import io.agentscope.harness.agent.skill.curator.SkillUsageStore;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -55,7 +58,113 @@ public class SkillService {
     public List<SkillInfo> listWorkspaceSkills(String agentId) {
         LOGGER.log(Level.INFO, "Skill call start: scan workspace skills, agent={0}", agentId);
         Path skillsRoot = repository.skillsForWorkspace(agentId);
-        return listSkillsFromDir(skillsRoot, false);
+        List<SkillInfo> activeSkills = listSkillsFromDir(skillsRoot, false);
+
+        Path workspace = repository.workspaceFor(agentId);
+        LocalFilesystem fs = new LocalFilesystem(workspace);
+        SkillUsageStore usageStore = new SkillUsageStore(fs);
+        Map<String, SkillUsageRecord> usageMap = usageStore.load();
+
+        Map<String, SkillInfo> combined = new LinkedHashMap<>();
+        for (SkillInfo s : activeSkills) {
+            combined.put(s.name(), enrichSkillWithUsage(s, usageMap.get(s.name())));
+        }
+
+        // Also scan skills/.archive/ for archived skills so they can be viewed in SkillsView
+        Path archiveRoot = skillsRoot.resolve(".archive");
+        if (Files.isDirectory(archiveRoot)) {
+            try (Stream<Path> stream = Files.list(archiveRoot)) {
+                stream.filter(Files::isDirectory)
+                        .forEach(
+                                dir -> {
+                                    SkillInfo info = readSkillInfo(dir, false);
+                                    if (info != null) {
+                                        String name = info.name();
+                                        if (!combined.containsKey(name)) {
+                                            SkillUsageRecord rec = usageMap.get(name);
+                                            SkillInfo enriched =
+                                                    new SkillInfo(
+                                                            name,
+                                                            info.title(),
+                                                            info.description(),
+                                                            info.content(),
+                                                            "archived",
+                                                            info.installedFrom(),
+                                                            info.storageName(),
+                                                            info.builtIn(),
+                                                            false,
+                                                            info.updatedAt(),
+                                                            info.channels(),
+                                                            info.tags(),
+                                                            info.config(),
+                                                            "ARCHIVED",
+                                                            rec != null ? (int) rec.useCount() : 0,
+                                                            rec != null ? (int) rec.viewCount() : 0,
+                                                            rec != null
+                                                                    ? (int) rec.patchCount()
+                                                                    : 0,
+                                                            rec != null && rec.lastUsedAt() != null
+                                                                    ? rec.lastUsedAt().toString()
+                                                                    : "");
+                                            combined.put(name, enriched);
+                                        }
+                                    }
+                                });
+            } catch (IOException ignored) {
+            }
+        }
+
+        List<SkillInfo> result = new ArrayList<>(combined.values());
+        result.sort(Comparator.comparing(SkillInfo::name));
+        return result;
+    }
+
+    private SkillInfo enrichSkillWithUsage(SkillInfo info, SkillUsageRecord rec) {
+        if (rec == null) {
+            return new SkillInfo(
+                    info.name(),
+                    info.title(),
+                    info.description(),
+                    info.content(),
+                    info.source(),
+                    info.installedFrom(),
+                    info.storageName(),
+                    info.builtIn(),
+                    info.enabled(),
+                    info.updatedAt(),
+                    info.channels(),
+                    info.tags(),
+                    info.config(),
+                    info.enabled() ? "ACTIVE" : "",
+                    0,
+                    0,
+                    0,
+                    "");
+        }
+        String state = rec.state() != null ? rec.state().name() : (info.enabled() ? "ACTIVE" : "");
+        boolean enabled = info.enabled();
+        if ("ARCHIVED".equalsIgnoreCase(state)) {
+            enabled = false;
+        }
+        return new SkillInfo(
+                info.name(),
+                info.title(),
+                info.description(),
+                info.content(),
+                info.source(),
+                info.installedFrom(),
+                info.storageName(),
+                info.builtIn(),
+                enabled,
+                info.updatedAt(),
+                info.channels(),
+                info.tags(),
+                info.config(),
+                state,
+                (int) rec.useCount(),
+                (int) rec.viewCount(),
+                (int) rec.patchCount(),
+                rec.lastUsedAt() != null ? rec.lastUsedAt().toString() : "");
     }
 
     public List<SkillInfo> listSkillPool() {
@@ -188,13 +297,29 @@ public class SkillService {
     }
 
     public void deleteSkill(String agentId, String skillName) {
-        // When deleting, clean up language variants of the same name at the same time to prevent
-        // old "-en/-zh" directories from showing up again after deleting the normalized directory.
-        List<Path> skillDirs = resolveSkillDirs(repository.skillsForWorkspace(agentId), skillName);
+        // Clean up active skill directories and any archived directories in .archive/
+        Path skillsRoot = repository.skillsForWorkspace(agentId);
+        List<Path> skillDirs = resolveSkillDirs(skillsRoot, skillName);
         if (skillDirs.isEmpty()) {
-            throw new IllegalArgumentException("Skill not found: " + skillName);
+            Path archiveDir = skillsRoot.resolve(".archive");
+            if (Files.isDirectory(archiveDir)) {
+                try (Stream<Path> stream = Files.list(archiveDir)) {
+                    stream.filter(Files::isDirectory)
+                            .filter(
+                                    p ->
+                                            p.getFileName().toString().startsWith(skillName + "-")
+                                                    || p.getFileName().toString().equals(skillName))
+                            .forEach(this::deleteDir);
+                } catch (IOException ignored) {
+                }
+            }
+        } else {
+            skillDirs.forEach(this::deleteDir);
         }
-        skillDirs.forEach(this::deleteDir);
+        Path workspace = repository.workspaceFor(agentId);
+        LocalFilesystem fs = new LocalFilesystem(workspace);
+        SkillUsageStore usageStore = new SkillUsageStore(fs);
+        usageStore.forget(skillName);
         LOGGER.log(
                 Level.INFO,
                 "Deleted Skill successfully: agent={0}, skill={1}",
@@ -239,7 +364,34 @@ public class SkillService {
     }
 
     public void setSkillEnabled(String agentId, String skillName, boolean enabled) {
-        Path skillDir = resolveSkillDir(repository.skillsForWorkspace(agentId), skillName);
+        Path skillsRoot = repository.skillsForWorkspace(agentId);
+        Path skillDir = resolveSkillDir(skillsRoot, skillName);
+        if (!Files.isDirectory(skillDir)) {
+            // If the skill was archived in .archive/, restore it to the live skills/ directory
+            Path archiveDir = skillsRoot.resolve(".archive");
+            if (Files.isDirectory(archiveDir)) {
+                try (Stream<Path> stream = Files.list(archiveDir)) {
+                    Path archivedMatch =
+                            stream.filter(Files::isDirectory)
+                                    .filter(
+                                            p ->
+                                                    p.getFileName()
+                                                                    .toString()
+                                                                    .startsWith(skillName + "-")
+                                                            || p.getFileName()
+                                                                    .toString()
+                                                                    .equals(skillName))
+                                    .findFirst()
+                                    .orElse(null);
+                    if (archivedMatch != null) {
+                        Path restoredDir = skillsRoot.resolve(skillName);
+                        Files.move(archivedMatch, restoredDir);
+                        skillDir = restoredDir;
+                    }
+                } catch (IOException ignored) {
+                }
+            }
+        }
         if (!Files.isDirectory(skillDir)) {
             throw new IllegalArgumentException("Skill not found: " + skillName);
         }
@@ -252,6 +404,12 @@ public class SkillService {
                 current.config(),
                 current.source(),
                 current.installedFrom());
+        if (enabled) {
+            Path workspace = repository.workspaceFor(agentId);
+            LocalFilesystem fs = new LocalFilesystem(workspace);
+            SkillUsageStore usageStore = new SkillUsageStore(fs);
+            usageStore.setState(skillName, SkillUsageRecord.State.ACTIVE);
+        }
     }
 
     public Map<String, String> setSkillsEnabled(
@@ -339,14 +497,23 @@ public class SkillService {
         }
         String storageName = dir.getFileName().toString();
         String name = canonicalSkillName(storageName);
-        boolean builtIn = builtInRoot || !storageName.equals(name);
-        String source = builtIn ? "builtin" : "customized";
+        Path parent = dir.getParent();
+        boolean isArchivedDir =
+                parent != null && ".archive".equals(parent.getFileName().toString());
+        boolean builtIn = !isArchivedDir && (builtInRoot || !storageName.equals(name));
+        String source = isArchivedDir ? "archived" : (builtIn ? "builtin" : "customized");
         String content = "";
         String description = "";
         String updatedAt = "";
         try {
             content = Files.readString(skillMd);
             Map<String, String> frontmatter = parseFrontmatter(content);
+            String fmName = frontmatter.get("name");
+            if (fmName != null && !fmName.isBlank()) {
+                name = canonicalSkillName(fmName.trim());
+            } else if (isArchivedDir) {
+                name = storageName.replaceFirst("-\\d{14}$", "");
+            }
             description = frontmatter.getOrDefault("description", firstMeaningfulLine(content));
             updatedAt = Files.getLastModifiedTime(skillMd).toString();
         } catch (IOException ignored) {
@@ -361,7 +528,7 @@ public class SkillService {
                         "",
                         storageName,
                         builtIn,
-                        true,
+                        !isArchivedDir,
                         updatedAt,
                         new ArrayList<>(),
                         new ArrayList<>(),
@@ -372,6 +539,28 @@ public class SkillService {
                 info = applyMeta(info, JSON.readValue(meta.toFile(), Map.class));
             } catch (Exception ignored) {
             }
+        }
+        if (isArchivedDir) {
+            info =
+                    new SkillInfo(
+                            info.name(),
+                            info.title(),
+                            info.description(),
+                            info.content(),
+                            info.source(),
+                            info.installedFrom(),
+                            info.storageName(),
+                            info.builtIn(),
+                            false,
+                            info.updatedAt(),
+                            info.channels(),
+                            info.tags(),
+                            info.config(),
+                            "ARCHIVED",
+                            info.useCount(),
+                            info.viewCount(),
+                            info.patchCount(),
+                            info.lastUsedAt());
         }
         return info;
     }

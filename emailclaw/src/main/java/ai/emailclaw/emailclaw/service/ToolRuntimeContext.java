@@ -12,7 +12,10 @@ package ai.emailclaw.emailclaw.service;
 
 import ai.emailclaw.emailclaw.model.AgentInfo;
 import ai.emailclaw.emailclaw.model.ProjectInfo;
+import ai.emailclaw.emailclaw.service.memory.DialecticUserModelingService;
+import ai.emailclaw.emailclaw.service.memory.MemoryService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.storage.sqlite.Fts5SearchService;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import java.nio.file.Path;
 import java.time.ZoneId;
@@ -55,7 +58,11 @@ public class ToolRuntimeContext {
     /** Spawn registry service, manages child agent metadata to support cross-replica routing and session recovery. */
     private SpawnRegistryService spawnRegistryService;
 
-    private ai.emailclaw.emailclaw.service.memory.MemoryService memoryService;
+    private MemoryService memoryService;
+
+    private Fts5SearchService fts5SearchService;
+
+    private DialecticUserModelingService dialecticUserModelingService;
 
     public ToolRuntimeContext(
             AppContext repository,
@@ -64,7 +71,29 @@ public class ToolRuntimeContext {
             MessageBusService messageBusService,
             SpawnRegistryService spawnRegistryService,
             ProjectService projectService,
-            ai.emailclaw.emailclaw.service.memory.MemoryService memoryService) {
+            MemoryService memoryService) {
+        this(
+                repository,
+                agentService,
+                providerService,
+                messageBusService,
+                spawnRegistryService,
+                projectService,
+                memoryService,
+                null,
+                null);
+    }
+
+    public ToolRuntimeContext(
+            AppContext repository,
+            AgentService agentService,
+            ProviderService providerService,
+            MessageBusService messageBusService,
+            SpawnRegistryService spawnRegistryService,
+            ProjectService projectService,
+            MemoryService memoryService,
+            Fts5SearchService fts5SearchService,
+            DialecticUserModelingService dialecticUserModelingService) {
         this.repository = repository;
         this.agentService = agentService;
         this.providerService = providerService;
@@ -72,6 +101,8 @@ public class ToolRuntimeContext {
         this.spawnRegistryService = spawnRegistryService;
         this.projectService = projectService;
         this.memoryService = memoryService;
+        this.fts5SearchService = fts5SearchService;
+        this.dialecticUserModelingService = dialecticUserModelingService;
         this.currentAgent = agentService.currentDefault();
         LOGGER.log(
                 Level.INFO,
@@ -105,8 +136,16 @@ public class ToolRuntimeContext {
         this.activeSessionId = activeSessionId;
     }
 
-    public ai.emailclaw.emailclaw.service.memory.MemoryService getMemoryService() {
+    public MemoryService getMemoryService() {
         return memoryService;
+    }
+
+    public Fts5SearchService getFts5SearchService() {
+        return fts5SearchService;
+    }
+
+    public DialecticUserModelingService getDialecticUserModelingService() {
+        return dialecticUserModelingService;
     }
 
     public void refreshForAgent(AgentInfo agent) {

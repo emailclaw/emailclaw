@@ -10,6 +10,8 @@
  */
 package ai.emailclaw.emailclaw.service.memory;
 
+import ai.emailclaw.emailclaw.model.ProjectInfo;
+import ai.emailclaw.emailclaw.service.ProjectService;
 import ai.emailclaw.emailclaw.storage.AppPaths;
 import ai.emailclaw.emailclaw.storage.WorkspacePaths;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
@@ -18,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,10 +35,10 @@ import java.util.logging.Logger;
 public class MemoAutoSync {
     private static final Logger LOGGER = Logger.getLogger(MemoAutoSync.class.getName());
 
-    private final ai.emailclaw.emailclaw.service.ProjectService projectService;
-    private String lastSyncedSummary = "";
+    private final ProjectService projectService;
+    private final Map<String, String> lastSyncedByAgent = new ConcurrentHashMap<>();
 
-    public MemoAutoSync(ai.emailclaw.emailclaw.service.ProjectService projectService) {
+    public MemoAutoSync(ProjectService projectService) {
         this.projectService = projectService;
         LOGGER.info("MemoAutoSync initialization completed");
     }
@@ -49,16 +53,16 @@ public class MemoAutoSync {
      * @param summary The current session summary
      */
     public void syncSummary(String agentId, String summary, String projectId) {
-        if (summary == null || summary.isBlank()) {
+        if (summary == null || summary.isBlank() || agentId == null) {
             return;
         }
-        if (summary.equals(lastSyncedSummary)) {
+        String previous = lastSyncedByAgent.put(agentId, summary);
+        if (summary.equals(previous)) {
             return;
         }
-        lastSyncedSummary = summary;
 
         try {
-            ai.emailclaw.emailclaw.model.ProjectInfo project = projectService.findById(projectId);
+            ProjectInfo project = projectService.findById(projectId);
             String baseDirStr = project.getBaseDirectory();
             Path base = Path.of(FileNameUtils.expandUserHome(baseDirStr));
             Path baseDir = base.resolve(AppPaths.AGENT_WORKSPACE_DIR);

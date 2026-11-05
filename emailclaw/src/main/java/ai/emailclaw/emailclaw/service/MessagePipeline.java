@@ -18,11 +18,15 @@ import ai.emailclaw.emailclaw.model.ChatMessagePart;
 import ai.emailclaw.emailclaw.model.ChatMessageRoles;
 import ai.emailclaw.emailclaw.model.ChatSessionInfo;
 import ai.emailclaw.emailclaw.model.DeliveryMode;
+import ai.emailclaw.emailclaw.model.ProjectInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.TokenUsageRecord;
+import ai.emailclaw.emailclaw.service.memory.DialecticUserModelingService;
 import ai.emailclaw.emailclaw.service.memory.MemoAutoSync;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
+import ai.emailclaw.emailclaw.service.skill.ExperienceReflectionService;
 import ai.emailclaw.emailclaw.storage.AppContext;
+import ai.emailclaw.emailclaw.storage.sqlite.Fts5SearchService;
 import io.agentscope.core.agent.AgentRun;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
@@ -93,6 +97,12 @@ public class MessagePipeline {
 
     private final SessionTitleGenerator titleGenerator;
 
+    private final Fts5SearchService fts5SearchService;
+
+    private final ExperienceReflectionService experienceReflectionService;
+
+    private final DialecticUserModelingService dialecticUserModelingService;
+
     private final Map<String, AgentChatPending> pendingAgentChatReplies = new ConcurrentHashMap<>();
 
     private final Map<String, AgentRun<AgentEvent>> activeRuns = new ConcurrentHashMap<>();
@@ -111,6 +121,40 @@ public class MessagePipeline {
             MemoAutoSync memoAutoSync,
             SessionTitleGenerator titleGenerator,
             ChatService chatService) {
+        this(
+                repository,
+                agentService,
+                providerService,
+                governanceService,
+                agentRuntimeDispatcher,
+                chatSessionRepository,
+                toolRuntimeContext,
+                messageBusService,
+                memoAutoSync,
+                titleGenerator,
+                chatService,
+                toolRuntimeContext != null ? toolRuntimeContext.getFts5SearchService() : null,
+                null,
+                toolRuntimeContext != null
+                        ? toolRuntimeContext.getDialecticUserModelingService()
+                        : null);
+    }
+
+    public MessagePipeline(
+            AppContext repository,
+            AgentService agentService,
+            ProviderService providerService,
+            GovernanceService governanceService,
+            AgentRuntimeDispatcher agentRuntimeDispatcher,
+            ChatSessionRepository chatSessionRepository,
+            ToolRuntimeContext toolRuntimeContext,
+            MessageBusService messageBusService,
+            MemoAutoSync memoAutoSync,
+            SessionTitleGenerator titleGenerator,
+            ChatService chatService,
+            Fts5SearchService fts5SearchService,
+            ExperienceReflectionService experienceReflectionService,
+            DialecticUserModelingService dialecticUserModelingService) {
         this.repository = repository;
         this.agentService = agentService;
         this.providerService = providerService;
@@ -122,6 +166,9 @@ public class MessagePipeline {
         this.memoAutoSync = memoAutoSync;
         this.titleGenerator = titleGenerator;
         this.chatService = chatService;
+        this.fts5SearchService = fts5SearchService;
+        this.experienceReflectionService = experienceReflectionService;
+        this.dialecticUserModelingService = dialecticUserModelingService;
     }
 
     /**
@@ -284,9 +331,7 @@ public class MessagePipeline {
                             rcBuilder.put("projectId", toolRuntimeContext.activeProject.getId());
                             rcBuilder.put(
                                     "projectName", toolRuntimeContext.activeProject.getName());
-                            rcBuilder.put(
-                                    ai.emailclaw.emailclaw.model.ProjectInfo.class,
-                                    toolRuntimeContext.activeProject);
+                            rcBuilder.put(ProjectInfo.class, toolRuntimeContext.activeProject);
                         }
                         if (deliveryMode != null) {
                             rcBuilder.put(DeliveryMode.class, deliveryMode);
@@ -488,8 +533,15 @@ public class MessagePipeline {
                                 agent.getId(),
                                 memoAutoSync,
                                 chatService,
-                                titleGenerator);
+                                titleGenerator,
+                                fts5SearchService,
+                                experienceReflectionService,
+                                dialecticUserModelingService,
+                                agent,
+                                provider,
+                                modelId);
                 postHandler.executePostProcessing(
+                        prompt,
                         completedText,
                         firstUserMessage && prompt != null,
                         config.isAutoGenerateSessionTitle());

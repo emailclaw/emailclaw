@@ -64,6 +64,7 @@ This makes Emailclaw especially suitable for email lovers and those who need to 
 - **Controlled Agent Actions**: Models, tools, Skills, MCP, cron jobs, and plugins can be composed; high-risk tool calls can be approved via a 4-digit confirmation code in email.
 - **Suitable for Long-running**: Supports Linux headless service mode, boot startup, Cron automation, and log troubleshooting.
 - **Universal Bridge to Top AI CLIs**: Uses everyday email as a zero-friction bridge (no extra mobile or desktop apps required) to orchestrate and drive cutting-edge AI coding and agent CLI tools, including **Google Antigravity CLI (`agy`)**, **Anthropic Claude Code CLI (`claude`)**, **OpenAI Codex CLI (`codex`)**, and **OpenCode CLI (`opencode`)**.
+- **Hermes Closed-Loop Skill Self-Evolution & Dialectic Memory**: Breaks away from static prompt configurations by implementing an autonomous self-learning closed loop: *Experience Distillation → Skill Creation (with Security Promotion Gates) → Usage Telemetry → In-Place Live Patching → Background Curator Archiving & LLM Umbrella Consolidation*. Coupled with SQLite FTS5 (CJK-aware) cross-session search and Honcho dialectic user modeling.
 - **Extensible**: Based on Java SPI and external JAR plugins; extensible for tools, Providers, hooks, MCP, UI, and channels.
 - **Powered by AgentScope Java**: Utilizes AgentScope Java 2.0's Agent, model, event, tool, permission, and Harness capabilities.
 
@@ -292,6 +293,43 @@ Emailclaw provides out-of-the-box plugin tools connecting your agent directly wi
 - **Email as the Universal Zero-Install Bridge**: You don't need to install terminal emulators, mobile SSH apps, or proprietary chat software on your phone or tablet. Email is the universal communication protocol everyone already has. Whether on a commute or in a meeting, simply send a regular email from any device, and Emailclaw acts as the autonomous bridge—dispatching tasks to the local or server CLI and replying with complete results and artifacts directly to your inbox.
 - **Effortless Drop-in Deployment with Hot-Reload**: To enable a tool, simply copy the plugin JAR (e.g. `emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar`) into `~/emailclaw/plugins`. **No need to restart Emailclaw!** Thanks to built-in dynamic directory watching and hot-reloading (`Hot-Reload`), the new tool is recognized, initialized, and made available to agents immediately at runtime.
 - **Industrial-Grade PathResolver Strategy**: Each plugin incorporates intelligent executable discovery that automatically probes `$HOME/.local/bin`, `$HOME/.opencode/bin`, toolchain directories, and the system `PATH`, while enriching the child process execution environment so that nested commands and dependencies run flawlessly even in non-login headless server modes.
+
+## Hermes Closed-Loop Skill Self-Evolution & Dialectic Memory
+
+Traditional AI agents rely on static, frozen configuration files and prompt lists, making them unable to accumulate operational wisdom or adapt over time. Inspired by [Hermes Agent](https://github.com/nousresearch/hermes-agent), Emailclaw implements an autonomous, production-grade **Closed-Loop Skill Self-Evolution System**:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       Emailclaw Closed-Loop Evolution                       │
+│                                                                             │
+│   Experience Reflection ──► Draft Creation ──► Security Promotion Gate      │
+│            ▲                                           │                    │
+│            │                                           ▼                    │
+│    In-Place Live Patch  ◄── Telemetry ◄── Progressive Disclosure System     │
+│            │                 (Uses/Views)              │                    │
+│            ▼                                           ▼                    │
+│   Daily Audit Log (.audit/)                  Curator Phase 1 (STALE/ARCHIVED│
+│                                              Curator Phase 2 (Umbrella LLM) │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Experience to Skill Distillation (`ExperienceReflectionService`)**:
+   - Following multi-step problem solving, error recovery, or substantive task delivery, the agent autonomously dispatches an asynchronous reflection sub-agent to distill reusable techniques into `skills/_drafts/<name>/SKILL.md`.
+   - Candidate drafts undergo automated `SkillSecurityScanner` inspection (`SAFE`, `CAUTION`, `DANGEROUS`). Safe candidates are seamlessly promoted into the active workspace skill set.
+2. **Progressive Disclosure & Telemetry (`SkillVisibilityFilter` & `SkillUsageStore`)**:
+   - Instead of stuffing dozens of full-text skills into the prompt and blowing up context windows, Emailclaw exposes only lightweight title and description summaries. Full instructions are loaded on-demand via `read_skill_detail` only when needed.
+   - Runtime telemetry (`useCount`, `viewCount`, `patchCount`, `lastUsedAt`) is tracked per skill in `.usage.jsonl`.
+3. **In-Place Live Patching & Audit Logging (`SkillManageTool`)**:
+   - When operational edge cases or workflow shifts occur, the agent live-patches skill instructions in place with atomic rollback protection. Every mutation is immutably recorded in daily audit logs (`skills/.audit/YYYY-MM-DD.jsonl`).
+4. **Background Skill Curator (`EmailclawSkillCuratorService`)**:
+   - **Phase 1 (Lifecycle State Machine)**: A scheduled background daemon shifts unused skills (`ACTIVE → STALE → ARCHIVED`), keeping the prompt catalog clean and efficient while archiving inactive skills to `skills/.archive/`.
+   - **Phase 2 (LLM Umbrella Consolidation)**: Clusters fragmented sibling skills sharing common prefixes (e.g., `mail-send`, `mail-read`, `mail-filter`) and invokes the configured LLM to synthesize a unified `<prefix>-umbrella` skill, automatically archiving redundant fragments.
+5. **Cross-Session SQLite FTS5 (Hybrid CJK Tokenization)**:
+   - Full-text search across past email sessions and memory notes powered by SQLite FTS5 with custom overlapping Bigram + Unigram CJK tokenization (`CjkFtsTokenizer`) and BM25 + exponential time-decay scoring.
+6. **Honcho Dual-Peer Dialectic User Modeling (`DialecticUserModelingService`)**:
+   - Continuously resolves observations through Hegelian dialectics (`Thesis → Antithesis → Synthesis`), maintaining dynamic `USER.md` (user preferences and behavioral traits) and `PROFILE.md` (agent interaction contract) files injected as prompt-cached context snapshots.
+7. **Interactive UI Visualization & 1-Click Restore (`SkillsView`)**:
+   - Visualizes live skill states with color-coded badges (`ACTIVE`, `STALE`, `ARCHIVED`, `DRAFT`), displays usage counters (`Uses: X · Views: Y · Patches: Z`), offers instant state filtering, and provides a 1-click **Restore** button to seamlessly recover archived skills back into active service.
 
 ## Documentation
 

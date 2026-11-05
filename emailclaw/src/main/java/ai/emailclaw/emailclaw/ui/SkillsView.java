@@ -24,11 +24,13 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -67,6 +69,10 @@ public class SkillsView implements ViewPane {
     private final TilePane grid = new TilePane();
 
     private final TextField filter = new TextField();
+
+    private final TextField tagFilter = new TextField();
+
+    private final ComboBox<String> stateFilter = new ComboBox<>();
 
     public SkillsView(AppContext repository, SkillService skillService, AgentInfo agent) {
         this.repository = repository;
@@ -115,12 +121,15 @@ public class SkillsView implements ViewPane {
                         create);
         HBox filters = new HBox(8);
         filter.setPromptText("Filter by name");
-        TextField tag = new TextField();
-        tag.setPromptText("Filter by tag");
+        tagFilter.setPromptText("Filter by tag");
+        stateFilter.getItems().addAll("All States", "ACTIVE", "STALE", "ARCHIVED", "DRAFT");
+        stateFilter.setValue("All States");
         HBox.setHgrow(filter, Priority.ALWAYS);
-        HBox.setHgrow(tag, Priority.ALWAYS);
+        HBox.setHgrow(tagFilter, Priority.ALWAYS);
         filter.textProperty().addListener((obs, o, n) -> refresh());
-        filters.getChildren().addAll(filter, tag);
+        tagFilter.textProperty().addListener((obs, o, n) -> refresh());
+        stateFilter.valueProperty().addListener((obs, o, n) -> refresh());
+        filters.getChildren().addAll(filter, tagFilter, stateFilter);
         grid.setPrefColumns(4);
         grid.setHgap(10);
         grid.setVgap(10);
@@ -268,34 +277,79 @@ public class SkillsView implements ViewPane {
         LOGGER.log(Level.FINE, "Refresh skill list: agent={0}", agent.getId());
         grid.getChildren().clear();
         String keyword = filter.getText() == null ? "" : filter.getText().trim().toLowerCase();
+        String tagKeyword =
+                tagFilter.getText() == null ? "" : tagFilter.getText().trim().toLowerCase();
+        String selectedState = stateFilter.getValue();
         for (SkillInfo skill : skillService.listWorkspaceSkills(agent.getId())) {
             if (!keyword.isBlank() && !skill.name().toLowerCase().contains(keyword)) {
                 continue;
             }
+            if (!tagKeyword.isBlank()
+                    && skill.tags().stream().noneMatch(t -> t.toLowerCase().contains(tagKeyword))) {
+                continue;
+            }
+            if (selectedState != null
+                    && !"All States".equalsIgnoreCase(selectedState)
+                    && !selectedState.equalsIgnoreCase(skill.lifecycleState())) {
+                continue;
+            }
             VBox card = new VBox(6);
             card.getStyleClass().add("card");
-            Label title = new Label(skill.name());
-            title.getStyleClass().add("card-title");
+            boolean isArchived = "ARCHIVED".equalsIgnoreCase(skill.lifecycleState());
+            if (isArchived) {
+                card.setOpacity(0.65);
+            }
+            HBox badgeRow = new HBox(6);
+            badgeRow.setAlignment(Pos.CENTER_LEFT);
             Label status = new Label(skill.enabled() ? "Enabled" : "Disabled");
             status.getStyleClass().add(skill.enabled() ? "status-ready" : "status-off");
+
+            String stateStr =
+                    (skill.lifecycleState() == null || skill.lifecycleState().isBlank())
+                            ? "ACTIVE"
+                            : skill.lifecycleState().toUpperCase();
+            Label lifecycleBadge = new Label(stateStr);
+            switch (stateStr) {
+                case "ACTIVE" -> lifecycleBadge.getStyleClass().add("lifecycle-active");
+                case "STALE" -> lifecycleBadge.getStyleClass().add("lifecycle-stale");
+                case "ARCHIVED" -> lifecycleBadge.getStyleClass().add("lifecycle-archived");
+                case "DRAFT" -> lifecycleBadge.getStyleClass().add("lifecycle-draft");
+                default -> lifecycleBadge.getStyleClass().add("muted-badge");
+            }
+
             Label tag = new Label(skill.builtIn() ? "Built-in" : "Custom");
             tag.getStyleClass().add("muted-badge");
-            Label desc = new Label(skill.description());
+            badgeRow.getChildren().addAll(status, lifecycleBadge, tag);
+
+            Label title = new Label(skill.name());
+            title.getStyleClass().add("card-title");
+
+            Label desc = new Label(skill.description() == null ? "" : skill.description());
             desc.setWrapText(true);
-            Button toggle = new Button(skill.enabled() ? "Disable" : "Enable");
+
+            String telemetryText =
+                    String.format(
+                            "Uses: %d · Views: %d · Patches: %d",
+                            skill.useCount(), skill.viewCount(), skill.patchCount());
+            Label telemetry = new Label(telemetryText);
+            telemetry.getStyleClass().add("telemetry-meta");
+
+            Button toggle =
+                    new Button(isArchived ? "Restore" : (skill.enabled() ? "Disable" : "Enable"));
             toggle.getStyleClass().add("chip-btn");
             toggle.addEventFilter(MouseEvent.MOUSE_CLICKED, MouseEvent::consume);
             toggle.setOnAction(
                     e -> {
                         try {
-                            skillService.setSkillEnabled(
-                                    agent.getId(), skill.name(), !skill.enabled());
+                            if (isArchived) {
+                                skillService.setSkillEnabled(agent.getId(), skill.name(), true);
+                            } else {
+                                skillService.setSkillEnabled(
+                                        agent.getId(), skill.name(), !skill.enabled());
+                            }
                             refresh();
                         } catch (Exception ex) {
-                            new javafx.scene.control.Alert(
-                                            javafx.scene.control.Alert.AlertType.ERROR,
-                                            ex.getMessage())
-                                    .showAndWait();
+                            new Alert(Alert.AlertType.ERROR, ex.getMessage()).showAndWait();
                         }
                     });
             Button delete = new Button("Delete");
@@ -306,9 +360,9 @@ public class SkillsView implements ViewPane {
             // The whole card except buttons is used as an edit entry; buttons consume mouse events
             // to avoid mistakenly opening the edit dialog.
             card.setOnMouseClicked(e -> showEditSkillDialog(skill));
-            card.getChildren().addAll(status, title, tag, desc, actions);
+            card.getChildren().addAll(badgeRow, title, desc, telemetry, actions);
             card.setPrefWidth(280);
-            card.setPrefHeight(200);
+            card.setPrefHeight(220);
             grid.getChildren().add(card);
         }
     }
@@ -333,6 +387,15 @@ public class SkillsView implements ViewPane {
         type.setDisable(true);
         TextField installedFrom = new TextField(installedFromLabel(skill.installedFrom()));
         installedFrom.setDisable(true);
+        TextField lifecycle =
+                new TextField(skill.lifecycleState() == null ? "ACTIVE" : skill.lifecycleState());
+        lifecycle.setDisable(true);
+        TextField telemetry =
+                new TextField(
+                        String.format(
+                                "Uses: %d, Views: %d, Patches: %d",
+                                skill.useCount(), skill.viewCount(), skill.patchCount()));
+        telemetry.setDisable(true);
         GridPane form = new GridPane();
         form.setHgap(10);
         form.setVgap(8);
@@ -352,6 +415,10 @@ public class SkillsView implements ViewPane {
         form.add(type, 1, 6);
         form.add(new Label("Installed from"), 0, 7);
         form.add(installedFrom, 1, 7);
+        form.add(new Label("Lifecycle"), 0, 8);
+        form.add(lifecycle, 1, 8);
+        form.add(new Label("Telemetry"), 0, 9);
+        form.add(telemetry, 1, 9);
         GridPane.setHgrow(name, Priority.ALWAYS);
         GridPane.setHgrow(content, Priority.ALWAYS);
         GridPane.setHgrow(channels, Priority.ALWAYS);
@@ -409,7 +476,12 @@ public class SkillsView implements ViewPane {
                         .map(String::trim)
                         .filter(value -> !value.isBlank())
                         .toList(),
-                parseConfig(config.getText()));
+                parseConfig(config.getText()),
+                skill.lifecycleState(),
+                skill.useCount(),
+                skill.viewCount(),
+                skill.patchCount(),
+                skill.lastUsedAt());
     }
 
     private List<String> parseCsv(String text, List<String> defaultValue) {
@@ -501,8 +573,20 @@ public class SkillsView implements ViewPane {
     private void applyBatchEnabled(boolean enabled) {
         List<SkillInfo> filtered = new ArrayList<>();
         String keyword = filter.getText() == null ? "" : filter.getText().trim().toLowerCase();
+        String tagKeyword =
+                tagFilter.getText() == null ? "" : tagFilter.getText().trim().toLowerCase();
+        String selectedState = stateFilter.getValue();
         for (SkillInfo skill : skillService.listWorkspaceSkills(agent.getId())) {
             if (!keyword.isBlank() && !skill.name().toLowerCase().contains(keyword)) {
+                continue;
+            }
+            if (!tagKeyword.isBlank()
+                    && skill.tags().stream().noneMatch(t -> t.toLowerCase().contains(tagKeyword))) {
+                continue;
+            }
+            if (selectedState != null
+                    && !"All States".equalsIgnoreCase(selectedState)
+                    && !selectedState.equalsIgnoreCase(skill.lifecycleState())) {
                 continue;
             }
             filtered.add(skill);
@@ -515,9 +599,7 @@ public class SkillsView implements ViewPane {
             StringBuilder sb = new StringBuilder();
             errors.forEach(
                     (name, reason) -> sb.append(name).append(": ").append(reason).append("\n"));
-            new javafx.scene.control.Alert(
-                            javafx.scene.control.Alert.AlertType.WARNING,
-                            "Batch operation completed with errors:\n" + sb)
+            new Alert(Alert.AlertType.WARNING, "Batch operation completed with errors:\n" + sb)
                     .showAndWait();
         }
     }

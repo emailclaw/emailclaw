@@ -287,6 +287,95 @@ Official installation scripts for CLI tools frequently place executables in user
 - **Automated Discovery**: Every CLI plugin includes a dedicated `PathResolver` strategy that expands tilde (`~`), inspects system environment variables, scans the system `PATH`, and probes well-known candidate directories.
 - **Subprocess PATH Enrichment**: Before launching the process, the runner enriches the subprocess environment `PATH` with the executable's directory and standard local bin paths, guaranteeing that internal toolchains (such as Node, Python, and Git) resolve without `error=2: No such file or directory` issues.
 
+### 8.2 Hermes Closed-Loop Skill Self-Evolution System
+
+Traditional AI agents rely on static, manually written skill definitions and fixed prompts. They cannot learn from operational mistakes, adapt to new project workflows, or accumulate domain expertise over time. Emailclaw introduces an industrial-grade **Closed-Loop Skill Self-Evolution System** inspired by [Hermes Agent](https://github.com/nousresearch/hermes-agent), transforming the agent from a static tool-caller into a continually evolving system that gets smarter, cleaner, and faster the longer you use it.
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        Hermes Closed-Loop Evolution Flow                               │
+│                                                                                        │
+│   ┌────────────────────────┐      ┌────────────────────────┐      ┌──────────────────┐ │
+│   │ 1. Turn Execution      │─────►│ 2. Post-Turn Reflection│─────►│ 3. Draft Staging │ │
+│   │ (Multi-step / Recovery)│      │    (Sub-Agent Distill) │      │ skills/_drafts/  │ │
+│   └────────────────────────┘      └────────────────────────┘      └────────┬─────────┘ │
+│                                                                            │           │
+│                                      Security Scan (SAFE) ◄────────────────┘           │
+│                                                │                                       │
+│                                                ▼                                       │
+│   ┌────────────────────────┐      ┌────────────────────────┐                           │
+│   │ 5. In-Place Live Patch │◄─────│ 4. Progressive Catalog │                           │
+│   │    & Daily Audit Log   │      │    & Runtime Telemetry │                           │
+│   └────────────────────────┘      └────────────┬───────────┘                           │
+│                                                │                                       │
+│                                                ▼                                       │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │ 6. Background Skill Curator Daemon (Scheduled Execution)                       │   │
+│   │    • Phase 1: Lifecycle State Machine (ACTIVE ──► STALE ──► ARCHIVED)          │   │
+│   │    • Phase 2: LLM Umbrella Consolidation (Prefix Clustering ──► Umbrella Skill)│   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 8.2.1 The Closed-Loop Self-Evolution Lifecycle
+
+1. **Autonomous Experience Reflection (`ExperienceReflectionService`)**:
+   - Following every conversational turn or email task execution, the system evaluates task complexity (multi-step tool sequences, exception recovery traces, and substantive artifact generation).
+   - If significant reusable experience is detected and the per-agent reflection cooldown has elapsed, Emailclaw dispatches an asynchronous reflection sub-agent equipped with `propose_skill` and `skill_manage`.
+   - The sub-agent synthesizes the workflow into a clean, standardized Markdown skill saved in `skills/_drafts/<skill-name>/SKILL.md`.
+
+2. **Security Promotion Gate (`SkillPromotionGate` & `SkillSecurityScanner`)**:
+   - Candidate skill drafts do not immediately execute in production. Every draft is automatically scanned by `SkillSecurityScanner` for malicious constructs, dangerous system commands, and privilege escalation vulnerabilities.
+   - Verdicts are categorized into `SAFE`, `CAUTION`, and `DANGEROUS`. Only drafts with a `SAFE` verdict are promoted into the active workspace directory (`skills/<skill-name>/SKILL.md`), registered in `.emailclaw-skill.json`, and enabled.
+
+3. **Progressive Disclosure & Telemetry Tracking (`SkillVisibilityFilter` & `SkillUsageStore`)**:
+   - Traditional agents dump thousands of tokens of skill bodies into the system prompt, causing prompt pollution and excessive token costs. Emailclaw uses **Progressive Disclosure**: only skill names, brief descriptions, and trigger tags are injected into the system prompt.
+   - When the agent determines a task requires a specific skill, it invokes the built-in `read_skill_detail` tool to load the complete instruction body on-demand.
+   - Every view, execution, and patch is tracked inside `skills/.usage.jsonl`:
+     - `useCount`: Number of times the skill was called by the agent.
+     - `viewCount`: Number of times the skill definition was inspected via progressive disclosure.
+     - `patchCount`: Number of live patches applied to the skill.
+     - `lastUsedAt`: Timestamp of the latest invocation.
+
+4. **In-Place Live Patching & Immutable Audit Logging (`SkillManageTool`)**:
+   - If a skill definition encounters an edge case, API change, or outdated instruction during task execution, the agent can live-patch the skill directly using the `skill_manage` tool (`action="patch"`).
+   - Patch operations perform atomic file replacements with automatic backup rollbacks. Every mutation is immutably logged into daily audit files at `skills/.audit/YYYY-MM-DD.jsonl` for enterprise accountability and compliance.
+
+5. **Background Curator Daemon (`EmailclawSkillCuratorService`)**:
+   Emailclaw runs a background curator daemon (`emailclaw-skill-curator-daemon`) across all agent workspaces to maintain workspace hygiene:
+   - **Phase 1 (Lifecycle State Machine)**: Evaluates usage telemetry from `.usage.jsonl`. Skills with zero uses exceeding `staleAfterDays` (default: 14 days) transition from `ACTIVE` to `STALE`. Skills remaining stale beyond `archiveAfterStaleDays` (default: 14 days) are automatically transitioned to `ARCHIVED` and moved to `skills/.archive/<name>-<timestamp>`.
+   - **Phase 2 (LLM Umbrella Consolidation)**: When an agent accumulates multiple fragmented sub-skills sharing a common hyphenated prefix (e.g. `hermesmail-draft`, `hermesmail-send`, `hermesmail-search`, `hermesmail-verify`), the Curator groups them and prompts the LLM to synthesize a unified `<prefix>-umbrella` skill. The redundant sub-skills are cleanly moved into `.archive/`, dramatically reducing catalog clutter while expanding agent capability.
+
+#### 8.2.2 Cross-Session SQLite FTS5 Search (Hybrid CJK Tokenization)
+
+Emailclaw integrates a high-performance cross-session retrieval engine powered by SQLite FTS5:
+- **Zero-Dependency Hybrid CJK Tokenizer (`CjkFtsTokenizer`)**: Breaks Chinese, Japanese, and Korean text into overlapping bigrams (e.g. `"邮件代理"` → `"邮件 件代 代理"`) alongside boundary unigrams and normalized alphanumeric tokens. This enables accurate, instant substring and phrase matching in SQLite FTS5 without requiring external C libraries or native dictionary binaries.
+- **BM25 with Exponential Time-Decay Scoring**: Search results from `session_messages_fts` and `memory_notes_fts` are ranked using an industrial-grade composite score:
+  $$\text{FinalScore} = \text{BM25Score} \times 0.5^{\Delta t_{\text{days}} / 30.0}$$
+  Recent conversations receive higher ranking priority while preserving deep historical relevance.
+- **On-Demand Search Tools**: The agent is provided with `@Tool(name = "session_search")` and `@Tool(name = "memory_search")` to recall historical decisions, configurations, and past email outcomes across months of usage.
+
+#### 8.2.3 Honcho Dual-Peer Dialectic User Modeling
+
+To ensure the agent adapts deeply to each user's unique habits, tone, and implicit preferences, Emailclaw integrates a Honcho-inspired dual-peer Hegelian dialectic modeling engine (`DialecticUserModelingService`):
+- **Hegelian Dialectic Loop**: Atomic observations from conversational interactions are recorded as claims (`USER` and `AGENT` peers). When opposing signals emerge, the service resolves them into a higher-order synthesis (`Thesis → Antithesis → Synthesis`).
+- **Dynamic Context Snapshots**: The resolved syntheses are automatically rendered into prompt-cache-friendly Markdown documents:
+  - `USER.md`: Captures user communication preferences, coding conventions, project constraints, and domain terminology.
+  - `PROFILE.md`: Captures the agent's behavioral contract, tone guidelines, and operational boundaries.
+- These files are persisted in the agent's workspace and dynamically injected into the system prompt inside `<user_peer_profile>` and `<agent_peer_contract>` tags.
+
+#### 8.2.4 Managing Skill Lifecycle in the Desktop Interface (SkillsView)
+
+In the Emailclaw desktop UI, navigate to the **Skills** tab to manage the full self-evolution lifecycle:
+- **Lifecycle Badges**: Each skill card displays a distinctive color-coded badge:
+  - <span style="background-color:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-weight:600;">ACTIVE</span>: The skill is healthy, frequently used, and active in the agent's catalog.
+  - <span style="background-color:#fef3c7;color:#b45309;padding:2px 8px;border-radius:4px;font-weight:600;">STALE</span>: The skill has not been used within the decay threshold and is pending potential archiving.
+  - <span style="background-color:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:4px;font-weight:600;">ARCHIVED</span>: The skill was retired by the Curator and moved to `.archive/`. The card is displayed with dimmed opacity.
+  - <span style="background-color:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600;">DRAFT</span>: Newly synthesized candidate skill under staging.
+- **Telemetry Counter Row**: Displays live statistics directly on the card: `Uses: X · Views: Y · Patches: Z`.
+- **State Filter Dropdown**: Easily filter the view by choosing `All States`, `ACTIVE`, `STALE`, `ARCHIVED`, or `DRAFT`.
+- **1-Click Restore Action**: For any skill marked as `ARCHIVED`, the card's toggle button automatically changes to **Restore**. Clicking **Restore** immediately moves the skill directory out of `.archive/` back into active workspace storage, resets its state to `ACTIVE`, and re-enables it for task execution without requiring any manual terminal operations.
+
 ## 9. Linux Background Service: A Complete Installation Guide for PC Beginners
 
 This section applies to Ubuntu, Debian, and other Debian-based Linux distributions using **systemd**. The background service is suitable for users who want their computer to automatically receive task emails after booting: it has no desktop window, but runs the Emailclaw Channel, cron jobs, and Agents continuously. You still interact with it via email.
@@ -513,6 +602,14 @@ It might not be within the authorized scope of the current project/workspace, or
 ### Can I use my own Provider?
 
 Yes. When creating a Provider, fill in the Base URL, API Key, and model ID provided by the service provider. Ensure the selected model is compatible with the required tool calls, streaming output, or multimodal capabilities.
+
+### How does the Agent autonomously create and improve skills over time?
+
+Emailclaw runs the Hermes closed-loop self-evolution pipeline. When an agent completes a complex task or recovers from errors, an asynchronous reflection sub-agent distills the workflow into a candidate skill in `skills/_drafts/`. After passing the automated `SkillSecurityScanner`, the draft is promoted to active workspace skills. During execution, the agent can live-patch skills when instructions become outdated, while the background Curator automatically retires unused skills and consolidates fragmented sub-skills into unified umbrella skills.
+
+### Where do archived skills go, and how do I restore them?
+
+Inactive skills retired by the background Curator are moved to `<workspace>/skills/.archive/<name>-<timestamp>`. You can view them in the desktop application under **Skills** by selecting `ARCHIVED` in the state filter. To re-enable any archived skill, simply click the **Restore** button on its card; Emailclaw will automatically move it back to the active `skills/` directory, update its state to `ACTIVE`, and make it immediately available for future tasks.
 
 ## 11. Security Checklist
 

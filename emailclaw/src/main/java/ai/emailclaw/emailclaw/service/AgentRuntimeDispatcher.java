@@ -18,9 +18,11 @@ import ai.emailclaw.emailclaw.model.ModelInfo;
 import ai.emailclaw.emailclaw.model.ProviderInfo;
 import ai.emailclaw.emailclaw.model.SecuritySettings;
 import ai.emailclaw.emailclaw.model.SkillInfo;
+import ai.emailclaw.emailclaw.service.memory.DialecticUserModelingService;
 import ai.emailclaw.emailclaw.service.memory.MemoryRecallMiddleware;
 import ai.emailclaw.emailclaw.service.plan.PlanToHintMiddleware;
 import ai.emailclaw.emailclaw.service.security.GovernanceService;
+import ai.emailclaw.emailclaw.service.skill.EmailclawSkillVisibilityFilter;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
@@ -39,6 +41,7 @@ import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.skill.curator.SkillCuratorConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
@@ -290,35 +293,45 @@ public class AgentRuntimeDispatcher {
                         agentWorkspace);
 
         Toolkit toolkit = toolService.buildToolkit(toolRuntimeContext);
-        // Load skills and append to sysPrompt
-        List<SkillInfo> enabledSkills =
-                skillService.listWorkspaceSkills(agent.getId()).stream()
-                        .filter(skill -> skill.enabled())
-                        .filter(skill -> skillAppliesToChannel(skill, channel))
-                        .toList();
-        LOGGER.log(
-                Level.INFO,
-                "Skill call started: agent={0}, channel={1}, enabledSkillCount={2}",
-                new Object[] {agent.getId(), channel, enabledSkills.size()});
-        if (!enabledSkills.isEmpty()) {
-            StringBuilder skillsPrompt = new StringBuilder();
-            skillsPrompt.append("\n\n## Available Skills\n\n");
-            for (SkillInfo skill : enabledSkills) {
-                try {
-                    skillsPrompt.append("### Skill: ").append(skill.name()).append("\n");
-                    String content = skill.content();
-                    if (content != null && repository != null && repository.paths() != null) {
-                        String rootPath =
-                                repository.paths().root.toAbsolutePath().normalize().toString();
-                        content = content.replace("~/emailclaw", rootPath);
-                    }
-                    skillsPrompt.append(content).append("\n\n");
-                } catch (Exception e) {
-                    LOGGER.log(Level.WARNING, "Failed to read skill: " + skill.name(), e);
-                }
+        if (toolRuntimeContext != null
+                && toolRuntimeContext.getDialecticUserModelingService() != null) {
+            DialecticUserModelingService.PeerSnapshot snapshot =
+                    toolRuntimeContext.getDialecticUserModelingService().getSnapshot(agent.getId());
+            if (!snapshot.userPeerMarkdown().isBlank()) {
+                sysPrompt +=
+                        "\n\n<user_peer_profile version=\""
+                                + snapshot.version()
+                                + "\">\n"
+                                + snapshot.userPeerMarkdown().strip()
+                                + "\n</user_peer_profile>";
             }
-            sysPrompt = sysPrompt + skillsPrompt.toString();
+            if (!snapshot.agentPeerMarkdown().isBlank()) {
+                sysPrompt +=
+                        "\n\n<agent_peer_contract version=\""
+                                + snapshot.version()
+                                + "\">\n"
+                                + snapshot.agentPeerMarkdown().strip()
+                                + "\n</agent_peer_contract>";
+            }
         }
+        sysPrompt +=
+                "\n\n# Hermes Self-Learning & Progressive Skill Protocol\n"
+                        + "- Progressive Disclosure: Available skills are listed in"
+                        + " `<available_skills>` with metadata only. Call"
+                        + " `load_skill_through_path(skillId, path=\"SKILL.md\")` on demand before"
+                        + " executing a specialized workflow. When a loaded skill references"
+                        + " `~/emailclaw`, expand `~` to the User Home Directory specified in"
+                        + " `# Context Information`.\n"
+                        + "- Live Skill Patching: If a loaded skill contains outdated commands,"
+                        + " missing edge cases, or suboptimal steps, patch it in-place via"
+                        + " `skill_manage(action=\"patch\", name=..., old_string=...,"
+                        + " new_string=...)`.\n"
+                        + "- Experience-to-Skill Creation: After solving a complex multi-step"
+                        + " problem or learning a repeatable user SOP, distill it into a reusable"
+                        + " skill via `skill_manage(action=\"create\", ...)`.\n"
+                        + "- Cross-Session FTS5 & Dialectic Recall: Use `session_search` for"
+                        + " historical conversations, `memory_search` for long-term notes, and"
+                        + " `query_user_model` when resolving situational user preferences.";
         sysPrompt += ARTIFACT_DELIVERY_INSTRUCTION;
 
         java.util.List<Path> additionalRoots = new java.util.ArrayList<>();
@@ -408,6 +421,10 @@ public class AgentRuntimeDispatcher {
                         .maxAttempts(1)
                         .build();
 
+        EmailclawSkillVisibilityFilter skillGateAndFilter =
+                new EmailclawSkillVisibilityFilter(
+                        agent.getId(), channel, skillService, agentWorkspace);
+
         HarnessAgent.Builder builder =
                 HarnessAgent.builder()
                         .name(configuredName)
@@ -430,6 +447,14 @@ public class AgentRuntimeDispatcher {
                         // tools)
                         .enablePlanMode()
                         .enableSkillManageTool(true)
+                        .enableSkillPromotionGate(skillGateAndFilter, skillGateAndFilter)
+                        .enableSkillCurator(
+                                SkillCuratorConfig.builder()
+                                        .enabled(true)
+                                        .intervalHours(12)
+                                        .staleAfterDays(14)
+                                        .archiveAfterDays(30)
+                                        .build())
                         .enableAgentTracingLog(true)
                         .enablePendingToolRecovery(true)
                         .maxIters(Math.max(1, config.getMaxIterations()))
