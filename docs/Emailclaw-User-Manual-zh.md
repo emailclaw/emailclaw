@@ -580,7 +580,230 @@ rm -rf ~/emailclaw
 
 注意：`sudo apt purge emailclaw` 只会删除软件包文件和旧版本遗留文件。因为你的数据存放在自己的主目录，purge **不会**删除 `~/emailclaw`；如需删除请按上面命令手动执行。
 
-## 10. 常见问题
+## 10. 极客与终端交互：Rich Terminal Experience (CLI 交互入口与批处理引擎)
+
+除了直观的桌面图形界面（GUI）和无人值守的后台守护服务（`--service`）外，许多极客开发者、运维工程师和系统管理员习惯在云服务器、SSH 远程终端或 Docker 容器等无 X11/Wayland 桌面显示服务的环境下工作。为此，Emailclaw 内置了基于工业级 **JLine 4.5.0** 打造的顶级 **命令行交互界面（CLI）**，提供流畅的交互式对话 REPL 与强大的自动化批处理能力。
+
+### 10.1 快速上手与运行模式
+
+统一的 `emailclaw` 二进制入口支持双模交互范式：
+
+| 启动命令 | 运行模式 | 典型使用场景 |
+| --- | --- | --- |
+| `emailclaw cli` (或 `-c`) | **交互式 REPL 会话** | 全功能终端控制台：Tab 补全、语法高亮、思考链与工具流式卡片 |
+| `emailclaw run "<prompt>"` | **单次批处理运行** | Shell 脚本调用、自动化任务单次执行、CI/CD 流水线集成 |
+| `emailclaw run -p "<prompt>" --json` | **结构化输出模式** | 将响应流以标准化 JSON 数组输出，方便下游程序（如 jq、Python）解析 |
+| `emailclaw` (在无桌面 Linux 下) | **环境自适应降级** | 当检测到无显示服务或处于纯终端环境时，自动安全启动 CLI 模式 |
+
+#### 命令行参数速查：
+```text
+用法:
+  emailclaw [选项]                启动桌面图形界面 (若无桌面环境则自适应启动 CLI)
+  emailclaw cli [选项]            启动基于 JLine 4 的交互式 CLI REPL 终端
+  emailclaw run <提示词>          以非交互式批处理模式执行单次提示词任务
+  emailclaw service               以后台无图形守护服务模式运行
+
+选项:
+  -p, --prompt <文本>             指定待执行的提示词内容
+  -a, --agent <id>                指定对话所使用的目标 Agent ID
+  -s, --session <id>              恢复或绑定到现有的会话 ID
+  -q, --quiet                     静默模式（run 模式下抑制横幅与耗时等修饰文本）
+  --json                          以结构化 JSON 格式输出事件数据
+  -h, --help                      显示帮助信息
+  -v, --version                   显示版本信息
+```
+
+---
+
+### 10.2 终端行编辑与历史记录持久化
+
+启动 `emailclaw cli` 后，控制台首先呈现精美的应用欢迎横幅，清晰标注当前版本、默认 Agent、模型与工作区路径：
+
+```text
+  ╔═══════════════════════════════════════════════════════════════════╗
+  ║                     EMAILCLAW AGENT CLI                           ║
+  ║      The Ultimate Autonomous AI Agent for Modern Workflows        ║
+  ╚═══════════════════════════════════════════════════════════════════╝
+
+  Version:   v26.10.26   Agent: default   Model: qwen-max
+  Workspace: /home/user/emailclaw
+  Commands:  Type /help for commands, <TAB> for autocomplete, or /exit to quit.
+
+emailclaw:default(main) > 
+```
+
+#### 终端操控体验：
+- **历史记录安全持久化**：用户输入的所有命令与提示词自动保存至 `~/emailclaw/.cli-history/history`。系统启用了自动去重（`HISTORY_IGNORE_DUPS`）以及特殊事件转义安全保护（`DISABLE_EVENT_EXPANSION`），确保提示词中的感叹号（如 `!important`）不会被错误触发为 Bash 历史展开。
+- **全功能行编辑**：完全兼容 POSIX Readline 快捷键，包括 <kbd>Ctrl</kbd> + <kbd>A</kbd>（跳至行首）、<kbd>Ctrl</kbd> + <kbd>E</kbd>（跳至行尾）、<kbd>Alt</kbd> + <kbd>F</kbd>/<kbd>B</kbd>（按词前后跳转）以及 <kbd>Ctrl</kbd> + <kbd>R</kbd>（反向历史搜索）。
+- **非破坏性优雅中断**：在模型生成或工具执行期间按下 <kbd>Ctrl</kbd> + <kbd>C</kbd>，系统会调用 `ChatService.cancelRun` 安全取消当前 Turn 推理并回退至输入提示符，不会直接杀死 CLI 进程。在等待输入时按 <kbd>Ctrl</kbd> + <kbd>D</kbd> 或输入 `/exit`，历史记录安全落盘并平滑退出。
+
+---
+
+### 10.3 内置斜杠命令系统
+
+CLI 内置本地斜杠命令路由器。所有以 `/` 开头的命令均在本地即时拦截并执行，绝不向大模型浪费 Token：
+
+| 斜杠命令 | 参数 | 说明 |
+| --- | --- | --- |
+| `/help` (或 `/?`) | 无 | 显示所有支持的斜杠命令清单与帮助说明 |
+| `/session list` | 无 | 列出当前 Agent 关联的所有历史会话记录 |
+| `/session new` | 无 | 创建并立即切换至全新的独立会话 |
+| `/session switch` | `<会话ID>` | 切换当前活动的会话上下文 |
+| `/agent list` | 无 | 查看系统中所有已配置的 Agent，高亮标注当前活动 Agent |
+| `/agent switch` | `<AgentID>` | 热切换当前交互的 Agent 实体 |
+| `/model list` (或 `/model`) | 无 | 查看所有已配置的模型服务商（显示为 `providerId (providerName)`）及其所属模型清单 |
+| `/model switch` | `<模型ID>` 或 `<服务商ID>/<模型ID>` 或 `<服务商ID>:<模型ID>` | 实时热切换当前 Agent 所绑定的模型（可联动切换服务商） |
+| `/skills` | 无 | 盘点当前工作区已启用的技能与系统共享技能池 |
+| `/plan` | 无 | 查看当前会话生成的长期执行规划、总目标与各子任务进展状态 |
+| `/history` | `[条数]` | 显示当前会话最近的 `n` 条对话记录（默认 5 条） |
+| `/compact` | 无 | 主动触发上下文记忆压缩，释放 Token 窗口 |
+| `/clear` | 无 | 清除终端屏幕内容 |
+| `/exit` (或 `/quit`) | 无 | 保存命令行历史并优雅退出 CLI |
+
+#### Tab 智能补全与语法高亮：
+- 输入 `/` 并按下 <kbd>Tab</kbd>，终端自动弹出分组候选菜单与命令描述；
+- 支持二级命令与参数智能联想（例如 `/session switch`、`/agent switch`、`/model switch` 的模型与服务商补全）；
+- 输入命令时，主命令呈现加粗青色，二级参数呈现黄色，字符串呈现白色，直观醒目。
+
+#### 10.3.1 模型列表与跨服务商热切换语法（/model, /model list, /model switch）
+
+Emailclaw CLI 提供了工业级的多服务商模型查询与快速热切换能力。用户不仅可以随时盘点所有已接入的模型服务商与可用模型，更可以通过灵活的语法在当前服务商或跨服务商之间实现秒级无缝切换。
+
+##### 1. 查看已配置服务商与模型清单（`/model` 或 `/model list`）
+在 CLI 提示符下输入 `/model` 或 `/model list`，系统将遍历 `~/emailclaw/.config/providers.json` 中配置的所有服务商，并清晰打印出每个服务商的唯一标识符 `providerId` 及其显示名称 `providerName`，同时高亮标出当前活动服务商与正在使用的模型：
+
+```text
+── Configured Model Providers & Models ─────────────────────────
+▶ Provider: aliyun (Alibaba Cloud DashScope) [Active Provider]
+    * qwen-max                      | Name: Qwen Max
+      qwen-plus                     | Name: Qwen Plus
+      qwen-turbo                    | Name: Qwen Turbo
+      qwen-coder-plus               | Name: Qwen Coder Plus
+  Provider: deepseek (DeepSeek)
+      deepseek-chat                 | Name: DeepSeek Chat (V3)
+      deepseek-reasoner             | Name: DeepSeek Reasoner (R1)
+  Provider: openai (OpenAI)
+      gpt-4o                        | Name: GPT-4o
+      gpt-4o-mini                   | Name: GPT-4o Mini
+      o3-mini                       | Name: o3-mini
+
+Syntax: /model switch <modelId>
+        /model switch <providerId>/<modelId>
+        /model switch <providerId>:<modelId>
+```
+- **服务商标识格式**：每个服务商标题严格呈现为 `Provider: <providerId> (<providerName>)`（例如 `aliyun (Alibaba Cloud DashScope)`、`deepseek (DeepSeek)`、`openai (OpenAI)`），括号前的英文标识即为切换时所需的 `providerId`；
+- **状态高亮**：当前 Agent 绑定的活动服务商带有绿色 `▶ Provider:` 与 `[Active Provider]` 标识，当前正在运行的模型前带有醒目的绿色星号 `*`。
+
+##### 2. 模型切换语法规范（`/model switch`）
+在 `/model switch` 命令后，用户可以按需指定目标模型。系统全面支持三种标准工业级参数写法：
+
+###### 格式一：纯模型 ID 切换（`/model switch <模型ID>`）
+当仅输入模型 ID 而不带服务商前缀时，例如：
+```bash
+/model switch qwen-plus
+```
+系统按以下优先级智能决策：
+1. **本服务商命中**：优先在当前 Agent 绑定的服务商内检索该模型。若匹配成功，服务商保持不变，直接热切换至该模型；
+2. **跨服务商智能自动推导**：若当前服务商无该模型，系统自动扫描全局其他已配置服务商：
+   - 若该模型在另一服务商中是**全局唯一的**（例如当前服务商为 `aliyun`，输入 `/model switch deepseek-chat`），CLI 会**自动将当前 Agent 的服务商同步切换为 `deepseek (DeepSeek)`，并将模型设置为 `deepseek-chat`**，无需用户手动两步操作！
+   - 若该模型在多个不同服务商中均存在（例如用户配置了多个接入网关且均声明了 `gpt-4o`），系统为防止误连，会拦截该操作并在终端列出所有包含该模型的候选服务商，提示用户使用“格式二”或“格式三”显式指明 `providerId`；
+3. **自定义未列出模型**：若在所有服务商的模型列表中均未找到该 ID，Emailclaw 允许其作为自定义模型绑定在当前服务商下，并输出友好提醒。
+
+###### 格式二：斜杠分隔符指定服务商（`/model switch <服务商ID>/<模型ID>`）
+在模型 ID 前通过正斜杠 `/` 显式限定服务商 ID，例如：
+```bash
+/model switch deepseek/deepseek-chat
+/model switch aliyun/qwen-coder-plus
+/model switch openai/gpt-4o
+```
+CLI 会严格校验该 `providerId` 是否存在于系统的配置服务商中（支持大小写自适应模糊匹配）。校验通过后，同时将当前 Agent 的 `providerId` 与 `modelId` 一次性更新并立即落盘。
+
+###### 格式三：冒号分隔符指定服务商（`/model switch <服务商ID>:<模型ID>`）
+与格式二等价，同样支持使用英文冒号 `:` 作为服务商与模型的分隔符：
+```bash
+/model switch deepseek:deepseek-reasoner
+/model switch aliyun:qwen-max
+```
+格式二与格式三均具备原子持久化保证，成功执行后会通过 `AgentService.save()` 立即将最新配置保存至 `~/emailclaw/.config/agents.json`。
+
+##### 3. Tab 键交互补全支持
+在输入 `/model switch ` 后按下 <kbd>Tab</kbd> 键，CLI 会从全局服务商与模型池中动态拉取候选列表，同时提供形如 `deepseek/deepseek-chat` 的全限定补全项与 `deepseek-chat` 的简短补全项，并在候选右侧附带清晰的服务商与模型中文名称说明。
+
+---
+
+### 10.4 高清流式视觉卡片渲染
+
+CLI 会将底层 `ChatMessagePart` 流式事件精准转化为终端专属的圆角卡片：
+- **思考链过程（Thinking）**：以淡灰色微暗字体实时回显大模型的内部推理链，带有 `💭 Thinking:` 醒目标记；
+- **工具调用卡片（Tool Call）**：以亮黄色圆角框实时呈现调用的工具名与输入参数：
+  ```text
+  ╭─ 🛠️  Tool Execution: shell_exec
+  │  Input: {command=ls -la /tmp}
+  ╰─────────────────────────────────────────────────────────────
+  ```
+- **工具结果卡片（Tool Result）**：以绿色圆角框展示执行耗时、截断保护与结果摘要：
+  ```text
+  ╭─ ✔️  Tool Result: shell_exec
+  │  total 0
+  │  drwxr-xr-x 2 user user 40 Nov  8 01:00 .
+  ╰─────────────────────────────────────────────────────────────
+  ```
+- **正文流式输出**：打字机般的平滑刷新体验，回答完毕后附带 Turn 执行总耗时统计（如 `[Turn completed in 1.84s]`）。
+
+---
+
+### 10.5 终端人机协同安全门禁（HITL: Human-in-the-Loop）
+
+当 Agent 尝试执行具有潜在破坏性或安全隐患的高风险操作（例如执行未知 Shell 命令、删除文件或覆盖关键配置）时，`GovernanceService` 会主动拦截该操作并挂起推理，终端立即弹出交互式警示面板：
+
+```text
+  ╔═══════════════════════════════════════════════════════════════════╗
+  ║         ⚠️  SECURITY APPROVAL REQUIRED (Human-in-the-Loop)         ║
+  ╠═══════════════════════════════════════════════════════════════════╣
+  ║ Tool Name:  shell_exec                                            ║
+  ║ Parameters: {command=rm -rf ./cache/*}                            ║
+  ║ Session ID: sess_20261108_001                                     ║
+  ╚═══════════════════════════════════════════════════════════════════╝
+  [Y] Approve Once  [A] Always Allow Tool  [N] Reject
+  Please confirm [y/a/N]: _
+```
+
+输入 `y` 允许本次执行；输入 `a` 将该工具在本会话中加入永久信任规则；输入 `n` 则明确拒绝。决策完成后，Agent 接收到安全决策结果并平滑继续后续推理，全过程由安全审计模块完整存盘。
+
+---
+
+### 10.6 Shell 脚本、Unix 管道与 CI/CD 自动化集成
+
+利用 `run` 子命令，可将 Emailclaw 嵌入自动化脚本与流水线中：
+
+```bash
+# 1. 结合 Unix 管道处理文件或命令输出
+cat build-error.log | emailclaw run -p "分析这组编译错误并给出修复建议"
+
+# 2. 静默模式：只输出 Agent 的纯文本回复，无横幅与元数据干扰
+SUMMARY=$(emailclaw run "提取 notes.txt 中的核心要点" --quiet)
+
+# 3. 结构化 JSON 模式：方便结合 jq 或 Python 进一步处理结构化事件
+emailclaw run "查询当前项目状态" --json | jq '.[-1].text'
+```
+
+---
+
+### 10.7 终端日志隔离机制与排障排查
+
+为了保持交互式终端屏幕的纯净美观，CLI 在启动时通过 `JulLogIsolator` 自动移除了 Java Util Logging (JUL) 的标准控制台输出。所有底层引擎日志（包括定时任务、网络检测、消息总线等异步日志）被安全重定向至独立文件：
+
+```text
+~/emailclaw/logs/cli-runtime.log
+```
+
+若在 CLI 使用过程中遇到异常或需要排查工具调用细节，可在另一个终端窗口实时跟踪该日志：
+
+```sh
+tail -f ~/emailclaw/logs/cli-runtime.log
+```
+
+## 11. 常见问题
 
 ### 为什么第一封邮件没有直接得到模型答案？
 
@@ -610,7 +833,11 @@ Emailclaw 内置 Hermes 闭环技能自演进流水线。当 Agent 完成复杂�
 
 长期闲置被 Curator 归档的技能会被移至 `<workspace>/skills/.archive/<name>-<timestamp>`。你可以在桌面界面的 **Skills** 标签页中，通过将状态筛选器切换为 `ARCHIVED` 来查看所有归档技能。如果需要重新激活该技能，只需直接点击卡片上的 **Restore** 按钮，系统便会自动将其移回 `skills/` 主目录，将状态重置为 `ACTIVE` 并立即生效。
 
-## 11. 安全检查清单
+### 我能在没有图形界面的云服务器或 Docker 容器中使用 Emailclaw 吗？
+
+可以！Emailclaw 既可以通过 `emailclaw service`（或注册为 systemd 用户级服务）作为无人值守的后台邮件守护进程运行，也可以通过 `emailclaw cli` 直接在终端中开启基于 JLine 4.5.0 的富文本交互式控制台，或者使用 `emailclaw run "<提示词>"` 进行单次任务批处理。所有会话、项目与配置完全在 `~/emailclaw` 统一持久化。
+
+## 12. 安全检查清单
 
 - 使用专用邮箱和应用专用密码。
 - 只允许可信发件人；不要把白名单设为公开来源。

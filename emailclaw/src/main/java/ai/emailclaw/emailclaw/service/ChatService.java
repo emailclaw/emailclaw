@@ -1920,4 +1920,21 @@ public class ChatService {
                 java.util.Map.of(),
                 callback);
     }
+
+    /**
+     * Attempts to cancel an active running turn for the specified session.
+     *
+     * @param sessionId the target session ID
+     * @return true if the active run was found and successfully cancelled
+     */
+    public boolean cancelRun(String sessionId) {
+        if (messagePipeline != null) {
+            LOGGER.log(
+                    Level.INFO,
+                    "Requesting cancellation of active turn for session: {0}",
+                    sessionId);
+            return messagePipeline.cancelRun(sessionId);
+        }
+        return false;
+    }
 }

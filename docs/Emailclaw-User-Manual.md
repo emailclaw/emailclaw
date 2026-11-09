@@ -581,7 +581,229 @@ rm -rf ~/emailclaw
 
 Note: `sudo apt purge emailclaw` only removes package files and leftover files from older versions. Because your data lives in your own home directory, purge does **not** delete `~/emailclaw`; delete it manually as shown above if needed.
 
-## 10. Frequently Asked Questions
+## 10. Rich Terminal Experience: CLI Interactive Entrypoint & Automation Engine
+
+While Emailclaw provides a rich desktop GUI and an unattended headless daemon (`--service`), many power users, developers, and sysadmins operate in remote servers, cloud containers, or SSH environments without X11/Wayland desktop displays. Emailclaw includes an industrial-grade **Command Line Interface (CLI)** powered by **JLine 4.5.0**, providing an interactive conversational REPL alongside headless batch-processing capabilities.
+
+### 10.1 Quick Start & Launch Modes
+
+The unified `emailclaw` executable supports dual execution paradigms:
+
+| Launch Command | Mode | Primary Use Case |
+| --- | --- | --- |
+| `emailclaw cli` (or `-c`) | **Interactive REPL** | Full conversational terminal with JLine 4, autocomplete, and live streaming |
+| `emailclaw run "<prompt>"` | **One-Off Batch Run** | Scripting, single-turn execution, CI/CD automation |
+| `emailclaw run -p "<prompt>" --json` | **Structured Output** | Emits response event stream as structured JSON for programmatic pipelines |
+| `emailclaw` (in headless Linux) | **Auto-Detection** | Automatically falls back to CLI mode when no desktop display server is found |
+
+#### Command-Line Options:
+```text
+Usage:
+  emailclaw [options]             Launch interactive desktop GUI (or CLI if headless)
+  emailclaw cli [options]         Launch interactive CLI REPL session (JLine 4)
+  emailclaw run <prompt>          Execute single prompt in non-interactive batch mode
+  emailclaw service               Run in background headless daemon mode
+
+Options:
+  -p, --prompt <text>             Specify the prompt text to execute
+  -a, --agent <id>                Target specific agent ID
+  -s, --session <id>              Resume or attach to an existing session ID
+  -q, --quiet                     Suppress headers and decorations in run mode
+  --json                          Output response events as structured JSON
+  -h, --help                      Show help and usage message
+  -v, --version                   Show version information
+```
+
+---
+
+### 10.2 Interactive REPL Ergonomics & Command History
+
+When launched via `emailclaw cli`, the session opens with an informative welcome banner detailing the active version, agent, model, and workspace:
+
+```text
+  ╔═══════════════════════════════════════════════════════════════════╗
+  ║                     EMAILCLAW AGENT CLI                           ║
+  ║      The Ultimate Autonomous AI Agent for Modern Workflows        ║
+  ╚═══════════════════════════════════════════════════════════════════╝
+
+  Version:   v26.10.26   Agent: default   Model: qwen-max
+  Workspace: /home/user/emailclaw
+  Commands:  Type /help for commands, <TAB> for autocomplete, or /exit to quit.
+
+emailclaw:default(main) > 
+```
+
+#### Terminal Capabilities:
+- **Persistent Command History**: All inputs are automatically persisted in `~/emailclaw/.cli-history/history` with duplicate suppression (`HISTORY_IGNORE_DUPS`) and history expansion safety (`DISABLE_EVENT_EXPANSION`), ensuring that exclamation points (e.g. `!important`) are not misinterpreted as Bash history expansion.
+- **Line Editing**: Full POSIX readline keybindings, including <kbd>Ctrl</kbd> + <kbd>A</kbd> (home), <kbd>Ctrl</kbd> + <kbd>E</kbd> (end), <kbd>Alt</kbd> + <kbd>F</kbd>/<kbd>B</kbd> (word forward/back), and <kbd>Ctrl</kbd> + <kbd>R</kbd> (reverse history search).
+- **Graceful Interruption**: Pressing <kbd>Ctrl</kbd> + <kbd>C</kbd> during an active LLM generation or tool execution cancels the running turn cleanly via `ChatService.cancelRun` without killing the CLI process. Pressing <kbd>Ctrl</kbd> + <kbd>D</kbd> at the prompt cleanly saves history and exits.
+
+---
+
+### 10.3 Built-in Slash Commands
+
+The CLI includes a built-in slash command interpreter. Commands are intercepted locally and never forwarded to LLMs:
+
+| Slash Command | Parameters | Description |
+| --- | --- | --- |
+| `/help` (or `/?`) | None | Displays the formatted list of all available slash commands |
+| `/session list` | None | Lists all conversation sessions for the current active agent |
+| `/session new` | None | Creates and immediately switches to a fresh conversation session |
+| `/session switch` | `<sessionId>` | Switches active context to an existing session ID |
+| `/agent list` | None | Lists all configured agents and highlights the active one |
+| `/agent switch` | `<agentId>` | Switches the current default agent |
+| `/model list` (or `/model`) | None | Lists all configured providers as `providerId (providerName)` and their models |
+| `/model switch` | `<modelId>` or `<providerId>/<modelId>` or `<providerId>:<modelId>` | Switches model (and provider if qualified or auto-resolved) for current agent |
+| `/skills` | None | Inspects workspace-specific and shared pool skills |
+| `/plan` | None | Displays current plan, overall goal, and subtask execution status |
+| `/history` | `[count]` | Displays the last `n` messages from the active session (default: 5) |
+| `/compact` | None | Requests active conversation memory compaction |
+| `/clear` | None | Clears the terminal screen |
+| `/exit` (or `/quit`) | None | Saves command history to disk and gracefully terminates the session |
+
+#### Tab Autocompletion & Syntax Highlighting:
+- Pressing <kbd>Tab</kbd> on `/` surfaces interactive candidate menus grouped by command category;
+- Subcommands (such as `/session switch`, `/agent switch`, `/model switch`) support contextual second-word and argument autocompletion;
+- Commands are highlighted in bold cyan, subcommands in yellow, and parameter strings in standard text in real time.
+
+#### 10.3.1 Model Inspection & Switching Syntax (`/model`, `/model list`, `/model switch`)
+
+Emailclaw's CLI provides first-class support for multi-provider environments. You can inspect all configured providers and models, or switch models either within the current provider or across different providers in a single command.
+
+##### 1. Listing Configured Providers and Models (`/model` or `/model list`)
+Executing `/model` or `/model list` queries all model providers configured in `~/emailclaw/.config/providers.json`. Each provider is displayed with its unique `providerId` followed by its human-readable `providerName`:
+
+```text
+── Configured Model Providers & Models ─────────────────────────
+▶ Provider: aliyun (Alibaba Cloud DashScope) [Active Provider]
+    * qwen-max                      | Name: Qwen Max
+      qwen-plus                     | Name: Qwen Plus
+      qwen-turbo                    | Name: Qwen Turbo
+      qwen-coder-plus               | Name: Qwen Coder Plus
+  Provider: deepseek (DeepSeek)
+      deepseek-chat                 | Name: DeepSeek Chat (V3)
+      deepseek-reasoner             | Name: DeepSeek Reasoner (R1)
+  Provider: openai (OpenAI)
+      gpt-4o                        | Name: GPT-4o
+      gpt-4o-mini                   | Name: GPT-4o Mini
+      o3-mini                       | Name: o3-mini
+
+Syntax: /model switch <modelId>
+        /model switch <providerId>/<modelId>
+        /model switch <providerId>:<modelId>
+```
+- **Active Provider & Model**: Marked with `▶ Provider:` / `[Active Provider]` and a leading asterisk `*` in bold green.
+- **Provider Header Format**: Clearly exposes `providerId (providerName)` (e.g., `aliyun (Alibaba Cloud DashScope)` or `deepseek (DeepSeek)`), allowing you to immediately identify the exact `providerId` needed for explicit provider switching.
+
+##### 2. Model Switching Syntax (`/model switch`)
+The parameter after `/model switch` supports three syntax variants:
+
+###### Variant A: Plain Model ID (`/model switch <modelId>`)
+When you supply a plain model ID without any provider prefix:
+```bash
+/model switch qwen-plus
+```
+1. **Current Provider Match**: The CLI first checks if `<modelId>` exists in the active agent's current provider. If matched, the agent switches to this model while staying on the current provider.
+2. **Cross-Provider Auto-Resolution**: If the model is not found in the current provider, the CLI automatically searches across all other configured providers:
+   - If the model uniquely belongs to another provider (for example, switching to `deepseek-chat` while the active provider is `aliyun`), the CLI **automatically switches both the agent's provider to `deepseek (DeepSeek)` and model to `deepseek-chat`**!
+   - If the model exists under multiple providers (for example, if both `aliyun` and a custom gateway declare `gpt-4o`), the CLI halts and prints an error listing all candidate providers, prompting you to disambiguate using Variant B or C.
+3. **Unlisted / Custom Model**: If the model is not found in any provider's model catalog, Emailclaw allows it as a custom model under the current provider and issues an informational notice.
+
+###### Variant B: Slash Delimiter (`/model switch <providerId>/<modelId>`)
+Explicitly specify both the target provider and model using a forward slash `/`:
+```bash
+/model switch deepseek/deepseek-chat
+/model switch aliyun/qwen-coder-plus
+/model switch openai/gpt-4o
+```
+The CLI verifies that `providerId` exists in your configured providers (case-insensitively). Upon match, it updates both `providerId` and `modelId` on the active agent, immediately persisting changes to `~/emailclaw/.config/agents.json`.
+
+###### Variant C: Colon Delimiter (`/model switch <providerId>:<modelId>`)
+Alternatively, specify the target provider and model using a colon `:` delimiter:
+```bash
+/model switch deepseek:deepseek-reasoner
+/model switch aliyun:qwen-max
+```
+Both Variant B (`provider/model`) and Variant C (`provider:model`) follow the same rigorous validation and atomic configuration persistence.
+
+##### 3. Tab Autocompletion for Models
+Pressing <kbd>Tab</kbd> after `/model switch ` dynamically inspects all configured providers and models in real time, offering both qualified (`providerId/modelId`) and plain (`modelId`) suggestions with provider details in the description column.
+
+---
+
+### 10.4 Real-time Streaming & Visual Cards
+
+The CLI renders `ChatMessagePart` streaming events directly to the terminal using custom box-drawing characters:
+- **Thinking Blocks**: Real-time reasoning tokens are rendered with a `💭 Thinking:` prefix in faint, italicized styling;
+- **Tool Invocations**: Rendered as highlighted visual cards with input parameters:
+  ```text
+  ╭─ 🛠️  Tool Execution: shell_exec
+  │  Input: {command=ls -la /tmp}
+  ╰─────────────────────────────────────────────────────────────
+  ```
+- **Tool Results**: Completed tool outputs are summarized with timing and truncation protection:
+  ```text
+  ╭─ ✔️  Tool Result: shell_exec
+  │  total 0
+  │  drwxr-xr-x 2 user user 40 Nov  8 01:00 .
+  ╰─────────────────────────────────────────────────────────────
+  ```
+- **Agent Text Output**: Smooth, typewriter-style token streaming with Turn latency summaries (e.g., `[Turn completed in 1.84s]`).
+
+---
+
+### 10.5 Human-in-the-Loop (HITL) Security Governance in Terminal
+
+When the Agent attempts a sensitive operation (such as modifying critical configuration files or executing destructive commands), `GovernanceService` intercepts the action and pauses inference. The CLI immediately displays an interactive warning card:
+
+```text
+  ╔═══════════════════════════════════════════════════════════════════╗
+  ║         ⚠️  SECURITY APPROVAL REQUIRED (Human-in-the-Loop)         ║
+  ╠═══════════════════════════════════════════════════════════════════╣
+  ║ Tool Name:  shell_exec                                            ║
+  ║ Parameters: {command=rm -rf ./cache/*}                            ║
+  ║ Session ID: sess_20261108_001                                     ║
+  ╚═══════════════════════════════════════════════════════════════════╝
+  [Y] Approve Once  [A] Always Allow Tool  [N] Reject
+  Please confirm [y/a/N]: _
+```
+
+Entering `y` approves the single execution; entering `a` creates a session-wide allowance rule; entering `n` rejects the invocation. Inference resumes immediately with the decision recorded in audit logs.
+
+---
+
+### 10.6 Shell Scripting, Unix Pipelines & Headless CI/CD
+
+The `run` subcommand allows Emailclaw to be embedded into shell scripts, CI/CD pipelines, and terminal pipes:
+
+```bash
+# 1. Pipe input from files or commands
+cat build-error.log | emailclaw run -p "Analyze these compile errors and suggest fixes"
+
+# 2. Quiet mode: Output only the agent's text response without banner or metadata
+SUMMARY=$(emailclaw run "Extract bullet points from notes.txt" --quiet)
+
+# 3. Structured JSON mode: Emit raw ChatMessagePart events for downstream JSON parsers (jq)
+emailclaw run "List current project status" --json | jq '.[-1].text'
+```
+
+---
+
+### 10.7 Logging Isolation & Troubleshooting
+
+To maintain a clean interactive screen, the CLI uses `JulLogIsolator` to strip console handlers from Java Util Logging (JUL) upon startup. All background logs (from Cron jobs, message buses, and polling routines) are safely redirected to:
+
+```text
+~/emailclaw/logs/cli-runtime.log
+```
+
+If you encounter unexpected behavior during a CLI session, inspect the runtime log file in another terminal:
+
+```sh
+tail -f ~/emailclaw/logs/cli-runtime.log
+```
+
+## 11. Frequently Asked Questions
 
 ### Why didn't the first email directly get a model answer?
 
@@ -611,7 +833,11 @@ Emailclaw runs the Hermes closed-loop self-evolution pipeline. When an agent com
 
 Inactive skills retired by the background Curator are moved to `<workspace>/skills/.archive/<name>-<timestamp>`. You can view them in the desktop application under **Skills** by selecting `ARCHIVED` in the state filter. To re-enable any archived skill, simply click the **Restore** button on its card; Emailclaw will automatically move it back to the active `skills/` directory, update its state to `ACTIVE`, and make it immediately available for future tasks.
 
-## 11. Security Checklist
+### Can I use Emailclaw on remote servers or inside Docker containers without a desktop interface?
+
+Yes! Emailclaw supports running as an unattended background service via `emailclaw service` (or registered as a systemd user daemon), or operating interactively in the terminal via `emailclaw cli`. You can also trigger one-off script runs with `emailclaw run "<prompt>"`. All sessions, workspaces, and configurations are shared under `~/emailclaw`.
+
+## 12. Security Checklist
 
 - Use a dedicated email and an app-specific password.
 - Only allow trusted senders; do not set the whitelist to public sources.

@@ -40,6 +40,7 @@ public final class AppPaths {
     public static final String SECRET_DIR = ".secret";
     public static final String SECURITY_APPROVALS_DIR = ".security/approvals";
     public static final String WEBVIEW_DIR = ".webview";
+    public static final String CLI_HISTORY_DIR = ".cli-history";
 
     // Absolute / resolved instance paths
     public final Path root;
@@ -56,6 +57,8 @@ public final class AppPaths {
     public final Path secretDir;
     public final Path skillsPoolRoot;
     public final Path webviewDir;
+    public final Path cliHistoryDir;
+    public final Path cliHistoryFile;
 
     /** Global config file (current Agent / country / language). */
     public final Path globalConfigFile;
@@ -94,6 +97,8 @@ public final class AppPaths {
         this.secretDir = root.resolve(SECRET_DIR);
         this.skillsPoolRoot = root.resolve(SKILL_POOL_DIR);
         this.webviewDir = root.resolve(WEBVIEW_DIR);
+        this.cliHistoryDir = root.resolve(CLI_HISTORY_DIR);
+        this.cliHistoryFile = cliHistoryDir.resolve("history");
 
         this.databaseFile = databaseDir.resolve("emailclaw.db");
         this.providersFile = configDir.resolve("providers.json");
@@ -131,6 +136,7 @@ public final class AppPaths {
             Files.createDirectories(this.secretDir);
             Files.createDirectories(this.skillsPoolRoot);
             Files.createDirectories(this.webviewDir);
+            Files.createDirectories(this.cliHistoryDir);
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Failed to initialize working directory", e);
             throw new RuntimeException("Failed to initialize workspace", e);

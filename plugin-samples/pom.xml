@@ -13,7 +13,7 @@
   <url>https://emailclaw.email</url>
 
   <properties>
-    <emailclaw.version>26.11.05</emailclaw.version>
+    <emailclaw.version>26.11.9</emailclaw.version>
     <agentscope.version>2.0.4</agentscope.version>
     <jackson.databind.version>3.2.4</jackson.databind.version>
     <jackson.core.version>3.2.4</jackson.core.version>

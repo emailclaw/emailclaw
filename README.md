@@ -62,6 +62,7 @@ This makes Emailclaw especially suitable for email lovers and those who need to 
 - **Subject-level Project Isolation**: New Subject, New Project; TaskId binds email threads, session history, and project directories.
 - **Local-first**: Configurations, projects, sessions, attachments, workspaces, logs, and plugins are saved on machines you control.
 - **Controlled Agent Actions**: Models, tools, Skills, MCP, cron jobs, and plugins can be composed; high-risk tool calls can be approved via a 4-digit confirmation code in email.
+- **Rich Terminal Experience (JLine 4.5.0 CLI)**: Full-featured interactive REPL and automation batch runner (`emailclaw cli`, `emailclaw run "<prompt>"`). Engineered on JLine 4.5.0 with real-time thinking/tool-call streaming, slash commands (`/session`, `/agent`, `/model`, `/skills`, `/plan`), tab autocompletion, syntax highlighting, persistent command history (`~/emailclaw/.cli-history`), isolated JUL runtime logging, and interactive Human-in-the-Loop (HITL) tool execution approval.
 - **Suitable for Long-running**: Supports Linux headless service mode, boot startup, Cron automation, and log troubleshooting.
 - **Universal Bridge to Top AI CLIs**: Uses everyday email as a zero-friction bridge (no extra mobile or desktop apps required) to orchestrate and drive cutting-edge AI coding and agent CLI tools, including **Google Antigravity CLI (`agy`)**, **Anthropic Claude Code CLI (`claude`)**, **OpenAI Codex CLI (`codex`)**, and **OpenCode CLI (`opencode`)**.
 - **Hermes Closed-Loop Skill Self-Evolution & Dialectic Memory**: Breaks away from static prompt configurations by implementing an autonomous self-learning closed loop: *Experience Distillation → Skill Creation (with Security Promotion Gates) → Usage Telemetry → In-Place Live Patching → Background Curator Archiving & LLM Umbrella Consolidation*. Coupled with SQLite FTS5 (CJK-aware) cross-session search and Honcho dialectic user modeling.
@@ -237,6 +238,32 @@ journalctl --user -u emailclaw -f
 ```
 
 Each Linux user can enable their own independent instance; every instance keeps its own `~/emailclaw` data and configuration. For a complete step-by-step tutorial, see the [User Manual](./docs/Emailclaw-User-Manual.md).
+
+## Rich Terminal Experience (CLI Mode)
+
+Emailclaw provides an industrial-grade Command Line Interface (CLI) built on **JLine 4.5.0**, offering an interactive REPL and automation batch runner alongside the desktop GUI:
+
+```bash
+# Launch interactive rich terminal REPL session
+emailclaw cli
+
+# Execute a single prompt directly in batch mode
+emailclaw run "Summarize my unread emails from today"
+
+# Pipe input from Unix pipelines or shell scripts
+cat incident-report.log | emailclaw run -p "Analyze this log and identify root cause"
+
+# Emit structured event outputs for downstream programmatic consumers
+emailclaw run "Extract table data from PDF" --json
+```
+
+### Key CLI Features:
+- **Full Terminal Ergonomics**: Persistent command history stored in `~/emailclaw/.cli-history/history` with duplicate suppression, readline shortcuts, and expansion safety for prompt characters like `!`.
+- **Slash Commands & Multi-Provider Model Switching**: Tab completion and syntax highlighting for `/help`, `/session` (list, new, switch), `/agent` (list, switch), `/model` (lists all configured providers as `providerId (providerName)` and their models), `/model switch` (supports plain `<modelId>`, `<providerId>/<modelId>`, or `<providerId>:<modelId>` with automatic provider resolution), `/skills`, `/plan`, `/history`, `/compact`, `/clear`, and `/exit`.
+- **Live Stream Visualization**: Real-time rendering of model thinking blocks (`💭 Thinking`), tool execution cards (`🛠️ Tool Execution`), tool result summaries (`✔️ Tool Result`), and color-coded error/hint badges.
+- **Human-in-the-Loop (HITL) Security Gate**: Interactive terminal prompt for security-sensitive operations with options to `[Y] Approve Once`, `[A] Always Allow Tool`, or `[N] Reject`.
+- **Clean Log Isolation**: Background engine logs from `java.util.logging` are automatically redirected to `~/emailclaw/logs/cli-runtime.log`, keeping the terminal UI pristine.
+- **Headless Auto-Detection**: Automatically falls back to CLI mode on headless Linux environments where desktop display servers are absent.
 
 ## Build from Source
 
