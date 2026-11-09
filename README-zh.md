@@ -56,6 +56,7 @@ Emailclaw 把 AI Agent 放进每个人都熟悉的邮箱。它不是把电子邮
 - **主题级项目隔离**：New Subject, New Project；TaskId 绑定邮件线程、会话历史和项目目录。
 - **本地优先**：配置、项目、会话、附件、工作区、日志与插件保存在你控制的机器上。
 - **受控的 Agent 行动**：模型、工具、Skills、MCP、定时任务和插件可组合使用；高风险工具调用可通过邮件四位确认码审批。
+- **极客与终端交互：Rich Terminal Experience (JLine 4.5.0 CLI)**：内置工业级命令行交互式 REPL 与非交互式批处理运行引擎（`emailclaw cli`、`emailclaw run "<prompt>"`）。基于 JLine 4.5.0 构建，支持 Token/思考链/工具调用高清流式卡片渲染、斜杠命令系统（`/session`、`/agent`、`/model`、`/skills`、`/plan` 等）、Tab 智能补全、实时语法高亮、持久化历史记录（`~/emailclaw/.cli-history`）、JUL 运行时日志重定向隔离以及人机协同（HITL）交互式安全审批门禁。
 - **适合长期运行**：支持 Linux 无界面服务模式、开机启动、Cron 自动化和日志排障。
 - **连接顶级 AI CLI 的天然桥梁**：以所有人每天都在使用的电子邮件为桥梁（无需安装任何额外 App），连接并无缝调度 Google Antigravity CLI (`agy`)、Claude Code CLI (`claude`)、OpenAI Codex CLI (`codex`) 与 OpenCode CLI (`opencode`) 等前沿编程工具。
 - **Hermes 闭环自学习与技能自演进**：告别静态固化的配置文件，构建“经验反思沉淀 → 技能草稿创建（安全扫描门禁）→ 运行时遥测 → 实时热修补 → 后台 Curator 归档与 LLM 伞状合并”完整自演进闭环；结合 SQLite FTS5（含 CJK 双字切分）跨会话全文检索与 Honcho 辩证用户建模，随使用愈发精准。
@@ -231,6 +232,32 @@ journalctl --user -u emailclaw -f
 ```
 
 每个 Linux 用户可启用独立实例；各实例的数据与配置分别保存在各自的 `~/emailclaw`。完整教程见 [用户手册](./docs/Emailclaw-User-Manual-zh.md)。
+
+## 极客与终端交互：Rich Terminal Experience (CLI 命令行模式)
+
+Emailclaw 除了提供桌面图形界面与后台守护服务外，还内置了基于 **JLine 4.5.0** 打造的顶级终端交互式 REPL 与自动化批处理引擎，专为云服务器 SSH、Docker 容器以及极客开发者设计：
+
+```bash
+# 启动交互式 Rich Terminal REPL 会话
+emailclaw cli
+
+# 单次快速批处理运行（执行完毕自动退出）
+emailclaw run "总结收件箱中今天的未读邮件"
+
+# Unix 管道与脚本无缝集成
+cat incident.log | emailclaw run -p "分析此系统日志并提取根因"
+
+# 结构化 JSON 输出供下游程序直接消费
+emailclaw run "提取数据" --json
+```
+
+### 核心终端特性：
+- **极致行编辑与历史持久化**：历史记录自动归档于 `~/emailclaw/.cli-history/history`，支持跨会话记忆、命令去重与感叹号转义安全保护。
+- **智能斜杠命令与多服务商模型热切换**：全面支持 `/help`、`/session`（查看/新建/切换会话）、`/agent`（查看/切换当前智能体）、`/model`（列出所有配置的服务商 `providerId (providerName)` 与其所属模型）、`/model switch`（支持纯 `<模型ID>`、`<服务商ID>/<模型ID>` 或 `<服务商ID>:<模型ID>`，具备跨服务商智能自动推导）、`/skills`（技能池盘点）、`/plan`（查看规划与子任务状态）、`/history`、`/clear` 与 `/exit`。
+- **精美流式卡片渲染**：模型思考链（`💭 Thinking`）、工具调用参数卡片（`🛠️ Tool Execution`）、工具完成摘要（`✔️ Tool Result`）与文本实时平滑刷新。
+- **终端人机协同安全门禁（HITL）**：高风险操作在终端自动弹出告警卡片，支持 `[Y] 允许本次`、`[A] 本工具总是允许` 或 `[N] 拒绝`。
+- **日志静默重定向**：JUL 运行时日志自动隔离至 `~/emailclaw/logs/cli-runtime.log`，绝不干扰终端提示符与屏幕。
+- **无桌面环境自适应**：在无 X11/Wayland 桌面服务的云端 Linux 下自动降级启动 CLI，彻底杜绝崩溃。
 
 ## 从源码构建
 
