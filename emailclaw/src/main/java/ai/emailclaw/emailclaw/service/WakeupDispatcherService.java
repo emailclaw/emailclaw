@@ -13,6 +13,7 @@ package ai.emailclaw.emailclaw.service;
 import io.agentscope.harness.agent.bus.BusEntry;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -133,6 +134,20 @@ public class WakeupDispatcherService implements AutoCloseable {
         LOGGER.log(Level.INFO, "Wakeup dispatcher startup complete");
     }
 
+    /**
+     * Record holding a deferred wakeup request when a session is active.
+     */
+    private record DeferredWakeup(
+            String projectId,
+            String effectiveSessionId,
+            String effectiveAgentId,
+            String userId,
+            Map<String, Object> payload,
+            long enqueuedTimeMillis) {}
+
+    /** Map of pending wakeups waiting for target sessions to become idle: key is "projectId:effectiveSessionId". */
+    private final Map<String, DeferredWakeup> pendingWakeups = new ConcurrentHashMap<>();
+
     @Override
     public void close() {
         Disposable d = subscription;
@@ -140,6 +155,7 @@ public class WakeupDispatcherService implements AutoCloseable {
             d.dispose();
         }
         subscription = null;
+        pendingWakeups.clear();
         wakeupExecutor.shutdown();
         started.set(false);
         LOGGER.log(Level.INFO, "Wakeup dispatcher stopped");
@@ -148,7 +164,11 @@ public class WakeupDispatcherService implements AutoCloseable {
     /**
      * Drain wakeup queue and dispatch wakeup requests for all projects.
      */
-    private void drainAndDispatch() {
+    void drainAndDispatch() {
+        // 1. Process previously deferred wakeups whose target sessions have now become idle
+        processDeferredWakeups();
+
+        // 2. Collect project IDs
         java.util.Set<String> projectIds = new java.util.HashSet<>();
         for (ai.emailclaw.emailclaw.model.ProjectInfo project : projectService.list()) {
             if (project.getId() != null && !project.getId().isBlank()) {
@@ -157,6 +177,7 @@ public class WakeupDispatcherService implements AutoCloseable {
         }
         projectIds.add(ProjectService.PROJECT_ID_DEFAULT);
 
+        // 3. Drain and dispatch new wakeup entries for each project
         for (String projectId : projectIds) {
             try {
                 List<BusEntry> entries =
@@ -167,15 +188,65 @@ public class WakeupDispatcherService implements AutoCloseable {
                 }
 
                 LOGGER.log(
-                        Level.FINE,
-                        "Drained wakeup queue for project {0}: {1} entries",
-                        new Object[] {projectId, entries.size()});
+                        Level.INFO,
+                        "Drained {0} wakeup entry(ies) from queue for project {1}",
+                        new Object[] {entries.size(), projectId});
 
                 for (BusEntry entry : entries) {
                     dispatch(projectId, entry.payload());
                 }
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "Wakeup drain error for project " + projectId, e);
+            }
+        }
+    }
+
+    /**
+     * Check pending deferred wakeups and dispatch any whose sessions have become idle.
+     */
+    private void processDeferredWakeups() {
+        if (pendingWakeups.isEmpty()) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, DeferredWakeup> entry : pendingWakeups.entrySet()) {
+            String key = entry.getKey();
+            DeferredWakeup deferred = entry.getValue();
+
+            // Discard wakeups older than 30 minutes to prevent resource leakage
+            if (now - deferred.enqueuedTimeMillis() > 30 * 60 * 1000L) {
+                if (pendingWakeups.remove(key, deferred)) {
+                    LOGGER.log(
+                            Level.WARNING,
+                            "Discarded stale deferred wakeup for session {0} after 30 minutes:"
+                                    + " agent={1}",
+                            new Object[] {
+                                deferred.effectiveSessionId(), deferred.effectiveAgentId()
+                            });
+                }
+                continue;
+            }
+
+            // Check if session is now idle
+            if (!wakeupTarget.isSessionRunning(
+                    deferred.projectId(), deferred.effectiveSessionId())) {
+                if (pendingWakeups.remove(key, deferred)) {
+                    LOGGER.log(
+                            Level.INFO,
+                            "Session {0} is now idle; triggering previously deferred wakeup"
+                                    + " (agent={1}, user={2})",
+                            new Object[] {
+                                deferred.effectiveSessionId(),
+                                deferred.effectiveAgentId(),
+                                deferred.userId()
+                            });
+                    triggerWakeup(
+                            deferred.projectId(),
+                            deferred.effectiveSessionId(),
+                            deferred.effectiveAgentId(),
+                            deferred.userId());
+                }
             }
         }
     }
@@ -192,7 +263,10 @@ public class WakeupDispatcherService implements AutoCloseable {
         String agentId = getString(payload, "agentId");
 
         if ((sessionId == null || sessionId.isBlank()) && (agentId == null || agentId.isBlank())) {
-            LOGGER.log(Level.FINE, "Skipped wakeup entry with no sessionId and agentId");
+            LOGGER.log(
+                    Level.WARNING,
+                    "Skipped invalid wakeup entry with no sessionId and agentId: payload={0}",
+                    payload);
             return;
         }
 
@@ -204,7 +278,21 @@ public class WakeupDispatcherService implements AutoCloseable {
 
         // Check if session is running
         if (wakeupTarget.isSessionRunning(projectId, effectiveSessionId)) {
-            LOGGER.log(Level.FINE, "Session {0} is running, skipping wakeup", effectiveSessionId);
+            String key = projectId + ":" + effectiveSessionId;
+            DeferredWakeup deferred =
+                    new DeferredWakeup(
+                            projectId,
+                            effectiveSessionId,
+                            effectiveAgentId,
+                            userId,
+                            payload,
+                            System.currentTimeMillis());
+            pendingWakeups.put(key, deferred);
+            LOGGER.log(
+                    Level.INFO,
+                    "Session {0} is currently running/busy; deferred wakeup signal (agent={1},"
+                            + " user={2}) for retry once session becomes idle",
+                    new Object[] {effectiveSessionId, effectiveAgentId, userId});
             return;
         }
 
@@ -212,11 +300,14 @@ public class WakeupDispatcherService implements AutoCloseable {
                 Level.INFO,
                 "Waking up idle session: session={0}, agent={1}, user={2}",
                 new Object[] {effectiveSessionId, effectiveAgentId, userId});
+        triggerWakeup(projectId, effectiveSessionId, effectiveAgentId, userId);
+    }
 
-        // Trigger wakeup run asynchronously on a virtual thread to avoid blocking the interval
-        // timer
-        // and to avoid Reactor's non-blocking scheduler threads (e.g. parallel-1) throwing
-        // IllegalStateException on blockLast().
+    /**
+     * Trigger wakeup execution asynchronously on the virtual thread executor.
+     */
+    private void triggerWakeup(
+            String projectId, String effectiveSessionId, String effectiveAgentId, String userId) {
         wakeupExecutor.execute(
                 () -> {
                     try {
@@ -224,7 +315,9 @@ public class WakeupDispatcherService implements AutoCloseable {
                                 .runWakeup(projectId, effectiveSessionId, effectiveAgentId, userId)
                                 .block();
                         LOGGER.log(
-                                Level.FINE, "Wakeup run complete: session={0}", effectiveSessionId);
+                                Level.INFO,
+                                "Wakeup run completed successfully: session={0}, agent={1}",
+                                new Object[] {effectiveSessionId, effectiveAgentId});
                     } catch (Throwable err) {
                         LOGGER.log(
                                 Level.WARNING,
@@ -232,6 +325,13 @@ public class WakeupDispatcherService implements AutoCloseable {
                                 err);
                     }
                 });
+    }
+
+    /**
+     * Returns count of currently pending deferred wakeups (package-private for testing).
+     */
+    int getPendingWakeupCount() {
+        return pendingWakeups.size();
     }
 
     /**

@@ -1,0 +1,33 @@
+#!/bin/sh
+# postrm script for emailclaw
+#
+# see: dh_installdeb(1)
+
+case "$1" in
+    purge)
+        # Clean up legacy files created by older versions that used a system
+        # account. New versions use user-level systemd units entirely.
+        echo "=========================================================="
+        echo " [emailclaw] Cleaning up legacy service files (if any)..."
+        rm -f /etc/systemd/system/emailclaw.service || true
+        rm -f /etc/systemd/user/emailclaw.service || true
+        if id -u emailclaw >/dev/null 2>&1; then
+            userdel -r emailclaw || true
+        fi
+        if [ -d /home/emailclaw ]; then
+            rm -rf /home/emailclaw || true
+        fi
+        echo " [emailclaw] Done."
+        echo "=========================================================="
+    ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+    ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+exit 0

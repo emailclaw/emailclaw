@@ -401,7 +401,8 @@ public class SqliteAgentStateStore implements AgentStateStore {
         String prefix = hasUser ? userId + ":" : null;
         String sql =
                 hasUser
-                        ? "SELECT DISTINCT session_id FROM agent_state WHERE session_id LIKE ?"
+                        ? "SELECT DISTINCT session_id FROM agent_state WHERE session_id LIKE ? OR"
+                                + " session_id NOT LIKE '%:%'"
                         : "SELECT DISTINCT session_id FROM agent_state WHERE session_id NOT LIKE"
                                 + " '%:%'";
 
@@ -415,10 +416,8 @@ public class SqliteAgentStateStore implements AgentStateStore {
                         try (ResultSet rs = ps.executeQuery()) {
                             while (rs.next()) {
                                 String full = rs.getString("session_id");
-                                if (hasUser) {
-                                    if (full.startsWith(prefix)) {
-                                        set.add(full.substring(prefix.length()));
-                                    }
+                                if (hasUser && full.startsWith(prefix)) {
+                                    set.add(full.substring(prefix.length()));
                                 } else {
                                     set.add(full);
                                 }

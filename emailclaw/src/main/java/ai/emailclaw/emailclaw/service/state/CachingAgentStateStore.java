@@ -229,8 +229,21 @@ public class CachingAgentStateStore implements AgentStateStore {
     }
 
     private static String slotKey(String userId, String sessionId) {
-        String uid = (userId == null || userId.isBlank()) ? "__anon__" : userId;
-        return uid + "/" + sessionId;
+        if (sessionId == null || sessionId.isBlank()) {
+            String uid = (userId == null || userId.isBlank()) ? "__anon__" : userId;
+            return uid + "/";
+        }
+        // Align cache slot key with SqliteAgentStateStore.slotId(userId, sessionId):
+        // in Emailclaw each session has a globally unique UUID, while AgentScope 2.0.5 (#3335)
+        // persists state under RuntimeContext.userId whereas internal services query with null.
+        int colonIdx = sessionId.indexOf(':');
+        if (colonIdx >= 0 && colonIdx < sessionId.length() - 1) {
+            String candidate = sessionId.substring(colonIdx + 1);
+            if (candidate.length() >= 32) {
+                return candidate;
+            }
+        }
+        return sessionId;
     }
 
     // ==================== Event Sourcing: Tree flattening algorithm ====================

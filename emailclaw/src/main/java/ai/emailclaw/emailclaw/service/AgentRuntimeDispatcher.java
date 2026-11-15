@@ -26,7 +26,6 @@ import ai.emailclaw.emailclaw.service.skill.EmailclawSkillVisibilityFilter;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
-import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.permission.PermissionBehavior;
@@ -45,10 +44,10 @@ import io.agentscope.harness.agent.skill.curator.SkillCuratorConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -407,9 +406,12 @@ public class AgentRuntimeDispatcher {
                         + " projectWritable={2}",
                 new Object[] {agentWorkspace, projectRoot, projectWritable});
 
-        // Build PermissionContextState based on execution_level
-        PermissionContextState permissionContext = buildPermissionContext(config, agent.getId());
-        syncSessionPermissionContext(sessionId, permissionContext);
+        // Build PermissionContextState based on execution_level and merge persisted session rules
+        // (#3361 / #3377: ReActAgent in 2.0.5 applies initialPermissionContext authoritatively on
+        // first slot activation per instance, so the merged context must be passed to builder).
+        PermissionContextState permissionContext =
+                syncSessionPermissionContext(
+                        sessionId, buildPermissionContext(config, agent.getId()));
 
         ExecutionConfig toolExecConfig =
                 ExecutionConfig.builder()
@@ -523,19 +525,8 @@ public class AgentRuntimeDispatcher {
                                 .build());
             }
         }
-        try {
-            Field innerField = HarnessAgent.Builder.class.getDeclaredField("inner");
-            innerField.setAccessible(true);
-            ReActAgent.Builder innerBuilder = (ReActAgent.Builder) innerField.get(builder);
-            innerBuilder.conflictPolicy(ConflictPolicy.APPEND_MERGE);
-            LOGGER.info("Configured ReActAgent ConflictPolicy to APPEND_MERGE");
-        } catch (Exception e) {
-            LOGGER.log(
-                    Level.WARNING,
-                    "Failed to reflectively configure ConflictPolicy.APPEND_MERGE on HarnessAgent"
-                            + " inner builder",
-                    e);
-        }
+        builder.conflictPolicy(ConflictPolicy.APPEND_MERGE);
+        LOGGER.info("Configured HarnessAgent ConflictPolicy to APPEND_MERGE");
         HarnessAgent harnessAgent = builder.build();
         io.agentscope.core.tool.Toolkit agentToolkit = harnessAgent.getToolkit();
         if (agentToolkit != null) {
@@ -661,11 +652,20 @@ public class AgentRuntimeDispatcher {
         return builder.build();
     }
 
-    private void syncSessionPermissionContext(
-            String sessionId, PermissionContextState permissionContext) {
+    /**
+     * Pre-persists user-confirmed permission rules (e.g. from a HITL {@code ConfirmResult}) into
+     * the session's {@link io.agentscope.core.state.AgentState} before rebuilding {@link
+     * HarnessAgent} so that {@link #syncSessionPermissionContext} immediately reflects the newly
+     * approved rules on the resumed turn.
+     *
+     * @param sessionId target session identifier
+     * @param rules confirmed permission rules to merge into the session permission context
+     */
+    public void recordConfirmedPermissionRules(String sessionId, List<PermissionRule> rules) {
         if (sessionId == null
                 || sessionId.isBlank()
-                || permissionContext == null
+                || rules == null
+                || rules.isEmpty()
                 || repository == null
                 || repository.agentStateStore() == null) {
             return;
@@ -681,49 +681,116 @@ public class AgentRuntimeDispatcher {
             if (existingOpt.isPresent()) {
                 io.agentscope.core.state.AgentState state = existingOpt.get();
                 PermissionContextState currentCtx = state.getPermissionContext();
-                PermissionContextState.Builder merged =
+                if (currentCtx == null) {
+                    currentCtx = PermissionContextState.builder().build();
+                }
+                state.setPermissionContext(currentCtx.withAddedRules(rules));
+                stateStore.save(null, sessionId, "agent_state", state);
+            }
+        } catch (Exception e) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Failed to record confirmed permission rules for session=" + sessionId,
+                    e);
+        }
+    }
+
+    PermissionContextState syncSessionPermissionContext(
+            String sessionId, PermissionContextState permissionContext) {
+        if (sessionId == null
+                || sessionId.isBlank()
+                || permissionContext == null
+                || repository == null
+                || repository.agentStateStore() == null) {
+            return permissionContext;
+        }
+        try {
+            var stateStore = repository.agentStateStore();
+            var existingOpt =
+                    stateStore.get(
+                            null,
+                            sessionId,
+                            "agent_state",
+                            io.agentscope.core.state.AgentState.class);
+            if (existingOpt.isPresent()) {
+                io.agentscope.core.state.AgentState state = existingOpt.get();
+                PermissionContextState currentCtx = state.getPermissionContext();
+                PermissionContextState.Builder mergedBuilder =
                         PermissionContextState.builder().mode(permissionContext.getMode());
-                permissionContext.getWorkingDirectories().forEach(merged::addWorkingDirectory);
+                permissionContext
+                        .getWorkingDirectories()
+                        .forEach(mergedBuilder::addWorkingDirectory);
+                if (currentCtx != null && currentCtx.getWorkingDirectories() != null) {
+                    currentCtx.getWorkingDirectories().forEach(mergedBuilder::addWorkingDirectory);
+                }
+
+                List<PermissionRule> allowAndDenyRules = new ArrayList<>();
                 permissionContext
                         .getAllowRules()
+                        .values()
                         .forEach(
-                                (tool, rules) -> {
-                                    if (rules != null) {
-                                        rules.forEach(r -> merged.addAllowRule(tool, r));
+                                list -> {
+                                    if (list != null) {
+                                        allowAndDenyRules.addAll(list);
                                     }
                                 });
                 if (currentCtx != null && currentCtx.getAllowRules() != null) {
                     currentCtx
                             .getAllowRules()
+                            .values()
                             .forEach(
-                                    (tool, rules) -> {
-                                        if (rules != null) {
-                                            rules.forEach(r -> merged.addAllowRule(tool, r));
+                                    list -> {
+                                        if (list != null) {
+                                            allowAndDenyRules.addAll(list);
                                         }
                                     });
                 }
                 permissionContext
                         .getDenyRules()
+                        .values()
                         .forEach(
-                                (tool, rules) -> {
-                                    if (rules != null) {
-                                        rules.forEach(r -> merged.addDenyRule(tool, r));
+                                list -> {
+                                    if (list != null) {
+                                        allowAndDenyRules.addAll(list);
                                     }
                                 });
+
+                PermissionContextState mergedWithAllowAndDeny =
+                        mergedBuilder.build().withAddedRules(allowAndDenyRules);
+                Map<String, List<PermissionRule>> effectiveAllowRules =
+                        mergedWithAllowAndDeny.getAllowRules();
+
+                List<PermissionRule> effectiveAskRules = new ArrayList<>();
                 permissionContext
                         .getAskRules()
                         .forEach(
                                 (tool, rules) -> {
-                                    if (rules != null) {
-                                        rules.forEach(r -> merged.addAskRule(tool, r));
+                                    if (rules == null) {
+                                        return;
+                                    }
+                                    boolean hasUnconditionalAllow =
+                                            effectiveAllowRules
+                                                    .getOrDefault(tool, List.of())
+                                                    .stream()
+                                                    .anyMatch(
+                                                            r ->
+                                                                    r.ruleContent() == null
+                                                                            || r.ruleContent()
+                                                                                    .isBlank());
+                                    if (!hasUnconditionalAllow) {
+                                        effectiveAskRules.addAll(rules);
                                     }
                                 });
-                state.setPermissionContext(merged.build());
+
+                PermissionContextState effectiveCtx =
+                        mergedWithAllowAndDeny.withAddedRules(effectiveAskRules);
+                state.setPermissionContext(effectiveCtx);
                 stateStore.save(null, sessionId, "agent_state", state);
                 LOGGER.log(
                         Level.INFO,
                         "Synced PermissionContext into persisted AgentState: session={0}, mode={1}",
-                        new Object[] {sessionId, permissionContext.getMode()});
+                        new Object[] {sessionId, effectiveCtx.getMode()});
+                return effectiveCtx;
             }
         } catch (Exception e) {
             LOGGER.log(
@@ -732,6 +799,7 @@ public class AgentRuntimeDispatcher {
                             + sessionId,
                     e);
         }
+        return permissionContext;
     }
 
     public boolean selectedModelSupportsImage(ProviderInfo provider, String modelId) {

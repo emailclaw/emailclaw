@@ -53,7 +53,7 @@ public class ProjectService {
      */
     public ProjectService(AppContext repository) {
         this.repository = repository;
-        this.configManager = repository.configManager();
+        this.configManager = repository != null ? repository.configManager() : null;
         LOGGER.info("ProjectService initialization completed");
     }
 
@@ -63,7 +63,7 @@ public class ProjectService {
      * @return List of projects
      */
     public List<ProjectInfo> list() {
-        return configManager.getProjects();
+        return configManager != null ? configManager.getProjects() : List.of();
     }
 
     /**

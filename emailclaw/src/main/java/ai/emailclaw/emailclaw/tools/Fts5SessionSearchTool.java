@@ -93,7 +93,10 @@ public class Fts5SessionSearchTool {
                                     runtimeContext != null && runtimeContext.currentAgent != null
                                             ? runtimeContext.currentAgent.getId()
                                             : null;
-                            int limit = (maxResults != null && maxResults > 0) ? maxResults : 8;
+                            int limit =
+                                    (maxResults != null && maxResults > 0)
+                                            ? Math.min(maxResults, 20)
+                                            : 8;
                             LOGGER.log(
                                     Level.INFO,
                                     "Tool session_search invoked: agent={0}, query={1}, limit={2}",
