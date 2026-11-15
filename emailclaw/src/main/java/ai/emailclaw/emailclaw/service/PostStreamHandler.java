@@ -284,16 +284,18 @@ final class PostStreamHandler {
     private void drainAndReplyAgentChat(String completedText) {
         if (completedText != null && !completedText.trim().isEmpty()) {
             try {
-                LOGGER.log(Level.FINE, "Draining agent chat replies for agentId: {0}", agentId);
+                LOGGER.log(Level.INFO, "Draining agent chat replies for agentId: {0}", agentId);
                 chatService.drainAndReplyAgentChat(
                         sessionInfo.getProjectId(), agentId, completedText);
                 LOGGER.log(
-                        Level.FINE,
+                        Level.INFO,
                         "Internal agent communication reply completed: agent={0}",
                         agentId);
             } catch (Exception e) {
                 LOGGER.log(
-                        Level.FINE, "Internal agent communication reply failed (non-critical)", e);
+                        Level.WARNING,
+                        "Internal agent communication reply failed: agent=" + agentId,
+                        e);
             }
         }
     }

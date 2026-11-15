@@ -78,16 +78,24 @@ public class MessageBusService {
     }
 
     public void inboxPush(String projectId, String sessionId, Map<String, Object> payload) {
-        LOGGER.log(Level.FINE, "Pushing message to inbox: session={0}", sessionId);
+        LOGGER.log(
+                Level.INFO,
+                "Pushing message to inbox: session={0}, payloadType={1}",
+                new Object[] {sessionId, payload != null ? payload.get("type") : "null"});
         getMessageBus(projectId)
                 .inboxPush(sessionId, payload)
                 .doOnSuccess(
                         v ->
                                 LOGGER.log(
-                                        Level.FINE,
-                                        "Message pushed successfully: session={0}",
+                                        Level.INFO,
+                                        "Message pushed successfully to inbox: session={0}",
                                         sessionId))
-                .doOnError(e -> LOGGER.log(Level.WARNING, "Message push failed: session={0}", e))
+                .doOnError(
+                        e ->
+                                LOGGER.log(
+                                        Level.WARNING,
+                                        "Message push failed: session=" + sessionId,
+                                        e))
                 .subscribe();
     }
 
@@ -122,10 +130,18 @@ public class MessageBusService {
     }
 
     public void enqueueWakeup(String projectId, String userId, String sessionId, String agentId) {
+        LOGGER.log(
+                Level.INFO,
+                "Enqueued wakeup request: session={0}, agent={1}, user={2}",
+                new Object[] {sessionId, agentId, userId});
         getMessageBus(projectId).enqueueWakeup(userId, sessionId, agentId).subscribe();
     }
 
     public void enqueueWakeup(String projectId, String sessionId, String agentId) {
+        LOGGER.log(
+                Level.INFO,
+                "Enqueued wakeup request: session={0}, agent={1}",
+                new Object[] {sessionId, agentId});
         getMessageBus(projectId).enqueueWakeup(sessionId, agentId).subscribe();
     }
 
@@ -150,20 +166,23 @@ public class MessageBusService {
     }
 
     public void failAsyncTool(String projectId, String id, String error) {
-        LOGGER.log(Level.FINE, "Marking asynchronous tool as failed: id={0}", id);
+        LOGGER.log(
+                Level.WARNING,
+                "Marking asynchronous tool as failed: id={0}, error={1}",
+                new Object[] {id, error});
         getAsyncToolRegistry(projectId)
                 .fail(id, error)
                 .doOnSuccess(
                         v ->
                                 LOGGER.log(
-                                        Level.FINE,
+                                        Level.INFO,
                                         "Asynchronous tool marked as failed successfully: id={0}",
                                         id))
                 .doOnError(
                         e ->
                                 LOGGER.log(
                                         Level.WARNING,
-                                        "Failed to mark asynchronous tool as failed",
+                                        "Failed to mark asynchronous tool as failed: id=" + id,
                                         e))
                 .subscribe();
     }

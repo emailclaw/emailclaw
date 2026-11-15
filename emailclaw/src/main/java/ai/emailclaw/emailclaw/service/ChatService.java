@@ -471,6 +471,22 @@ public class ChatService {
             }
             RuntimeContext runtimeContext = rcBuilder.build();
 
+            if (confirmResults != null && !confirmResults.isEmpty()) {
+                List<io.agentscope.core.permission.PermissionRule> confirmedRules =
+                        confirmResults.stream()
+                                .filter(
+                                        cr ->
+                                                cr != null
+                                                        && cr.isConfirmed()
+                                                        && cr.getRules() != null)
+                                .flatMap(cr -> cr.getRules().stream())
+                                .toList();
+                if (!confirmedRules.isEmpty()) {
+                    agentRuntimeDispatcher.recordConfirmedPermissionRules(
+                            effectiveSessionId, confirmedRules);
+                }
+            }
+
             Msg result;
             try (HarnessAgent reactAgent =
                     agentRuntimeDispatcher.buildAgent(

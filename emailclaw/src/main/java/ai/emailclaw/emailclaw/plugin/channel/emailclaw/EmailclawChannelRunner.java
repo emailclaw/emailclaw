@@ -176,6 +176,10 @@ If you did not send this email, someone may be attempting to spoof your email ad
     /** Sender display name */
     private static final String FROM_NAME = "Emailclaw";
 
+    private static final String NO_FINAL_TEXT =
+            "The task has been completed, but the LLM did not generate a final text response."
+                    + " Please check the relevant attachments or system status.";
+
     // ======================== Instance Fields ========================
     private final ChannelService channelService;
     private final ChatService chatService;
@@ -554,16 +558,16 @@ If you did not send this email, someone may be attempting to spoof your email ad
                                             ChatMessageRecord.textOfParts(
                                                     chatService.partsOf(message));
                                 }
-                                if (deliveryMode == DeliveryMode.STREAM) {
-                                    LOGGER.log(
-                                            Level.INFO,
-                                            "Emailclaw inbound session {0} (mailbox {1}) stream"
-                                                    + " completed, dispatching reply email",
-                                            new Object[] {
-                                                effectiveSession.getId(),
-                                                outboundMailbox.emailAddress()
-                                            });
-                                }
+                                LOGGER.log(
+                                        Level.INFO,
+                                        "Emailclaw inbound session {0} (mailbox {1}, mode {2})"
+                                                + " completed, dispatching reply email to {3}",
+                                        new Object[] {
+                                            effectiveSession.getId(),
+                                            outboundMailbox.emailAddress(),
+                                            deliveryMode,
+                                            replySender
+                                        });
                                 sendReply(
                                         outboundMailbox,
                                         mail,
@@ -1091,6 +1095,9 @@ If you did not send this email, someone may be attempting to spoof your email ad
             sendAttachments.addAll(collectProjectAttachments(session));
         }
         String finalContent = content != null ? content.trim() : "";
+        if (finalContent.isBlank() && sendAttachments.isEmpty()) {
+            finalContent = NO_FINAL_TEXT;
+        }
         try {
             sendMail(mailbox, mail.from(), subject, finalContent, sendAttachments);
         } catch (Exception e) {
@@ -1124,15 +1131,17 @@ If you did not send this email, someone may be attempting to spoof your email ad
     /**
      * Extracts strictly the user-facing final text response from message parts,
      * stripping all intermediate execution telemetry (thinking, tool calls, tool results).
+     * If execution errors occurred, they are preserved to ensure the user receives failure feedback.
      *
      * @param parts List of ChatMessagePart
-     * @return Consolidated final reply text
+     * @return Consolidated final reply text or diagnostic error message
      */
     private String extractFinalText(List<ChatMessagePart> parts) {
         if (parts == null || parts.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder();
+        StringBuilder errorSb = new StringBuilder();
         for (ChatMessagePart part : parts) {
             if (part == null || part.getText() == null || part.getText().isBlank()) {
                 continue;
@@ -1147,13 +1156,29 @@ If you did not send this email, someone may be attempting to spoof your email ad
                     sb.append("\n\n");
                 }
                 sb.append(text);
+            } else if (ChatMessagePart.ERROR.equals(type)) {
+                String text = part.getText().trim();
+                if (errorSb.length() > 0) {
+                    errorSb.append("\n");
+                }
+                errorSb.append(text);
             }
         }
         if (sb.length() > 0) {
+            if (errorSb.length() > 0) {
+                sb.append("\n\n[Warning / 系统异常提示]\n").append(errorSb);
+            }
             return sb.toString();
         }
+        if (errorSb.length() > 0) {
+            return "[Error / 任务执行遇到异常中断]\n" + errorSb;
+        }
         // Fallback: If no pure TEXT part was produced, safely fallback to standard textOfParts
-        return ChatMessageRecord.textOfParts(parts);
+        String fallback = ChatMessageRecord.textOfParts(parts);
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return NO_FINAL_TEXT;
     }
 
     public void sendMail(MailboxAccountConfig mailbox, String to, String subject, String content)

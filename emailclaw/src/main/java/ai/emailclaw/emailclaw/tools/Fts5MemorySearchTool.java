@@ -84,7 +84,10 @@ public class Fts5MemorySearchTool {
                                     runtimeContext != null
                                             ? runtimeContext.currentProject().getId()
                                             : "GLOBAL";
-                            int limit = (maxResults != null && maxResults > 0) ? maxResults : 8;
+                            int limit =
+                                    (maxResults != null && maxResults > 0)
+                                            ? Math.min(maxResults, 20)
+                                            : 8;
                             LOGGER.log(
                                     Level.INFO,
                                     "Tool memory_search invoked: agent={0}, project={1}, query={2}",
