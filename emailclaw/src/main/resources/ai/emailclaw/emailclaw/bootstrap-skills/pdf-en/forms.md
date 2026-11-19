@@ -1,6 +1,5 @@
-> **Important:** All `scripts/` paths are relative to the skill directory (where SKILL.md is).
-> Run with: `cd {this_skill_dir} && python scripts/...`
-> Or use the `working_directory` parameter of `execute`.
+> **Important:** All `scripts/` paths are relative to this skill's `<files-root>` directory (where SKILL.md is).
+> Run with: `python3 <files-root>/scripts/...` (or `cd '<files-root>' && python3 scripts/...`).
 
 **CRITICAL: You MUST complete these steps in order. Do not skip ahead to writing code.**
 

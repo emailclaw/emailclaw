@@ -1,6 +1,5 @@
-> **重要：** 所有 `scripts/` 路径均相对于技能目录（SKILL.md 所在的目录）。
-> 运行方式：`cd {this_skill_dir} && python scripts/...`
-> 或使用 `execute` 的 `working_directory` 参数。
+> **重要：** 所有 `scripts/` 路径均相对于本技能的 `<files-root>` 目录（SKILL.md 所在的目录）。
+> 运行方式：`python3 <files-root>/scripts/...`（或 `cd '<files-root>' && python3 scripts/...`）。
 
 **关键：你必须按顺序完成以下步骤，不要跳过直接编写代码。**
 

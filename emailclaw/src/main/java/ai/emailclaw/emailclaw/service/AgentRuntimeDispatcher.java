@@ -25,6 +25,7 @@ import ai.emailclaw.emailclaw.service.security.GovernanceService;
 import ai.emailclaw.emailclaw.service.skill.EmailclawSkillVisibilityFilter;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
+import ai.emailclaw.emailclaw.tools.ShellToolConfig;
 import ai.emailclaw.emailclaw.util.FileNameUtils;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -38,12 +39,16 @@ import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.IsolationScope;
 import io.agentscope.harness.agent.artifact.ArtifactDeliveryTarget;
+import io.agentscope.harness.agent.filesystem.AbstractFilesystem;
+import io.agentscope.harness.agent.filesystem.sandbox.AbstractSandboxFilesystem;
 import io.agentscope.harness.agent.filesystem.spec.LocalFilesystemSpec;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.skill.curator.SkillCuratorConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.harness.agent.subagent.WorkspaceMode;
 import io.agentscope.harness.agent.workspace.LocalFsMode;
+import io.agentscope.harness.agent.workspace.PathPolicy;
+import io.agentscope.harness.agent.workspace.WorkspaceManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -277,8 +282,11 @@ public class AgentRuntimeDispatcher {
                                 + " directory, NOT /root)\n"
                                 + "- Current Project ID: %s\n"
                                 + "- Current Project Name: %s\n"
-                                + "- Project Base Directory: %s (Working directory for all project"
-                                + " files, generated documents, code, and attachments)\n"
+                                + "- Project Base Directory: %s (Default `pwd` for `execute` shell"
+                                + " commands and working directory for all project files,"
+                                + " generated documents, code, and attachments; omit"
+                                + " `working_directory` when running shell commands in this"
+                                + " directory)\n"
                                 + "- Agent Workspace Directory: %s (Internal storage for agent"
                                 + " memory and configuration only)\n",
                         channel == null ? "unknown" : channel,
@@ -528,11 +536,47 @@ public class AgentRuntimeDispatcher {
         builder.conflictPolicy(ConflictPolicy.APPEND_MERGE);
         LOGGER.info("Configured HarnessAgent ConflictPolicy to APPEND_MERGE");
         HarnessAgent harnessAgent = builder.build();
-        io.agentscope.core.tool.Toolkit agentToolkit = harnessAgent.getToolkit();
+        Toolkit agentToolkit = harnessAgent.getToolkit();
         if (agentToolkit != null) {
-            toolService.reconcileAgentToolkit(agentToolkit, toolkit, toolRuntimeContext);
+            ShellToolConfig shellToolConfig =
+                    buildShellToolConfig(
+                            harnessAgent,
+                            projectRoot,
+                            agentWorkspace,
+                            additionalRoots,
+                            config.getShellCommandTimeout());
+            toolService.reconcileAgentToolkit(
+                    agentToolkit, toolkit, toolRuntimeContext, shellToolConfig);
         }
         return harnessAgent;
+    }
+
+    /**
+     * Builds the immutable {@link ShellToolConfig} for replacing AgentScope's default {@code
+     * ShellExecuteTool} with Emailclaw's policy-aware implementation.
+     */
+    private ShellToolConfig buildShellToolConfig(
+            HarnessAgent harnessAgent,
+            Path projectRoot,
+            Path agentWorkspace,
+            List<Path> additionalRoots,
+            int defaultShellTimeoutSeconds) {
+        WorkspaceManager workspaceManager = harnessAgent.getWorkspaceManager();
+        if (workspaceManager == null) {
+            return null;
+        }
+        AbstractFilesystem filesystem = workspaceManager.getFilesystem();
+        if (!(filesystem instanceof AbstractSandboxFilesystem sandbox)) {
+            return null;
+        }
+        List<Path> policyRoots = new ArrayList<>();
+        policyRoots.add(projectRoot);
+        policyRoots.add(agentWorkspace);
+        if (additionalRoots != null) {
+            policyRoots.addAll(additionalRoots);
+        }
+        return new ShellToolConfig(
+                sandbox, projectRoot, PathPolicy.of(policyRoots), defaultShellTimeoutSeconds);
     }
 
     private GenerateOptions buildGenerateOptions(ProviderInfo provider, ModelInfo model) {

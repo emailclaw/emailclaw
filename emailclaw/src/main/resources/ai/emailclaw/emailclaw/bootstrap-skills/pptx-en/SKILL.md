@@ -3,12 +3,11 @@ name: pptx
 description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
 
-> **Important:** All `scripts/` paths are relative to this skill directory.
-> Run with: `cd {this_skill_dir} && python scripts/...`
-> Or use the `working_directory` parameter of `execute`.
+> **Important:** All `scripts/` paths are relative to this skill's `<files-root>` directory.
+> Run with: `python3 <files-root>/scripts/...` (or `cd '<files-root>' && python3 scripts/...`).
 
 # PPTX Skill
 

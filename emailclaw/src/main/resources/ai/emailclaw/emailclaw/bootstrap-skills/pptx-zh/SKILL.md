@@ -3,12 +3,11 @@ name: pptx
 description: "当涉及到 .pptx 文件的任何操作时使用此技能——无论是作为输入、输出还是两者兼有。包括：创建幻灯片、演示文稿或路演材料；读取、解析或提取任何 .pptx 文件中的文本（即使提取的内容将用于其他地方，如邮件或摘要）；编辑、修改或更新现有演示文稿；合并或拆分幻灯片文件；处理模板、布局、演讲者备注或批注。当用户提到“演示文稿”、”幻灯片“、”PPT“或引用 .pptx 文件名时触发，无论他们之后打算如何使用内容。如果需要打开、创建或操作 .pptx 文件，就使用此技能。"
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
 
-> **重要：** 所有 `scripts/` 路径都相对于此技能目录。
-> 运行方式：`cd {this_skill_dir} && python scripts/...`
-> 或使用 `execute` 的 `working_directory` 参数。
+> **重要：** 所有 `scripts/` 路径均相对于本技能的 `<files-root>` 目录。
+> 运行方式：`python3 <files-root>/scripts/...`（或 `cd '<files-root>' && python3 scripts/...`）。
 
 # PPTX 技能
 

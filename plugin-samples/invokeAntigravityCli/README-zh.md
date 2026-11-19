@@ -108,12 +108,20 @@ Agent 将自动在后台启动无头进程并获取结构化结果进行解析�
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **是** | - | 发送给 Antigravity CLI 的任务 Prompt，插件自动在末尾附加严格 JSON 指令。 |
+| `prompt` | String | **是** | - | 发送给 Antigravity CLI 的任务 Prompt（默认自动附加 `--output-format json` 返回包含 `conversation_id` 的结构化 JSON）。 |
+| `cli_path` | String | 否 | `"agy"` | `agy` 可执行文件路径覆盖。 |
 | `working_directory` | String | 否 | 当前工程目录 / `.` | CLI 进程执行工作目录。 |
 | `model` | String | 否 | `null` | 指定覆盖的大模型名称（如 `gemini-2.5-pro`）。 |
 | `timeout_seconds` | Integer | 否 | `300` | 单次执行超时时间（秒）。 |
 | `dangerously_skip_permissions` | Boolean | 否 | `true` | 是否跳过交互权限。 |
-| `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--verbose`）。 |
+| `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--verbose`）。新开 session 时请勿在其中传入 `-c`、`--continue` 或 `--conversation`。 |
+| `continue_last_session` | Boolean | 否 | `true` | 当未提供 `conversation` 时，是否继续最近一次会话（`-c` / `--continue`）。新开 session 时请设为 `false` 且不传 `conversation`。 |
+| `conversation` | String | 否 | `null` | 可选的历史 `agy` 会话 ID，映射为 `--conversation <ID>`（Resume a previous conversation by ID），优先级高于 `-c`/`--continue`；新开 session 时省略。 |
+
+### 会话（Session）传递规则
+1. **用户要求新开 session**：不传递 `-c`、`--continue`、`--conversation`（设置 `continue_last_session=false` 且省略 `conversation`）。
+2. **用户未要求新开 session 且历史中存在 `agy` 传递的 session ID**：通过 `conversation` 传递 `--conversation <ID>` 恢复指定会话。
+3. **用户未要求新开 session 且历史中无 session ID**：保持 `continue_last_session=true`，附加 `-c`（等效于 `--continue`）。
 
 ---
 

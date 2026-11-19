@@ -20,6 +20,7 @@ import io.agentscope.core.tool.ToolParam;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -119,15 +120,30 @@ public class InvokeAntigravityCliTool {
      * @param timeoutSeconds Optional execution timeout in seconds (defaults to 300)
      * @param dangerouslySkipPermissions Whether to automatically pass --dangerously-skip-permissions
      * @param extraArgs Optional additional command-line arguments to pass to the agy binary
-     * @param continueLastSession Whether to continue the last session (-c / --continue). Defaults to true.
-     * @return Structured {@link ToolResultBlock} containing output text, execution state, and metadata
+     * @param continueLastSession Whether to continue the last session (-c / --continue). Defaults
+     *     to true when {@code conversation} is omitted. Set to false (and omit {@code
+     *     conversation}) to start a new session.
+     * @param conversation Optional previous agy session/conversation ID to pass via {@code
+     *     --conversation} (Resume a previous conversation by ID). Takes precedence over {@code
+     *     -c}/{@code --continue}.
+     * @return Structured {@link ToolResultBlock} containing output text, execution state, and
+     *     metadata
      */
     @Tool(
             name = "invokeAntigravityCli",
             description =
-                    "Invoke Google Antigravity CLI (agy) in headless mode (-p/--print) to execute"
-                            + " tasks, run tests, analyze code, or generate artifacts, returning"
-                            + " structured JSON results.")
+                    "Invoke Google Antigravity CLI (agy) in headless print mode (-p/--print"
+                            + " --output-format json) to execute tasks, run tests, analyze code,"
+                            + " or generate artifacts, returning structured JSON results (including"
+                            + " conversation_id). Session selection rules: (1) If the user asks to"
+                            + " start a new session when calling agy, do NOT pass -c, --continue,"
+                            + " or --conversation (set continue_last_session=false and omit"
+                            + " conversation). (2) If the user does NOT ask for a new session,"
+                            + " first check the conversation history for any session/conversation"
+                            + " ID returned by agy; if found, pass it via the conversation"
+                            + " parameter (--conversation: Resume a previous conversation by ID)."
+                            + " (3) If no historical agy session ID exists, use"
+                            + " continue_last_session=true (adds -c, equivalent to --continue).")
     public ToolResultBlock invokeAntigravityCli(
             @ToolParam(
                             name = "prompt",
@@ -174,23 +190,47 @@ public class InvokeAntigravityCliTool {
                             name = "extra_args",
                             description =
                                     "Optional additional command-line arguments to pass to the agy"
-                                            + " binary.",
+                                            + " binary. Do not include -c, --continue, or"
+                                            + " --conversation when starting a new session.",
                             required = false)
                     String extraArgs,
             @ToolParam(
                             name = "continue_last_session",
                             description =
-                                    "Whether to continue the last session (-c / --continue)."
-                                            + " Defaults to true.",
+                                    "Whether to continue the most recent agy conversation (-c /"
+                                            + " --continue). Defaults to true when 'conversation'"
+                                            + " is omitted. Set to false (and omit 'conversation')"
+                                            + " when the user requests a new session so neither"
+                                            + " -c, --continue, nor --conversation is passed."
+                                            + " Ignored when 'conversation' is provided.",
                             required = false)
-                    Boolean continueLastSession) {
-        boolean effectiveContinue = continueLastSession == null || continueLastSession;
+                    Boolean continueLastSession,
+            @ToolParam(
+                            name = "conversation",
+                            description =
+                                    "Optional previous agy session/conversation ID to pass via"
+                                            + " --conversation (Resume a previous conversation by"
+                                            + " ID). When the user does not request a new session"
+                                            + " and a session/conversation ID from agy exists in"
+                                            + " history, pass that ID here (takes precedence over"
+                                            + " -c/--continue). Omit when starting a new session.",
+                            required = false)
+                    String conversation) {
+        String normalizedConversation =
+                (conversation != null && !conversation.isBlank()) ? conversation.trim() : null;
+        boolean effectiveContinue =
+                normalizedConversation == null
+                        && (continueLastSession == null || continueLastSession);
         LOGGER.log(
                 Level.INFO,
                 "InvokeAntigravityCli tool call initiated: promptLength={0}, workingDir={1},"
-                        + " model={2}, continueLastSession={3}",
+                        + " model={2}, continueLastSession={3}, conversation={4}",
                 new Object[] {
-                    prompt != null ? prompt.length() : 0, workingDirectory, model, effectiveContinue
+                    prompt != null ? prompt.length() : 0,
+                    workingDirectory,
+                    model,
+                    effectiveContinue,
+                    normalizedConversation
                 });
 
         if (prompt == null || prompt.isBlank()) {
@@ -207,7 +247,6 @@ public class InvokeAntigravityCliTool {
                     .build();
         }
 
-        String effectivePrompt = AntigravityJsonUtils.appendJsonFormatInstruction(prompt);
         Path targetWorkingDir = resolveWorkingDirectory(workingDirectory);
         int effectiveTimeout =
                 (timeoutSeconds != null && timeoutSeconds > 0)
@@ -221,9 +260,13 @@ public class InvokeAntigravityCliTool {
         LOGGER.log(
                 Level.INFO,
                 "Launching Antigravity CLI tool execution: workingDir={0}, timeout={1}s,"
-                        + " skipPermissions={2}, continueLastSession={3}",
+                        + " skipPermissions={2}, continueLastSession={3}, conversation={4}",
                 new Object[] {
-                    targetWorkingDir, effectiveTimeout, skipPermissions, effectiveContinue
+                    targetWorkingDir,
+                    effectiveTimeout,
+                    skipPermissions,
+                    effectiveContinue,
+                    normalizedConversation
                 });
 
         String actualCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath : defaultCliPath;
@@ -231,13 +274,14 @@ public class InvokeAntigravityCliTool {
         AntigravityExecutionResult result =
                 processRunner.execute(
                         actualCliPath,
-                        effectivePrompt,
+                        prompt,
                         targetWorkingDir,
                         model,
                         effectiveTimeout,
                         skipPermissions,
                         extraArgs,
-                        effectiveContinue);
+                        effectiveContinue,
+                        normalizedConversation);
 
         LOGGER.log(
                 Level.INFO,
@@ -288,16 +332,28 @@ public class InvokeAntigravityCliTool {
         }
 
         String cleanJson = AntigravityJsonUtils.extractCleanJson(result.stdout());
-        Map<String, Object> metadata =
-                Map.of(
-                        "exitCode", result.exitCode(),
-                        "timedOut", false,
-                        "workingDirectory", targetWorkingDir.toString());
+        String returnedConversationId = AntigravityJsonUtils.extractConversationId(cleanJson);
+        if (returnedConversationId != null) {
+            LOGGER.log(
+                    Level.INFO,
+                    "Antigravity CLI returned conversation ID: {0}",
+                    returnedConversationId);
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("exitCode", result.exitCode());
+        metadata.put("timedOut", false);
+        metadata.put("workingDirectory", targetWorkingDir.toString());
+        if (returnedConversationId != null) {
+            metadata.put("conversationId", returnedConversationId);
+        } else if (normalizedConversation != null) {
+            metadata.put("conversationId", normalizedConversation);
+        }
 
         return ToolResultBlock.builder()
                 .output(TextBlock.builder().text(cleanJson).build())
                 .state(ToolResultState.SUCCESS)
-                .metadata(metadata)
+                .metadata(Map.copyOf(metadata))
                 .build();
     }
 
@@ -325,9 +381,7 @@ public class InvokeAntigravityCliTool {
     private Path getProjectOrWorkspaceBase() {
         if (context != null && context.projectService() != null) {
             ProjectInfo project = context.projectService().currentDefault();
-            if (project != null
-                    && project.getBaseDirectory() != null
-                    && !project.getBaseDirectory().isBlank()) {
+            if (project.getBaseDirectory() != null && !project.getBaseDirectory().isBlank()) {
                 Path projectDir =
                         Paths.get(project.getBaseDirectory()).toAbsolutePath().normalize();
                 if (Files.exists(projectDir) && Files.isDirectory(projectDir)) {

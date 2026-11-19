@@ -3,12 +3,11 @@ name: docx
 description: "当用户需要创建、读取、编辑或处理 Word 文档（.docx）时，使用此技能。触发场景包括提到“Word 文档”、“.docx”，或要求生成带目录、标题、页码、信头等格式的专业文档；也包括提取或重组 .docx 内容、插入或替换图片、在 Word 文件中查找替换、处理修订或批注，以及将内容整理为正式 Word 文档。如果用户要求生成“报告”“备忘录”“信函”“模板”等 Word / .docx 交付物，也应使用此技能。不要用于 PDF、电子表格、Google Docs，或与文档生成无关的一般编程任务。"
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
 
-> **重要:** 所有 `scripts/` 路径均相对于本技能目录。
-> 运行方式: `cd {this_skill_dir} && python scripts/...`
-> 或使用 `execute` 的 `working_directory` 参数。
+> **重要：** 所有 `scripts/` 路径均相对于本技能的 `<files-root>` 目录。
+> 运行方式：`python3 <files-root>/scripts/...`（或 `cd '<files-root>' && python3 scripts/...`）。
 
 # DOCX 创建、编辑与分析
 
