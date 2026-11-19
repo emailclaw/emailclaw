@@ -17,9 +17,9 @@ import java.nio.file.Path;
  */
 public final class AppHomeResolver {
     public static final String USER_HOME_VALUE = System.getProperty("user.home");
+    public static final String DEFAULT_HOME_DIR_NAME = "emailclaw";
     public static final String SYS_PROP_HOME = "emailclaw.home";
     public static final String ENV_HOME = "EMAILCLAW_HOME";
-    public static final String DEFAULT_HOME_DIR_NAME = "emailclaw";
     public static final Path APP_HOME_RESOLVED = resolveAppHome();
 
     private AppHomeResolver() {}

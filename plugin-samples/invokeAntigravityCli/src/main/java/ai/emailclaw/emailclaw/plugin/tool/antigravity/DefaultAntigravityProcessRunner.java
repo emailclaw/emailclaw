@@ -51,8 +51,20 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
     /**
      * Builds the command arguments for agy in print mode.
      *
-     * <p>When {@code continueLastSession} is true, generates {@code agy -c --dangerously-skip-permissions ... -p [PROMPT]}
-     * to continue the most recent conversation.
+     * <p>Session flag precedence:
+     * <ol>
+     *   <li>If {@code conversation} is non-blank (or {@code --conversation} is present in
+     *       {@code extraArgs}), resumes that specific session via {@code --conversation <id>}
+     *       without passing {@code -c}/{@code --continue}.</li>
+     *   <li>Otherwise, if {@code continueLastSession} is true, adds {@code -c} to continue
+     *       the most recent conversation.</li>
+     *   <li>Otherwise, omits {@code -c}, {@code --continue}, and {@code --conversation} to
+     *       start a brand-new session.</li>
+     * </ol>
+     *
+     * <p>Automatically appends {@code --output-format json} unless {@code --output-format} is
+     * already specified in {@code extraArgs}, so {@code agy} returns structured JSON including
+     * its {@code conversation_id}.
      *
      * @param cliPath Path or binary name of the agy CLI
      * @param prompt The prompt to execute in print mode
@@ -60,6 +72,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
      * @param dangerouslySkipPermissions Whether to skip permission prompting
      * @param extraArgs Additional command line arguments
      * @param continueLastSession Whether to continue the most recent conversation (-c / --continue)
+     * @param conversation Optional previous conversation/session ID to resume via --conversation
      * @return List of command line arguments
      */
     List<String> buildCommand(
@@ -68,36 +81,66 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             String model,
             boolean dangerouslySkipPermissions,
             String extraArgs,
-            boolean continueLastSession) {
+            boolean continueLastSession,
+            String conversation) {
         List<String> command = new ArrayList<>();
         String effectiveCliPath = (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "agy";
         String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
         command.add(resolvedCliPath);
 
+        String normalizedConversation =
+                (conversation != null && !conversation.isBlank()) ? conversation.trim() : null;
+
         boolean hasContinue = false;
+        boolean hasConversation = false;
         boolean hasSkipPerms = false;
         boolean hasModel = false;
+        boolean hasOutputFormat = false;
         List<String> extraTokens = new ArrayList<>();
 
         if (extraArgs != null && !extraArgs.isBlank()) {
             for (String token : extraArgs.trim().split("\\s+")) {
                 if (!token.isBlank()) {
-                    if ("-c".equals(token) || "--continue".equals(token)) {
+                    if (isContinueFlag(token)) {
                         hasContinue = true;
                     }
-                    if ("--dangerously-skip-permissions".equals(token)) {
+                    if ("--conversation".equals(token) || token.startsWith("--conversation=")) {
+                        hasConversation = true;
+                    }
+                    if ("--dangerously-skip-permissions".equals(token)
+                            || token.startsWith("--dangerously-skip-permissions=")) {
                         hasSkipPerms = true;
                     }
-                    if ("--model".equals(token)) {
+                    if ("--model".equals(token) || token.startsWith("--model=")) {
                         hasModel = true;
+                    }
+                    if ("--output-format".equals(token) || token.startsWith("--output-format=")) {
+                        hasOutputFormat = true;
                     }
                     extraTokens.add(token);
                 }
             }
         }
 
-        if (continueLastSession && !hasContinue) {
+        boolean useConversation = normalizedConversation != null || hasConversation;
+        if (useConversation && hasContinue) {
+            LOGGER.warning(
+                    "Both --conversation and -c/--continue were supplied; prioritizing"
+                            + " --conversation and stripping conflicting -c/--continue from"
+                            + " extra_args");
+            extraTokens.removeIf(DefaultAntigravityProcessRunner::isContinueFlag);
+        }
+
+        if (normalizedConversation != null && !hasConversation) {
+            command.add("--conversation");
+            command.add(normalizedConversation);
+        } else if (!useConversation && continueLastSession && !hasContinue) {
             command.add("-c");
+        }
+
+        if (!hasOutputFormat) {
+            command.add("--output-format");
+            command.add("json");
         }
         if (dangerouslySkipPermissions && !hasSkipPerms) {
             command.add("--dangerously-skip-permissions");
@@ -110,6 +153,30 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
         command.add("-p");
         command.add(prompt != null ? prompt : "");
         return command;
+    }
+
+    /**
+     * Backward-compatible overload of {@link #buildCommand} without an explicit conversation ID.
+     */
+    List<String> buildCommand(
+            String cliPath,
+            String prompt,
+            String model,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession) {
+        return buildCommand(
+                cliPath,
+                prompt,
+                model,
+                dangerouslySkipPermissions,
+                extraArgs,
+                continueLastSession,
+                null);
+    }
+
+    private static boolean isContinueFlag(String token) {
+        return "-c".equals(token) || "--continue".equals(token) || token.startsWith("--continue=");
     }
 
     @Override
@@ -129,7 +196,8 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 timeoutSeconds,
                 dangerouslySkipPermissions,
                 extraArgs,
-                true);
+                true,
+                null);
     }
 
     @Override
@@ -142,6 +210,29 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             boolean dangerouslySkipPermissions,
             String extraArgs,
             boolean continueLastSession) {
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                timeoutSeconds,
+                dangerouslySkipPermissions,
+                extraArgs,
+                continueLastSession,
+                null);
+    }
+
+    @Override
+    public AntigravityExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            int timeoutSeconds,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession,
+            String conversation) {
         List<String> command =
                 buildCommand(
                         cliPath,
@@ -149,7 +240,8 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                         model,
                         dangerouslySkipPermissions,
                         extraArgs,
-                        continueLastSession);
+                        continueLastSession,
+                        conversation);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -172,8 +264,10 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
         LOGGER.log(
                 Level.INFO,
                 "Launching Antigravity CLI process: command={0}, workingDir={1}, timeout={2}s,"
-                        + " continueLastSession={3}",
-                new Object[] {command, workingDirectory, timeoutSeconds, continueLastSession});
+                        + " continueLastSession={3}, conversation={4}",
+                new Object[] {
+                    command, workingDirectory, timeoutSeconds, continueLastSession, conversation
+                });
 
         Process process;
         try {

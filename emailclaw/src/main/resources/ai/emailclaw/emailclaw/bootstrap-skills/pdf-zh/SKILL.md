@@ -3,12 +3,11 @@ name: pdf
 description: 当用户需要对PDF文件进行任何操作时，请使用此技能。包括从 PDF 中读取或提取文本/表格、合并多个 PDF、拆分 PDF、旋转页面、添加水印、创建新PDF、填写PDF表单、加密/解密 PDF、提取图片，以及对扫描版 PDF 进行 OCR 使其可搜索。如果用户提到 .pdf 文件或要求生成 PDF，请使用此技能。
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
-  builtin_skill_version: "1.1"
+  builtin_skill_version: "1.2"
 ---
 
-> **重要：** 所有 `scripts/` 路径均相对于此技能目录。
-> 运行方式：`cd {this_skill_dir} && python scripts/...`
-> 或使用 `execute` 的 `working_directory` 参数。
+> **重要：** 所有 `scripts/` 路径均相对于本技能的 `<files-root>` 目录。
+> 运行方式：`python3 <files-root>/scripts/...`（或 `cd '<files-root>' && python3 scripts/...`）。
 
 # PDF 处理指南
 

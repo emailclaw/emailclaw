@@ -13,6 +13,7 @@ package ai.emailclaw.emailclaw.plugin.tool.antigravity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
@@ -61,6 +62,7 @@ class InvokeAntigravityCliToolTest {
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
         AtomicReference<Boolean> capturedSkipPerms = new AtomicReference<>();
         AtomicReference<Boolean> capturedContinueLastSession = new AtomicReference<>();
+        AtomicReference<String> capturedConversation = new AtomicReference<>();
 
         AntigravityProcessRunner mockRunner =
                 (cliPath,
@@ -70,15 +72,17 @@ class InvokeAntigravityCliToolTest {
                         timeoutSeconds,
                         dangerouslySkipPermissions,
                         extraArgs,
-                        continueLastSession) -> {
+                        continueLastSession,
+                        conversation) -> {
                     capturedCliPath.set(cliPath);
                     capturedPrompt.set(prompt);
                     capturedSkipPerms.set(dangerouslySkipPermissions);
                     capturedContinueLastSession.set(continueLastSession);
+                    capturedConversation.set(conversation);
                     return new AntigravityExecutionResult(
                             0,
                             "```json\n"
-                                + "{\"test_suite\":\"user-service\",\"passed\":42,\"failed\":0}\n"
+                                + "{\"conversation_id\":\"conv-123\",\"test_suite\":\"user-service\",\"passed\":42,\"failed\":0}\n"
                                 + "```",
                             "",
                             false,
@@ -98,22 +102,25 @@ class InvokeAntigravityCliToolTest {
                         60,
                         true,
                         "--verbose",
-                        true);
+                        true,
+                        null);
 
         assertNotNull(resultBlock);
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
         assertEquals("agy", capturedCliPath.get());
-        assertTrue(capturedPrompt.get().contains("Generate report"));
-        assertTrue(capturedPrompt.get().endsWith(AntigravityJsonUtils.JSON_FORMAT_INSTRUCTION));
+        assertEquals("Generate report", capturedPrompt.get());
         assertTrue(capturedSkipPerms.get());
         assertTrue(capturedContinueLastSession.get());
+        assertNull(capturedConversation.get());
         assertEquals(0, resultBlock.getMetadata().get("exitCode"));
         assertEquals(false, resultBlock.getMetadata().get("timedOut"));
+        assertEquals("conv-123", resultBlock.getMetadata().get("conversationId"));
 
         // Verify JSON parseability and stripped markdown
         assertFalse(resultBlock.getOutput().isEmpty());
         String outputText = ((TextBlock) resultBlock.getOutput().get(0)).getText();
         JsonNode node = MAPPER.readTree(outputText);
+        assertEquals("conv-123", node.get("conversation_id").asText());
         assertEquals("user-service", node.get("test_suite").asText());
         assertEquals(42, node.get("passed").asInt());
         assertEquals(0, node.get("failed").asInt());
@@ -130,7 +137,8 @@ class InvokeAntigravityCliToolTest {
                         timeoutSeconds,
                         dangerouslySkipPermissions,
                         extraArgs,
-                        continueLastSession) ->
+                        continueLastSession,
+                        conversation) ->
                         new AntigravityExecutionResult(
                                 -1,
                                 "",
@@ -145,7 +153,7 @@ class InvokeAntigravityCliToolTest {
                 new InvokeAntigravityCliTool(null, timeoutRunner, "agy", 10, true);
         ToolResultBlock errorBlock =
                 tool.invokeAntigravityCli(
-                        "Long running task", null, null, null, 10, true, null, null);
+                        "Long running task", null, null, null, 10, true, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -164,7 +172,7 @@ class InvokeAntigravityCliToolTest {
     void testEmptyPromptHandling() throws Exception {
         InvokeAntigravityCliTool tool = new InvokeAntigravityCliTool(null);
         ToolResultBlock errorBlock =
-                tool.invokeAntigravityCli("   ", null, null, null, null, null, null, null);
+                tool.invokeAntigravityCli("   ", null, null, null, null, null, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -231,21 +239,23 @@ class InvokeAntigravityCliToolTest {
     @Test
     @DisplayName(
             "DefaultAntigravityProcessRunner buildCommand should correctly construct agy CLI"
-                    + " arguments")
+                    + " arguments including --conversation, -c, and --output-format json")
     void testDefaultAntigravityProcessRunnerBuildCommand() {
         DefaultAntigravityProcessRunner runner = new DefaultAntigravityProcessRunner(path -> path);
 
-        // 1. Standard prompt without model, dangerouslySkipPermissions=false,
-        // continueLastSession=false
-        List<String> cmd1 = runner.buildCommand("agy", "fix bug", null, false, null, false);
-        assertEquals(List.of("agy", "-p", "fix bug"), cmd1);
+        // 1. New session: no -c, no --continue, no --conversation
+        List<String> cmd1 = runner.buildCommand("agy", "fix bug", null, false, null, false, null);
+        assertEquals(List.of("agy", "--output-format", "json", "-p", "fix bug"), cmd1);
 
-        // 2. Prompt with model and dangerouslySkipPermissions=true, continueLastSession=false
+        // 2. New session with model and dangerouslySkipPermissions=true
         List<String> cmd2 =
-                runner.buildCommand("agy", "add feature", "gemini-2.5-pro", true, null, false);
+                runner.buildCommand(
+                        "agy", "add feature", "gemini-2.5-pro", true, null, false, null);
         assertEquals(
                 List.of(
                         "agy",
+                        "--output-format",
+                        "json",
                         "--dangerously-skip-permissions",
                         "--model",
                         "gemini-2.5-pro",
@@ -255,10 +265,13 @@ class InvokeAntigravityCliToolTest {
 
         // 3. Extra arguments specified with -c already present, continueLastSession=true
         List<String> cmd3 =
-                runner.buildCommand("/custom/agy", "review code", null, true, "-c --verbose", true);
+                runner.buildCommand(
+                        "/custom/agy", "review code", null, true, "-c --verbose", true, null);
         assertEquals(
                 List.of(
                         "/custom/agy",
+                        "--output-format",
+                        "json",
                         "--dangerously-skip-permissions",
                         "-c",
                         "--verbose",
@@ -266,25 +279,87 @@ class InvokeAntigravityCliToolTest {
                         "review code"),
                 cmd3);
 
-        // 4. continueLastSession=true (default behavior adds -c)
+        // 4. continueLastSession=true without conversation ID (default behavior adds -c)
         List<String> cmd4 =
-                runner.buildCommand("agy", "continue task", "gemini-2.5-pro", true, null, true);
+                runner.buildCommand(
+                        "agy", "continue task", "gemini-2.5-pro", true, null, true, null);
         assertEquals(
                 List.of(
                         "agy",
                         "-c",
+                        "--output-format",
+                        "json",
                         "--dangerously-skip-permissions",
                         "--model",
                         "gemini-2.5-pro",
                         "-p",
                         "continue task"),
                 cmd4);
+
+        // 5. Explicit conversation ID takes precedence over continueLastSession (-c is omitted)
+        List<String> cmd5 =
+                runner.buildCommand(
+                        "agy", "resume task", "gemini-2.5-pro", true, null, true, "conv-abc-123");
+        assertEquals(
+                List.of(
+                        "agy",
+                        "--conversation",
+                        "conv-abc-123",
+                        "--output-format",
+                        "json",
+                        "--dangerously-skip-permissions",
+                        "--model",
+                        "gemini-2.5-pro",
+                        "-p",
+                        "resume task"),
+                cmd5);
+
+        // 6. Explicit conversation ID strips conflicting -c/--continue in extra_args
+        List<String> cmd6 =
+                runner.buildCommand(
+                        "agy",
+                        "resume clean",
+                        null,
+                        true,
+                        "-c --output-format text --verbose",
+                        true,
+                        "conv-xyz-789");
+        assertEquals(
+                List.of(
+                        "agy",
+                        "--conversation",
+                        "conv-xyz-789",
+                        "--dangerously-skip-permissions",
+                        "--output-format",
+                        "text",
+                        "--verbose",
+                        "-p",
+                        "resume clean"),
+                cmd6);
+
+        // 7. --conversation supplied via extra_args suppresses -c
+        List<String> cmd7 =
+                runner.buildCommand(
+                        "agy", "extra conv", null, false, "--conversation conv-extra", true, null);
+        assertEquals(
+                List.of(
+                        "agy",
+                        "--output-format",
+                        "json",
+                        "--conversation",
+                        "conv-extra",
+                        "-p",
+                        "extra conv"),
+                cmd7);
     }
 
     @Test
-    @DisplayName("Tool invocation should default continueLastSession to true when null")
+    @DisplayName(
+            "Tool invocation should resolve conversation, continueLastSession, and fresh session"
+                    + " correctly")
     void testContinueLastSessionDefaultHandling() {
         AtomicReference<Boolean> capturedContinue = new AtomicReference<>();
+        AtomicReference<String> capturedConversation = new AtomicReference<>();
         AntigravityProcessRunner mockRunner =
                 (cliPath,
                         prompt,
@@ -293,20 +368,51 @@ class InvokeAntigravityCliToolTest {
                         timeoutSeconds,
                         dangerouslySkipPermissions,
                         extraArgs,
-                        continueLastSession) -> {
+                        continueLastSession,
+                        conversation) -> {
                     capturedContinue.set(continueLastSession);
-                    return new AntigravityExecutionResult(0, "{}", "", false, true, null);
+                    capturedConversation.set(conversation);
+                    return new AntigravityExecutionResult(
+                            0, "{\"conversation_id\":\"conv-returned-1\"}", "", false, true, null);
                 };
 
         InvokeAntigravityCliTool tool =
                 new InvokeAntigravityCliTool(null, mockRunner, "agy", 10, true);
 
-        // null continueLastSession defaults to true
-        tool.invokeAntigravityCli("Continue test", null, null, null, 10, true, null, null);
+        // 1. null continueLastSession and null conversation defaults to continueLastSession=true
+        tool.invokeAntigravityCli("Continue test", null, null, null, 10, true, null, null, null);
         assertTrue(capturedContinue.get(), "null continueLastSession should default to true");
+        assertNull(capturedConversation.get());
 
-        // explicit false
-        tool.invokeAntigravityCli("Fresh test", null, null, null, 10, true, null, false);
+        // 2. explicit false continueLastSession and null conversation -> fresh session
+        tool.invokeAntigravityCli("Fresh test", null, null, null, 10, true, null, false, null);
         assertFalse(capturedContinue.get(), "explicit false continueLastSession should be false");
+        assertNull(capturedConversation.get());
+
+        // 3. explicit conversation ID overrides continueLastSession (never passes -c)
+        tool.invokeAntigravityCli(
+                "Resume by ID", null, null, null, 10, true, null, true, "  conv-42  ");
+        assertFalse(
+                capturedContinue.get(),
+                "continueLastSession must be false when conversation ID is provided");
+        assertEquals("conv-42", capturedConversation.get());
+    }
+
+    @Test
+    @DisplayName("AntigravityJsonUtils should extract conversation_id and session_id cleanly")
+    void testExtractConversationId() {
+        assertEquals(
+                "conv-001",
+                AntigravityJsonUtils.extractConversationId(
+                        "{\"status\":\"ok\",\"conversation_id\":\"conv-001\",\"response\":\"hi\"}"));
+        assertEquals(
+                "sess-002",
+                AntigravityJsonUtils.extractConversationId("{\"session_id\":\"sess-002\"}"));
+        assertEquals(
+                "conv-last",
+                AntigravityJsonUtils.extractConversationId(
+                        "[{\"event\":\"init\"},{\"event\":\"result\",\"conversation_id\":\"conv-last\"}]"));
+        assertNull(AntigravityJsonUtils.extractConversationId("{\"status\":\"ok\"}"));
+        assertNull(AntigravityJsonUtils.extractConversationId("not-json"));
     }
 }

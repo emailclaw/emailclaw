@@ -20,7 +20,7 @@ import java.awt.GraphicsEnvironment;
  * dispatching appropriately to {@link FxApp}, {@link CliApp}, or {@link ServiceApp}.
  */
 public class Launcher {
-    public static final String APP_VERSION = "v26.11.15";
+    public static final String APP_VERSION = "v26.11.19";
 
     public static void main(String[] args) {
         boolean isService = false;

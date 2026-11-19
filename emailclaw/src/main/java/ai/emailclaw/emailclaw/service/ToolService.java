@@ -17,9 +17,11 @@ import ai.emailclaw.emailclaw.plugin.PluginRegistry;
 import ai.emailclaw.emailclaw.storage.AppContext;
 import ai.emailclaw.emailclaw.storage.ConfigManager;
 import ai.emailclaw.emailclaw.tools.BuiltInToolNames;
+import ai.emailclaw.emailclaw.tools.EmailclawShellExecuteTool;
 import ai.emailclaw.emailclaw.tools.Fts5MemorySearchTool;
 import ai.emailclaw.emailclaw.tools.Fts5SessionSearchTool;
 import ai.emailclaw.emailclaw.tools.NetworkFetchTool;
+import ai.emailclaw.emailclaw.tools.ShellToolConfig;
 import ai.emailclaw.emailclaw.tools.ToolRegistry;
 import ai.emailclaw.emailclaw.tools.UserPeerDialecticTool;
 import ai.emailclaw.emailclaw.tools.fetch.WebFetchFallbackCoordinator;
@@ -28,6 +30,7 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientBuilder;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.harness.agent.tool.ShellExecuteTool;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
 import io.agentscope.harness.agent.tools.McpServerRegistrationResult;
@@ -218,6 +221,24 @@ public class ToolService {
      */
     public void reconcileAgentToolkit(
             Toolkit agentToolkit, Toolkit originalToolkit, ToolRuntimeContext context) {
+        reconcileAgentToolkit(agentToolkit, originalToolkit, context, null);
+    }
+
+    /**
+     * Reconciles the agent toolkit after HarnessAgent construction with optional policy-aware
+     * shell tool override.
+     *
+     * @param agentToolkit active toolkit from the built agent
+     * @param originalToolkit source toolkit containing configured MCP tools before agent build
+     * @param context tool runtime context
+     * @param shellToolConfig optional shell execution configuration used to replace AgentScope's
+     *     default {@code execute} tool with {@link EmailclawShellExecuteTool}
+     */
+    public void reconcileAgentToolkit(
+            Toolkit agentToolkit,
+            Toolkit originalToolkit,
+            ToolRuntimeContext context,
+            ShellToolConfig shellToolConfig) {
         if (agentToolkit == null) {
             return;
         }
@@ -236,6 +257,20 @@ public class ToolService {
                 agentToolkit.registerAgentTool(mcpSearchTool);
                 LOGGER.info("Restored MCP web_search tool onto agent toolkit.");
             }
+        }
+
+        if (shellToolConfig != null && agentToolkit.getTool(ShellExecuteTool.NAME) != null) {
+            agentToolkit.removeTool(ShellExecuteTool.NAME);
+            agentToolkit.registerTool(new EmailclawShellExecuteTool(shellToolConfig));
+            LOGGER.log(
+                    Level.INFO,
+                    "Replaced default AgentScope ShellExecuteTool with EmailclawShellExecuteTool:"
+                            + " projectRoot={0}, allowedRoots={1}, defaultTimeout={2}s",
+                    new Object[] {
+                        shellToolConfig.projectRoot(),
+                        shellToolConfig.pathPolicy().roots().size(),
+                        shellToolConfig.defaultTimeoutSeconds()
+                    });
         }
 
         Set<String> enabled =

@@ -106,12 +106,20 @@ If you wish to customize the executable path, default timeout, or permission pol
 
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **Yes** | - | Task description or prompt sent to Antigravity CLI. Automatically appended with strict JSON formatting instructions. |
+| `prompt` | String | **Yes** | - | Task description or prompt sent to Antigravity CLI (`--output-format json` is passed automatically unless overridden in `extra_args`). |
+| `cli_path` | String | No | `"agy"` | Optional executable path for the `agy` binary. |
 | `working_directory` | String | No | Project Base / `.` | Directory in which the CLI process executes. |
 | `model` | String | No | `null` | Optional model override (e.g. `gemini-2.5-pro`). |
 | `timeout_seconds` | Integer | No | `300` | Optional timeout limit in seconds. |
 | `dangerously_skip_permissions` | Boolean | No | `true` | Whether to automatically pass `--dangerously-skip-permissions`. |
-| `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--verbose`). |
+| `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--verbose`). Do not include `-c`, `--continue`, or `--conversation` when starting a new session. |
+| `continue_last_session` | Boolean | No | `true` | Whether to continue the most recent conversation (`-c` / `--continue`) when `conversation` is omitted. Set to `false` (and omit `conversation`) when starting a new session. |
+| `conversation` | String | No | `null` | Optional previous `agy` session/conversation ID to pass via `--conversation` (*Resume a previous conversation by ID*). Takes precedence over `-c`/`--continue`. Omit when starting a new session. |
+
+### Session Selection Rules
+1. **New session requested**: Do not pass `-c`, `--continue`, or `--conversation` (`continue_last_session=false`, omit `conversation`).
+2. **Continue with historical `agy` session ID**: If conversation history contains a session/conversation ID returned by `agy`, pass it via `conversation` (`--conversation <ID>`).
+3. **Continue without historical session ID**: If no historical `agy` session ID exists, use `continue_last_session=true` (adds `-c`, equivalent to `--continue`).
 
 ---
 
