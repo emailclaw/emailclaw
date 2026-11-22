@@ -109,7 +109,8 @@ If you wish to customize the executable path, default timeout, or permission pol
 | `prompt` | String | **Yes** | - | Task description or prompt sent to Antigravity CLI (`--output-format json` is passed automatically unless overridden in `extra_args`). |
 | `cli_path` | String | No | `"agy"` | Optional executable path for the `agy` binary. |
 | `working_directory` | String | No | Project Base / `.` | Directory in which the CLI process executes. |
-| `model` | String | No | `null` | Optional model override (e.g. `gemini-2.5-pro`). |
+| `model` | String | No | `null` | Optional model for the current CLI session (`--model`, e.g. `gemini-2.5-pro`). Omit or leave empty to use the `agy` default model. |
+| `effort` | String | No | `null` | Optional reasoning effort for the current CLI session (`--effort`: `low`, `medium`, `high`, `xhigh`, or `max`). Omit or leave empty to use the `agy` default effort. |
 | `timeout_seconds` | Integer | No | `300` | Optional timeout limit in seconds. |
 | `dangerously_skip_permissions` | Boolean | No | `true` | Whether to automatically pass `--dangerously-skip-permissions`. |
 | `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--verbose`). Do not include `-c`, `--continue`, or `--conversation` when starting a new session. |

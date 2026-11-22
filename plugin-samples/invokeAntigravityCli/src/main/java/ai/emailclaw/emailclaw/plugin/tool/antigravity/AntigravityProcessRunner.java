@@ -26,7 +26,9 @@ public interface AntigravityProcessRunner {
      * @param cliPath Path or binary name of the Antigravity CLI (default 'agy')
      * @param prompt The effective prompt passed to the CLI in headless print mode
      * @param workingDirectory The directory in which the process should execute
-     * @param model Optional model override parameter
+     * @param model Optional model for the current CLI session ({@code --model})
+     * @param effort Optional reasoning effort for the current CLI session ({@code --effort}:
+     *     low|medium|high|xhigh|max)
      * @param timeoutSeconds Execution timeout limit in seconds
      * @param dangerouslySkipPermissions Whether to automatically pass --dangerously-skip-permissions
      * @param extraArgs Optional additional CLI flags or arguments
@@ -39,11 +41,38 @@ public interface AntigravityProcessRunner {
             String prompt,
             Path workingDirectory,
             String model,
+            String effort,
             int timeoutSeconds,
             boolean dangerouslySkipPermissions,
             String extraArgs,
             boolean continueLastSession,
             String conversation);
+
+    /**
+     * Overload for backward compatibility without an explicit reasoning effort override.
+     */
+    default AntigravityExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            int timeoutSeconds,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession,
+            String conversation) {
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                null,
+                timeoutSeconds,
+                dangerouslySkipPermissions,
+                extraArgs,
+                continueLastSession,
+                conversation);
+    }
 
     /**
      * Overload for backward compatibility without an explicit conversation ID.

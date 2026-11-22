@@ -111,7 +111,8 @@ Agent 将自动在后台启动无头进程并获取结构化结果进行解析�
 | `prompt` | String | **是** | - | 发送给 Antigravity CLI 的任务 Prompt（默认自动附加 `--output-format json` 返回包含 `conversation_id` 的结构化 JSON）。 |
 | `cli_path` | String | 否 | `"agy"` | `agy` 可执行文件路径覆盖。 |
 | `working_directory` | String | 否 | 当前工程目录 / `.` | CLI 进程执行工作目录。 |
-| `model` | String | 否 | `null` | 指定覆盖的大模型名称（如 `gemini-2.5-pro`）。 |
+| `model` | String | 否 | `null` | 可选的当前 CLI 会话模型覆盖（映射为 `--model`，如 `gemini-2.5-pro`），为空时使用 `agy` 默认模型。 |
+| `effort` | String | 否 | `null` | 可选的当前 CLI 会话推理强度（映射为 `--effort`，可选值：`low`、`medium`、`high`、`xhigh`、`max`），为空时使用 `agy` 默认强度。 |
 | `timeout_seconds` | Integer | 否 | `300` | 单次执行超时时间（秒）。 |
 | `dangerously_skip_permissions` | Boolean | 否 | `true` | 是否跳过交互权限。 |
 | `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--verbose`）。新开 session 时请勿在其中传入 `-c`、`--continue` 或 `--conversation`。 |

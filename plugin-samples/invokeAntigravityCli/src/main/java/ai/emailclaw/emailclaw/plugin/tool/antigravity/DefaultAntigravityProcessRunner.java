@@ -68,7 +68,9 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
      *
      * @param cliPath Path or binary name of the agy CLI
      * @param prompt The prompt to execute in print mode
-     * @param model Optional model override
+     * @param model Optional model for the current CLI session (--model)
+     * @param effort Optional reasoning effort for the current CLI session (--effort:
+     *     low|medium|high|xhigh|max)
      * @param dangerouslySkipPermissions Whether to skip permission prompting
      * @param extraArgs Additional command line arguments
      * @param continueLastSession Whether to continue the most recent conversation (-c / --continue)
@@ -79,6 +81,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             String cliPath,
             String prompt,
             String model,
+            String effort,
             boolean dangerouslySkipPermissions,
             String extraArgs,
             boolean continueLastSession,
@@ -95,6 +98,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
         boolean hasConversation = false;
         boolean hasSkipPerms = false;
         boolean hasModel = false;
+        boolean hasEffort = false;
         boolean hasOutputFormat = false;
         List<String> extraTokens = new ArrayList<>();
 
@@ -113,6 +117,9 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                     }
                     if ("--model".equals(token) || token.startsWith("--model=")) {
                         hasModel = true;
+                    }
+                    if ("--effort".equals(token) || token.startsWith("--effort=")) {
+                        hasEffort = true;
                     }
                     if ("--output-format".equals(token) || token.startsWith("--output-format=")) {
                         hasOutputFormat = true;
@@ -149,6 +156,10 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             command.add("--model");
             command.add(model.trim());
         }
+        if (effort != null && !effort.isBlank() && !hasEffort) {
+            command.add("--effort");
+            command.add(effort.trim());
+        }
         command.addAll(extraTokens);
         command.add("-p");
         command.add(prompt != null ? prompt : "");
@@ -156,7 +167,30 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
     }
 
     /**
-     * Backward-compatible overload of {@link #buildCommand} without an explicit conversation ID.
+     * Backward-compatible overload of {@link #buildCommand} without an explicit reasoning effort.
+     */
+    List<String> buildCommand(
+            String cliPath,
+            String prompt,
+            String model,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession,
+            String conversation) {
+        return buildCommand(
+                cliPath,
+                prompt,
+                model,
+                null,
+                dangerouslySkipPermissions,
+                extraArgs,
+                continueLastSession,
+                conversation);
+    }
+
+    /**
+     * Backward-compatible overload of {@link #buildCommand} without an explicit conversation ID or
+     * reasoning effort.
      */
     List<String> buildCommand(
             String cliPath,
@@ -169,6 +203,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 cliPath,
                 prompt,
                 model,
+                null,
                 dangerouslySkipPermissions,
                 extraArgs,
                 continueLastSession,
@@ -193,6 +228,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 prompt,
                 workingDirectory,
                 model,
+                null,
                 timeoutSeconds,
                 dangerouslySkipPermissions,
                 extraArgs,
@@ -215,6 +251,7 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
                 prompt,
                 workingDirectory,
                 model,
+                null,
                 timeoutSeconds,
                 dangerouslySkipPermissions,
                 extraArgs,
@@ -233,11 +270,37 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
             String extraArgs,
             boolean continueLastSession,
             String conversation) {
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                null,
+                timeoutSeconds,
+                dangerouslySkipPermissions,
+                extraArgs,
+                continueLastSession,
+                conversation);
+    }
+
+    @Override
+    public AntigravityExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            String effort,
+            int timeoutSeconds,
+            boolean dangerouslySkipPermissions,
+            String extraArgs,
+            boolean continueLastSession,
+            String conversation) {
         List<String> command =
                 buildCommand(
                         cliPath,
                         prompt,
                         model,
+                        effort,
                         dangerouslySkipPermissions,
                         extraArgs,
                         continueLastSession,
@@ -264,9 +327,15 @@ public class DefaultAntigravityProcessRunner implements AntigravityProcessRunner
         LOGGER.log(
                 Level.INFO,
                 "Launching Antigravity CLI process: command={0}, workingDir={1}, timeout={2}s,"
-                        + " continueLastSession={3}, conversation={4}",
+                        + " model={3}, effort={4}, continueLastSession={5}, conversation={6}",
                 new Object[] {
-                    command, workingDirectory, timeoutSeconds, continueLastSession, conversation
+                    command,
+                    workingDirectory,
+                    timeoutSeconds,
+                    model,
+                    effort,
+                    continueLastSession,
+                    conversation
                 });
 
         Process process;

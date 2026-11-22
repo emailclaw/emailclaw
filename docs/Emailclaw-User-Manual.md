@@ -259,9 +259,9 @@ Third-party plugins have the potential for code execution and network access. In
 ### 8.1 Bridging Four Top-Tier AI CLI Tools (Email as the Sole Universal Bridge)
 
 Emailclaw natively integrates with the industry's four premier AI coding and reasoning command-line tools via modular plugins:
-- **`invokeAntigravityCli`**: Executes Google Antigravity CLI (`agy`) for headless automated coding and project generation.
+- **`invokeAntigravityCli`**: Executes Google Antigravity CLI (`agy`) in headless print mode (`--output-format json`) for automated coding and project generation, supporting `conversation` (`--conversation`), `model` (`--model`), and `effort` (`--effort`: `low|medium|high|xhigh|max`).
 - **`invokeClaudeCodeCli`**: Executes Anthropic Claude Code CLI (`claude`) for automated code analysis, debugging, and precision refactoring.
-- **`invokeCodexCli`**: Executes OpenAI Codex CLI (`codex`) for autonomous non-interactive coding and reviews.
+- **`invokeCodexCli`**: Executes OpenAI Codex CLI (`codex exec --json`) for autonomous non-interactive coding and reviews, supporting `conversation` (`codex exec resume <ID>`), `model` (`-m`), and `effort` (`-c model_reasoning_effort="<none|minimal|low|medium|high|xhigh>"`).
 - **`invokeOpencodeCli`**: Executes OpenCode CLI (`opencode`) for running open-source and multi-model coding sessions.
 
 #### Core Advantage: Email Is the Universal Bridge Everyone Already Has (Zero Extra Apps)
@@ -286,6 +286,19 @@ cp emailclaw-plugin-tool-invokeOpencodeCli-1.0.1.jar ~/emailclaw/plugins/
 Official installation scripts for CLI tools frequently place executables in user-specific locations such as `$HOME/.local/bin` (e.g. `agy`, `claude`) or `$HOME/.opencode/bin` (e.g. `opencode`). These paths are often missing from the default `PATH` of non-login shells and systemd services.
 - **Automated Discovery**: Every CLI plugin includes a dedicated `PathResolver` strategy that expands tilde (`~`), inspects system environment variables, scans the system `PATH`, and probes well-known candidate directories.
 - **Subprocess PATH Enrichment**: Before launching the process, the runner enriches the subprocess environment `PATH` with the executable's directory and standard local bin paths, guaranteeing that internal toolchains (such as Node, Python, and Git) resolve without `error=2: No such file or directory` issues.
+
+#### Session Continuity (`conversation`) and Optional `model` / `effort` Controls
+Both `invokeAntigravityCli` and `invokeCodexCli` support structured multi-turn session management and optional per-session model and reasoning-effort overrides (all three parameters may be omitted or left blank to use CLI defaults):
+
+| Tool | Session Resumption (`conversation`) | Default Fallback (`continue_last_session=true`) | Model Override (`model`) | Reasoning Effort (`effort`) | Structured Output & Returned ID |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`invokeAntigravityCli`** | `--conversation <ID>` (*Resume a previous conversation by ID*) | `-c` (equivalent to `--continue`) | `--model <MODEL>` | `--effort <low\|medium\|high\|xhigh\|max>` | `--output-format json` (`conversation_id`) |
+| **`invokeCodexCli`** | `codex exec resume [OPTIONS] <ID> [PROMPT]` | `codex exec resume --last` | `-m <MODEL>` | `-c model_reasoning_effort="<none\|minimal\|low\|medium\|high\|xhigh>"` | `--json` JSONL (`thread_id`) |
+
+**Session selection rules enforced by both tools:**
+1. **New session requested**: When you explicitly ask the agent to start a new CLI session, the tool omits `-c`/`--continue`/`--conversation` (for `agy`) or `resume`/`--last`/`<SESSION_ID>` (for `codex`) by setting `continue_last_session=false` and omitting `conversation`.
+2. **Resume by historical CLI session ID**: When you do not request a new session and a session/thread ID returned by `agy` (`conversation_id`) or `codex` (`thread_id`) is present in conversation history, the agent passes it via `conversation`, which takes precedence over `-c` / `resume --last` (and automatically strips conflicting `-c`/`--continue`/`--last` flags from `extra_args`).
+3. **Continue most recent session**: When you do not request a new session and no historical CLI session ID exists, the tool defaults to `continue_last_session=true` (`-c` for `agy`; `resume --last` for `codex`).
 
 ### 8.2 Hermes Closed-Loop Skill Self-Evolution System
 

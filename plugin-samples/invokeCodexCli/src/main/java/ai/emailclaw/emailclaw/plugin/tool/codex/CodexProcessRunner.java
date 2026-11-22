@@ -27,10 +27,14 @@ public interface CodexProcessRunner {
      * @param prompt User prompt or instruction to execute
      * @param workingDirectory Working directory context for the execution
      * @param model Optional model name override (passed via {@code -m})
+     * @param effort Optional reasoning effort override (passed via {@code -c
+     *     model_reasoning_effort="<effort>"})
      * @param sandbox Optional sandbox mode (passed via {@code -s}, e.g. 'read-only', 'workspace-write', 'danger-full-access')
      * @param timeoutSeconds Maximum execution duration before timing out
      * @param extraArgs Additional command-line flags or arguments
      * @param continueLastSession Whether to resume the most recent recorded session (resume --last)
+     * @param conversation Optional previous Codex session/thread ID to resume via {@code codex exec
+     *     resume [OPTIONS] <SESSION_ID> [PROMPT]}
      * @return Execution result containing exit code, stdout, stderr, and status
      */
     CodexExecutionResult execute(
@@ -38,8 +42,35 @@ public interface CodexProcessRunner {
             String prompt,
             Path workingDirectory,
             String model,
+            String effort,
             String sandbox,
             int timeoutSeconds,
             String extraArgs,
-            boolean continueLastSession);
+            boolean continueLastSession,
+            String conversation);
+
+    /**
+     * Overload for backward compatibility without explicit reasoning effort or conversation ID.
+     */
+    default CodexExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            String sandbox,
+            int timeoutSeconds,
+            String extraArgs,
+            boolean continueLastSession) {
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                null,
+                sandbox,
+                timeoutSeconds,
+                extraArgs,
+                continueLastSession,
+                null);
+    }
 }
