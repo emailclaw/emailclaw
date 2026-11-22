@@ -48,19 +48,31 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
     }
 
     /**
-     * Builds the command arguments for codex exec.
+     * Builds the command arguments for {@code codex exec}.
      *
-     * <p>When continueLastSession is true, generates {@code codex exec resume --last [OPTIONS] [PROMPT]}
-     * to continue the most recent recorded session.
-     * When false, generates {@code codex exec [OPTIONS] [PROMPT]} to start a new execution.
+     * <p>Session flag precedence:
+     * <ol>
+     *   <li>If {@code conversation} is non-blank, generates {@code codex exec resume [OPTIONS]
+     *       <SESSION_ID> [PROMPT]} without {@code --last}.</li>
+     *   <li>Otherwise, if {@code continueLastSession} is true (and {@code resume} is not already
+     *       present in {@code extraArgs}), generates {@code codex exec resume --last [OPTIONS]
+     *       [PROMPT]}.</li>
+     *   <li>Otherwise, generates {@code codex exec [OPTIONS] [PROMPT]} for a new session.</li>
+     * </ol>
+     *
+     * <p>Automatically appends {@code --json} unless already specified in {@code extraArgs} so
+     * Codex emits structured JSONL events containing {@code thread_id}. Omits {@code -s}/{@code
+     * --sandbox} whenever resuming, as {@code codex exec resume} rejects sandbox flags.
      */
     List<String> buildCommand(
             String cliPath,
             String prompt,
             String model,
+            String effort,
             String sandbox,
             String extraArgs,
-            boolean continueLastSession) {
+            boolean continueLastSession,
+            String conversation) {
         List<String> command = new ArrayList<>();
         String effectiveCliPath =
                 (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "codex";
@@ -68,10 +80,16 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
         command.add(resolvedCliPath);
         command.add("exec");
 
+        String normalizedConversation =
+                (conversation != null && !conversation.isBlank()) ? conversation.trim() : null;
+
         boolean hasResume = false;
         boolean hasLast = false;
         boolean hasSkipGitCheck = false;
         boolean hasSandbox = false;
+        boolean hasModel = false;
+        boolean hasEffort = false;
+        boolean hasJson = false;
         List<String> extraTokens = new ArrayList<>();
 
         if (extraArgs != null && !extraArgs.isBlank()) {
@@ -86,15 +104,43 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
                     if ("--skip-git-repo-check".equals(token)) {
                         hasSkipGitCheck = true;
                     }
-                    if ("-s".equals(token) || "--sandbox".equals(token)) {
+                    if ("-s".equals(token)
+                            || "--sandbox".equals(token)
+                            || token.startsWith("--sandbox=")) {
                         hasSandbox = true;
+                    }
+                    if ("-m".equals(token)
+                            || "--model".equals(token)
+                            || token.startsWith("--model=")) {
+                        hasModel = true;
+                    }
+                    if (token.startsWith("model_reasoning_effort=")
+                            || token.contains("model_reasoning_effort=")) {
+                        hasEffort = true;
+                    }
+                    if ("--json".equals(token)) {
+                        hasJson = true;
                     }
                     extraTokens.add(token);
                 }
             }
         }
 
-        if (continueLastSession && !hasResume) {
+        if (normalizedConversation != null && hasLast) {
+            LOGGER.warning(
+                    "Both explicit conversation ID and --last were supplied; prioritizing"
+                            + " conversation ID and stripping conflicting --last from extra_args");
+            extraTokens.removeIf("--last"::equals);
+            hasLast = false;
+        }
+
+        boolean isResume = normalizedConversation != null || hasResume || continueLastSession;
+
+        if (normalizedConversation != null) {
+            if (!hasResume) {
+                command.add("resume");
+            }
+        } else if (continueLastSession && !hasResume) {
             command.add("resume");
             if (!hasLast) {
                 command.add("--last");
@@ -105,23 +151,51 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
             command.add("--skip-git-repo-check");
         }
 
-        if (model != null && !model.isBlank()) {
+        if (!hasJson) {
+            command.add("--json");
+        }
+
+        if (model != null && !model.isBlank() && !hasModel) {
             command.add("-m");
             command.add(model.trim());
         }
 
+        if (effort != null && !effort.isBlank() && !hasEffort) {
+            command.add("-c");
+            command.add("model_reasoning_effort=\"" + effort.trim() + "\"");
+        }
+
         // -s / --sandbox is only valid for new executions (codex exec), not for 'codex exec resume'
-        if (!continueLastSession && sandbox != null && !sandbox.isBlank() && !hasSandbox) {
+        if (!isResume && sandbox != null && !sandbox.isBlank() && !hasSandbox) {
             command.add("-s");
             command.add(sandbox.trim());
         }
 
         command.addAll(extraTokens);
 
+        if (normalizedConversation != null) {
+            command.add(normalizedConversation);
+        }
+
         if (prompt != null && !prompt.isBlank()) {
             command.add(prompt);
         }
         return command;
+    }
+
+    /**
+     * Backward-compatible overload of {@link #buildCommand} without explicit effort or
+     * conversation ID.
+     */
+    List<String> buildCommand(
+            String cliPath,
+            String prompt,
+            String model,
+            String sandbox,
+            String extraArgs,
+            boolean continueLastSession) {
+        return buildCommand(
+                cliPath, prompt, model, null, sandbox, extraArgs, continueLastSession, null);
     }
 
     @Override
@@ -130,12 +204,22 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
             String prompt,
             Path workingDirectory,
             String model,
+            String effort,
             String sandbox,
             int timeoutSeconds,
             String extraArgs,
-            boolean continueLastSession) {
+            boolean continueLastSession,
+            String conversation) {
         List<String> command =
-                buildCommand(cliPath, prompt, model, sandbox, extraArgs, continueLastSession);
+                buildCommand(
+                        cliPath,
+                        prompt,
+                        model,
+                        effort,
+                        sandbox,
+                        extraArgs,
+                        continueLastSession,
+                        conversation);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -159,8 +243,17 @@ public class DefaultCodexProcessRunner implements CodexProcessRunner {
 
         LOGGER.log(
                 Level.INFO,
-                "Launching Codex CLI process: command={0}, workingDir={1}, timeout={2}s",
-                new Object[] {command, workingDirectory, timeoutSeconds});
+                "Launching Codex CLI process: command={0}, workingDir={1}, timeout={2}s,"
+                        + " model={3}, effort={4}, continueLastSession={5}, conversation={6}",
+                new Object[] {
+                    command,
+                    workingDirectory,
+                    timeoutSeconds,
+                    model,
+                    effort,
+                    continueLastSession,
+                    conversation
+                });
 
         Process process;
         try {

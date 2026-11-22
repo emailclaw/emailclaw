@@ -111,13 +111,20 @@ If you wish to customize the executable path or default timeout, you can edit Em
 
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **Yes** | - | Task description or prompt sent to Codex CLI via `codex exec [OPTIONS] [PROMPT]`. |
+| `prompt` | String | **Yes** | - | Task description or prompt sent to Codex CLI via `codex exec --json [OPTIONS] [PROMPT]`. |
 | `cli_path` | String | No | `codex` | Path or binary name for the Codex CLI executable. |
-| `model` | String | No | `null` | Optional model override passed via `-m/--model` (e.g. `gpt-5`, `o3-mini`). |
+| `model` | String | No | `null` | Optional model for the current Codex CLI session passed via `-m/--model` (e.g. `gpt-5`, `o3-mini`). Omit or leave empty to use the Codex default model. |
+| `effort` | String | No | `null` | Optional reasoning effort for the current Codex CLI session passed via `-c model_reasoning_effort="<effort>"` (`none`, `minimal`, `low`, `medium`, `high`, or `xhigh`). Omit or leave empty to use the Codex default effort. |
 | `sandbox` | String | No | `null` | Optional sandbox mode policy passed via `-s` (e.g. `read-only`, `workspace-write`, `danger-full-access`). Only applied when starting a new session. |
 | `timeout_seconds` | Integer | No | `300` | Optional timeout limit in seconds. |
-| `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--dangerously-bypass-approvals-and-sandbox`, `--ephemeral`, `--json`). |
-| `continue_last_session` | Boolean | No | `true` | Whether to continue the last interactive session (`codex exec resume --last`). If `false`, starts a new execution. |
+| `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--dangerously-bypass-approvals-and-sandbox`, `--ephemeral`). Do not include `resume` or `--last` when starting a new session. |
+| `continue_last_session` | Boolean | No | `true` | Whether to continue the most recent Codex session (`codex exec resume --last`) when `conversation` is omitted. Set to `false` (and omit `conversation`) when starting a new session. |
+| `conversation` | String | No | `null` | Optional previous Codex session/thread ID (UUID or thread name) to resume via `codex exec resume [OPTIONS] <SESSION_ID> [PROMPT]`. Takes precedence over `--last`. Omit when starting a new session. |
+
+### Session Selection Rules
+1. **New session requested**: Do not pass `resume`, `--last`, or a session ID (`continue_last_session=false`, omit `conversation`).
+2. **Continue with historical Codex session/thread ID**: If conversation history contains a `thread_id` / session ID returned by Codex, pass it via `conversation` (`codex exec resume <SESSION_ID>`).
+3. **Continue without historical session ID**: If no historical Codex session ID exists, use `continue_last_session=true` (`codex exec resume --last`).
 
 ---
 

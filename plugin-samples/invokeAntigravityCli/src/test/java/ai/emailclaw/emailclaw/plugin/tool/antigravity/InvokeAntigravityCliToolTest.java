@@ -60,6 +60,8 @@ class InvokeAntigravityCliToolTest {
     void testToolExecutionSuccess() throws Exception {
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
         AtomicReference<String> capturedCliPath = new AtomicReference<>();
+        AtomicReference<String> capturedModel = new AtomicReference<>();
+        AtomicReference<String> capturedEffort = new AtomicReference<>();
         AtomicReference<Boolean> capturedSkipPerms = new AtomicReference<>();
         AtomicReference<Boolean> capturedContinueLastSession = new AtomicReference<>();
         AtomicReference<String> capturedConversation = new AtomicReference<>();
@@ -69,6 +71,7 @@ class InvokeAntigravityCliToolTest {
                         prompt,
                         workingDirectory,
                         model,
+                        effort,
                         timeoutSeconds,
                         dangerouslySkipPermissions,
                         extraArgs,
@@ -76,6 +79,8 @@ class InvokeAntigravityCliToolTest {
                         conversation) -> {
                     capturedCliPath.set(cliPath);
                     capturedPrompt.set(prompt);
+                    capturedModel.set(model);
+                    capturedEffort.set(effort);
                     capturedSkipPerms.set(dangerouslySkipPermissions);
                     capturedContinueLastSession.set(continueLastSession);
                     capturedConversation.set(conversation);
@@ -99,6 +104,7 @@ class InvokeAntigravityCliToolTest {
                         null,
                         null,
                         "gemini-2.5-pro",
+                        "High",
                         60,
                         true,
                         "--verbose",
@@ -109,6 +115,8 @@ class InvokeAntigravityCliToolTest {
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
         assertEquals("agy", capturedCliPath.get());
         assertEquals("Generate report", capturedPrompt.get());
+        assertEquals("gemini-2.5-pro", capturedModel.get());
+        assertEquals("high", capturedEffort.get());
         assertTrue(capturedSkipPerms.get());
         assertTrue(capturedContinueLastSession.get());
         assertNull(capturedConversation.get());
@@ -134,6 +142,7 @@ class InvokeAntigravityCliToolTest {
                         prompt,
                         workingDirectory,
                         model,
+                        effort,
                         timeoutSeconds,
                         dangerouslySkipPermissions,
                         extraArgs,
@@ -153,7 +162,7 @@ class InvokeAntigravityCliToolTest {
                 new InvokeAntigravityCliTool(null, timeoutRunner, "agy", 10, true);
         ToolResultBlock errorBlock =
                 tool.invokeAntigravityCli(
-                        "Long running task", null, null, null, 10, true, null, null, null);
+                        "Long running task", null, null, null, null, 10, true, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -172,7 +181,8 @@ class InvokeAntigravityCliToolTest {
     void testEmptyPromptHandling() throws Exception {
         InvokeAntigravityCliTool tool = new InvokeAntigravityCliTool(null);
         ToolResultBlock errorBlock =
-                tool.invokeAntigravityCli("   ", null, null, null, null, null, null, null, null);
+                tool.invokeAntigravityCli(
+                        "   ", null, null, null, null, null, null, null, null, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -351,6 +361,41 @@ class InvokeAntigravityCliToolTest {
                         "-p",
                         "extra conv"),
                 cmd7);
+
+        // 8. Explicit --model and --effort are both passed when provided
+        List<String> cmd8 =
+                runner.buildCommand(
+                        "agy",
+                        "deep analysis",
+                        "gemini-2.5-pro",
+                        "xhigh",
+                        true,
+                        null,
+                        false,
+                        "conv-99");
+        assertEquals(
+                List.of(
+                        "agy",
+                        "--conversation",
+                        "conv-99",
+                        "--output-format",
+                        "json",
+                        "--dangerously-skip-permissions",
+                        "--model",
+                        "gemini-2.5-pro",
+                        "--effort",
+                        "xhigh",
+                        "-p",
+                        "deep analysis"),
+                cmd8);
+
+        // 9. --effort already present in extra_args is not duplicated
+        List<String> cmd9 =
+                runner.buildCommand(
+                        "agy", "dedup effort", null, "high", false, "--effort=max", false, null);
+        assertEquals(
+                List.of("agy", "--output-format", "json", "--effort=max", "-p", "dedup effort"),
+                cmd9);
     }
 
     @Test
@@ -360,16 +405,21 @@ class InvokeAntigravityCliToolTest {
     void testContinueLastSessionDefaultHandling() {
         AtomicReference<Boolean> capturedContinue = new AtomicReference<>();
         AtomicReference<String> capturedConversation = new AtomicReference<>();
+        AtomicReference<String> capturedModel = new AtomicReference<>();
+        AtomicReference<String> capturedEffort = new AtomicReference<>();
         AntigravityProcessRunner mockRunner =
                 (cliPath,
                         prompt,
                         workingDirectory,
                         model,
+                        effort,
                         timeoutSeconds,
                         dangerouslySkipPermissions,
                         extraArgs,
                         continueLastSession,
                         conversation) -> {
+                    capturedModel.set(model);
+                    capturedEffort.set(effort);
                     capturedContinue.set(continueLastSession);
                     capturedConversation.set(conversation);
                     return new AntigravityExecutionResult(
@@ -380,22 +430,57 @@ class InvokeAntigravityCliToolTest {
                 new InvokeAntigravityCliTool(null, mockRunner, "agy", 10, true);
 
         // 1. null continueLastSession and null conversation defaults to continueLastSession=true
-        tool.invokeAntigravityCli("Continue test", null, null, null, 10, true, null, null, null);
+        tool.invokeAntigravityCli(
+                "Continue test", null, null, null, null, 10, true, null, null, null);
         assertTrue(capturedContinue.get(), "null continueLastSession should default to true");
         assertNull(capturedConversation.get());
+        assertNull(capturedModel.get());
+        assertNull(capturedEffort.get());
 
         // 2. explicit false continueLastSession and null conversation -> fresh session
-        tool.invokeAntigravityCli("Fresh test", null, null, null, 10, true, null, false, null);
+        tool.invokeAntigravityCli(
+                "Fresh test", null, null, "  ", "  ", 10, true, null, false, null);
         assertFalse(capturedContinue.get(), "explicit false continueLastSession should be false");
         assertNull(capturedConversation.get());
+        assertNull(capturedModel.get());
+        assertNull(capturedEffort.get());
 
         // 3. explicit conversation ID overrides continueLastSession (never passes -c)
         tool.invokeAntigravityCli(
-                "Resume by ID", null, null, null, 10, true, null, true, "  conv-42  ");
+                "Resume by ID",
+                null,
+                null,
+                " gemini-2.5-pro ",
+                " MAX ",
+                10,
+                true,
+                null,
+                true,
+                "  conv-42  ");
         assertFalse(
                 capturedContinue.get(),
                 "continueLastSession must be false when conversation ID is provided");
         assertEquals("conv-42", capturedConversation.get());
+        assertEquals("gemini-2.5-pro", capturedModel.get());
+        assertEquals("max", capturedEffort.get());
+    }
+
+    @Test
+    @DisplayName("Tool should reject unsupported effort values with error ToolResultBlock")
+    void testInvalidEffortHandling() throws Exception {
+        InvokeAntigravityCliTool tool = new InvokeAntigravityCliTool(null);
+        ToolResultBlock errorBlock =
+                tool.invokeAntigravityCli(
+                        "Check effort", null, null, null, "ultra", null, null, null, null, null);
+
+        assertNotNull(errorBlock);
+        assertEquals(ToolResultState.ERROR, errorBlock.getState());
+        assertEquals(-1, errorBlock.getMetadata().get("exitCode"));
+
+        String outputText = ((TextBlock) errorBlock.getOutput().get(0)).getText();
+        JsonNode node = MAPPER.readTree(outputText);
+        assertFalse(node.get("success").asBoolean());
+        assertTrue(node.get("error").asText().contains("Invalid effort value"));
     }
 
     @Test

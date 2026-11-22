@@ -21,7 +21,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -38,6 +40,8 @@ public class InvokeAntigravityCliTool {
 
     public static final String DEFAULT_CLI_PATH = "agy";
     public static final int DEFAULT_TIMEOUT_SECONDS = 300;
+    public static final Set<String> ALLOWED_EFFORTS =
+            Set.of("low", "medium", "high", "xhigh", "max");
 
     private volatile PluginContext context;
     private final AntigravityProcessRunner processRunner;
@@ -116,7 +120,9 @@ public class InvokeAntigravityCliTool {
      *
      * @param prompt The task description or prompt to send to Antigravity CLI
      * @param workingDirectory Optional working directory where the CLI should execute
-     * @param model Optional model name override (e.g. 'gemini-2.5-pro')
+     * @param model Optional model for the current CLI session ({@code --model})
+     * @param effort Optional reasoning effort for the current CLI session ({@code --effort}:
+     *     low|medium|high|xhigh|max)
      * @param timeoutSeconds Optional execution timeout in seconds (defaults to 300)
      * @param dangerouslySkipPermissions Whether to automatically pass --dangerously-skip-permissions
      * @param extraArgs Optional additional command-line arguments to pass to the agy binary
@@ -135,9 +141,11 @@ public class InvokeAntigravityCliTool {
                     "Invoke Google Antigravity CLI (agy) in headless print mode (-p/--print"
                             + " --output-format json) to execute tasks, run tests, analyze code,"
                             + " or generate artifacts, returning structured JSON results (including"
-                            + " conversation_id). Session selection rules: (1) If the user asks to"
-                            + " start a new session when calling agy, do NOT pass -c, --continue,"
-                            + " or --conversation (set continue_last_session=false and omit"
+                            + " conversation_id). Supports optional --model (Model for the current"
+                            + " CLI session) and --effort (Reasoning effort: low|medium|high|xhigh|"
+                            + "max). Session selection rules: (1) If the user asks to start a new"
+                            + " session when calling agy, do NOT pass -c, --continue, or"
+                            + " --conversation (set continue_last_session=false and omit"
                             + " conversation). (2) If the user does NOT ask for a new session,"
                             + " first check the conversation history for any session/conversation"
                             + " ID returned by agy; if found, pass it via the conversation"
@@ -168,10 +176,19 @@ public class InvokeAntigravityCliTool {
             @ToolParam(
                             name = "model",
                             description =
-                                    "Optional model name or override to pass to Antigravity CLI"
-                                            + " (e.g. 'gemini-2.5-pro').",
+                                    "Optional model for the current CLI session to pass via --model"
+                                            + " (e.g. 'gemini-2.5-pro'). Omit or leave empty to use"
+                                            + " the agy default model.",
                             required = false)
                     String model,
+            @ToolParam(
+                            name = "effort",
+                            description =
+                                    "Optional reasoning effort for the current CLI session to pass"
+                                            + " via --effort (low|medium|high|xhigh|max). Omit or"
+                                            + " leave empty to use the agy default effort.",
+                            required = false)
+                    String effort,
             @ToolParam(
                             name = "timeout_seconds",
                             description =
@@ -216,6 +233,11 @@ public class InvokeAntigravityCliTool {
                                             + " -c/--continue). Omit when starting a new session.",
                             required = false)
                     String conversation) {
+        String normalizedModel = (model != null && !model.isBlank()) ? model.trim() : null;
+        String normalizedEffort =
+                (effort != null && !effort.isBlank())
+                        ? effort.trim().toLowerCase(Locale.ROOT)
+                        : null;
         String normalizedConversation =
                 (conversation != null && !conversation.isBlank()) ? conversation.trim() : null;
         boolean effectiveContinue =
@@ -224,11 +246,12 @@ public class InvokeAntigravityCliTool {
         LOGGER.log(
                 Level.INFO,
                 "InvokeAntigravityCli tool call initiated: promptLength={0}, workingDir={1},"
-                        + " model={2}, continueLastSession={3}, conversation={4}",
+                        + " model={2}, effort={3}, continueLastSession={4}, conversation={5}",
                 new Object[] {
                     prompt != null ? prompt.length() : 0,
                     workingDirectory,
-                    model,
+                    normalizedModel,
+                    normalizedEffort,
                     effectiveContinue,
                     normalizedConversation
                 });
@@ -247,6 +270,22 @@ public class InvokeAntigravityCliTool {
                     .build();
         }
 
+        if (normalizedEffort != null && !ALLOWED_EFFORTS.contains(normalizedEffort)) {
+            String errorMsg =
+                    "Invalid effort value '"
+                            + effort
+                            + "'. Allowed values are: low, medium, high, xhigh, max.";
+            LOGGER.log(Level.WARNING, "InvokeAntigravityCli tool call rejected: {0}", errorMsg);
+            return ToolResultBlock.builder()
+                    .output(
+                            TextBlock.builder()
+                                    .text(AntigravityJsonUtils.createErrorJson(errorMsg, -1))
+                                    .build())
+                    .state(ToolResultState.ERROR)
+                    .metadata(Map.of("exitCode", -1, "error", errorMsg))
+                    .build();
+        }
+
         Path targetWorkingDir = resolveWorkingDirectory(workingDirectory);
         int effectiveTimeout =
                 (timeoutSeconds != null && timeoutSeconds > 0)
@@ -260,10 +299,13 @@ public class InvokeAntigravityCliTool {
         LOGGER.log(
                 Level.INFO,
                 "Launching Antigravity CLI tool execution: workingDir={0}, timeout={1}s,"
-                        + " skipPermissions={2}, continueLastSession={3}, conversation={4}",
+                        + " model={2}, effort={3}, skipPermissions={4}, continueLastSession={5},"
+                        + " conversation={6}",
                 new Object[] {
                     targetWorkingDir,
                     effectiveTimeout,
+                    normalizedModel,
+                    normalizedEffort,
                     skipPermissions,
                     effectiveContinue,
                     normalizedConversation
@@ -276,7 +318,8 @@ public class InvokeAntigravityCliTool {
                         actualCliPath,
                         prompt,
                         targetWorkingDir,
-                        model,
+                        normalizedModel,
+                        normalizedEffort,
                         effectiveTimeout,
                         skipPermissions,
                         extraArgs,

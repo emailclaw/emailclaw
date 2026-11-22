@@ -113,13 +113,20 @@ codex exec --skip-git-repo-check "使用 Codex CLI 重构项目认证鉴权模�
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **是** | - | 发送给 Codex CLI 的任务 Prompt（通过 `codex exec [OPTIONS] [PROMPT]` 传递）。 |
+| `prompt` | String | **是** | - | 发送给 Codex CLI 的任务 Prompt（通过 `codex exec --json [OPTIONS] [PROMPT]` 传递，自动返回含 `thread_id` 的结构化 JSONL 事件）。 |
 | `cli_path` | String | 否 | `codex` | 指定 Codex CLI 可执行路径。 |
-| `model` | String | 否 | `null` | 指定大模型名称（通过 `-m/--model` 传递，如 `gpt-5`, `o3-mini`）。 |
-| `sandbox` | String | 否 | `null` | 指定沙箱安全策略（通过 `-s/--sandbox` 传递，如 `read-only`, `workspace-write`, `danger-full-access`）。仅在新建会话时生效。 |
+| `model` | String | 否 | `null` | 可选的当前会话模型覆盖（通过 `-m/--model` 传递，如 `gpt-5`、`o3-mini`），为空时使用 Codex 默认模型。 |
+| `effort` | String | 否 | `null` | 可选的当前会话推理强度（通过 `-c model_reasoning_effort="<effort>"` 传递，可选值：`none`、`minimal`、`low`、`medium`、`high`、`xhigh`），为空时使用 Codex 默认强度。 |
+| `sandbox` | String | 否 | `null` | 指定沙箱安全策略（通过 `-s/--sandbox` 传递，如 `read-only`、`workspace-write`、`danger-full-access`）。仅在新建会话时生效。 |
 | `timeout_seconds` | Integer | 否 | `300` | 单次执行超时时间（秒）。 |
-| `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--dangerously-bypass-approvals-and-sandbox`, `--ephemeral`, `--json` 等）。 |
-| `continue_last_session` | Boolean | 否 | `true` | 是否继续上一次交互式会话（`codex exec resume --last`）。设为 `false` 则开启新会话执行。 |
+| `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--dangerously-bypass-approvals-and-sandbox`、`--ephemeral`）。新开 session 时请勿包含 `resume` 或 `--last`。 |
+| `continue_last_session` | Boolean | 否 | `true` | 当未提供 `conversation` 时，是否继续最近一次会话（`codex exec resume --last`）。新开 session 时请设为 `false` 且省略 `conversation`。 |
+| `conversation` | String | 否 | `null` | 可选的历史 Codex 会话/线程 ID（UUID 或线程名），映射为 `codex exec resume [OPTIONS] <SESSION_ID> [PROMPT]`，优先级高于 `--last`；新开 session 时省略。 |
+
+### 会话（Session）传递规则
+1. **用户要求新开 session**：不传递 `resume`、`--last` 或会话 ID（设置 `continue_last_session=false` 且省略 `conversation`）。
+2. **用户未要求新开 session 且历史中存在 Codex 传递的 `thread_id` / session ID**：通过 `conversation` 传递该 ID 恢复指定会话（`codex exec resume <SESSION_ID>`）。
+3. **用户未要求新开 session 且历史中无 session ID**：保持 `continue_last_session=true`，附加 `resume --last`。
 
 ---
 
