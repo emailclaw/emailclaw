@@ -306,13 +306,13 @@ docs/                      产品功能、架构和用户手册
 
 Emailclaw 以开箱即用的插件形式提供了连接业界四大顶级 AI 编码与自主 Agent CLI 的工具：
 - **`invokeAntigravityCli`**：以无头模式（`--output-format json`）调用 Google Antigravity CLI (`agy`) 执行自动化编程与开发任务，完整支持按会话 ID 精准恢复（`conversation` / `--conversation`）、`-c`/`--continue` 回退、新开会话，以及可选的按次 `model`（`--model`）与推理强度 `effort`（`--effort`：`low|medium|high|xhigh|max`）。
-- **`invokeClaudeCodeCli`**：调用 Anthropic Claude Code CLI (`claude`) 进行精准代码分析与自主重构。
+- **`invokeClaudeCodeCli`**：以非交互 JSON 模式（`claude -p --output-format json`）调用 Anthropic Claude Code CLI (`claude`) 进行精准代码分析与自主重构，完整支持按会话 ID 精准恢复（`conversation` / `--resume <ID>`）、`-c`/`--continue` 回退、新开会话，以及可选的按次 `model`（`--model`）与推理强度 `effort`（`--effort`：`low|medium|high|xhigh|max`）。
 - **`invokeCodexCli`**：以非交互 JSONL 模式（`codex exec --json`）调用 OpenAI Codex CLI (`codex`) 自动化执行编码与审查，完整支持按线程 ID 精准恢复（`conversation` / `codex exec resume <ID>`）、`resume --last` 回退、新开会话，以及可选的按次 `model`（`-m`）与推理强度 `effort`（`-c model_reasoning_effort="<none|minimal|low|medium|high|xhigh>"`）。
 - **`invokeOpencodeCli`**：调用 OpenCode CLI (`opencode`) 运行开源及多模型编码工作流。
 
 **为什么这是颠覆性的？**
 - **Email 作为全民通用的无感桥梁**：你不需要在移动设备上安装复杂的终端应用、SSH 客户端或专有聊天软件。无论你在上下班路上用手机邮箱，还是在会议中用笔记本电脑，只需发送一封常规邮件，Emailclaw 就能作为桥梁驱动服务器或本地电脑上的强大 CLI 为你工作，并将完整运行结果直接回复到你的收件箱。
-- **多轮会话精准续接与按需模型/推理强度控制**：`invokeAntigravityCli` 与 `invokeCodexCli` 默认以结构化 JSON/JSONL 返回 CLI 原生会话 ID（`conversation_id` / `thread_id`）。Agent 会按规则自动决策：用户要求新开会话时不传续聊参数；未要求新开且历史存在会话 ID 时通过 `conversation` 精准恢复；无历史 ID 时自动回退到 `-c` / `resume --last`，并可按任务灵活覆盖 `model` 与推理强度 `effort`。
+- **多轮会话精准续接与按需模型/推理强度控制**：`invokeAntigravityCli`、`invokeClaudeCodeCli` 与 `invokeCodexCli` 默认以结构化 JSON/JSONL 返回 CLI 原生会话 ID（`conversation_id` / `session_id` / `thread_id`）。Agent 会按规则自动决策：用户要求新开会话时不传续聊参数；未要求新开且历史存在会话 ID 时通过 `conversation` 精准恢复；无历史 ID 时自动回退到 `-c` / `resume --last`，并可按任务灵活覆盖 `model` 与推理强度 `effort`。
 - **极简安装与即时热加载（免重启）**：使用前，只需将对应工具编译生成的 JAR 包（如 `emailclaw-plugin-tool-invokeAntigravityCli-1.0.1.jar`）直接复制到数据目录的 `~/emailclaw/plugins` 下即可。**Emailclaw 具备全动态插件目录热监听（Hot-Reload）能力，无需重启服务或应用，复制后系统立即自动识别并加载生效！**
 - **内置工业级 PathResolver**：工具插件内置智能路径自适应策略，自动探测 `$HOME/.local/bin`、`$HOME/.opencode/bin`、环境变量以及系统 `PATH`，并自动补全子进程运行环境，即使在非登录无头服务下也能精准找到并成功执行命令。
 

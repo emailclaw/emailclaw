@@ -13,6 +13,7 @@ package ai.emailclaw.emailclaw.plugin.tool.claude;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ai.emailclaw.emailclaw.plugin.PluginRegistry;
@@ -44,29 +45,36 @@ class InvokeClaudeCodeCliToolTest {
         AtomicReference<String> capturedPrompt = new AtomicReference<>();
         AtomicReference<Path> capturedWorkingDir = new AtomicReference<>();
         AtomicReference<String> capturedModel = new AtomicReference<>();
+        AtomicReference<String> capturedEffort = new AtomicReference<>();
         AtomicReference<String> capturedPermissionMode = new AtomicReference<>();
         AtomicReference<Boolean> capturedContinueLastSession = new AtomicReference<>();
+        AtomicReference<String> capturedConversation = new AtomicReference<>();
 
         ClaudeCodeProcessRunner mockRunner =
                 (cliPath,
                         prompt,
                         workingDirectory,
                         model,
+                        effort,
                         permissionMode,
                         timeoutSeconds,
                         extraArgs,
-                        continueLastSession) -> {
+                        continueLastSession,
+                        conversation) -> {
                     capturedCliPath.set(cliPath);
                     capturedPrompt.set(prompt);
                     capturedWorkingDir.set(workingDirectory);
                     capturedModel.set(model);
+                    capturedEffort.set(effort);
                     capturedPermissionMode.set(permissionMode);
                     capturedContinueLastSession.set(continueLastSession);
+                    capturedConversation.set(conversation);
                     return new ClaudeCodeExecutionResult(
                             0,
                             "```json\n"
-                                + "{\"status\":\"completed\",\"modifiedFiles\":[\"App.java\"]}\n"
-                                + "```",
+                                    + "{\"session_id\":\"claude-sess-1\",\"status\":\"completed\","
+                                    + "\"modifiedFiles\":[\"App.java\"]}\n"
+                                    + "```",
                             "",
                             false,
                             true,
@@ -80,10 +88,12 @@ class InvokeClaudeCodeCliToolTest {
                         "Refactor App.java to improve logging",
                         null,
                         "sonnet",
+                        "High",
                         "bypassPermissions",
                         60,
                         null,
-                        true);
+                        true,
+                        null);
 
         assertNotNull(resultBlock);
         assertEquals(ToolResultState.SUCCESS, resultBlock.getState());
@@ -91,38 +101,66 @@ class InvokeClaudeCodeCliToolTest {
         assertEquals("Refactor App.java to improve logging", capturedPrompt.get());
         assertNotNull(capturedWorkingDir.get());
         assertEquals("sonnet", capturedModel.get());
+        assertEquals("high", capturedEffort.get());
         assertEquals("bypassPermissions", capturedPermissionMode.get());
         assertTrue(capturedContinueLastSession.get());
+        assertNull(capturedConversation.get());
         assertEquals(0, resultBlock.getMetadata().get("exitCode"));
         assertEquals(false, resultBlock.getMetadata().get("timedOut"));
+        assertEquals("claude-sess-1", resultBlock.getMetadata().get("conversationId"));
 
         assertFalse(resultBlock.getOutput().isEmpty());
         String outputText = ((TextBlock) resultBlock.getOutput().get(0)).getText();
         JsonNode node = MAPPER.readTree(outputText);
+        assertEquals("claude-sess-1", node.get("session_id").asText());
         assertEquals("completed", node.get("status").asText());
         assertEquals("App.java", node.get("modifiedFiles").get(0).asText());
 
-        // Test default continue_last_session (null -> true)
+        // Test default continue_last_session (null -> true) with blank model/effort omitted
         tool.invokeClaudeCodeCli(
                 "Refactor App.java to improve logging",
                 null,
-                "sonnet",
+                "  ",
+                "  ",
                 "bypassPermissions",
                 60,
+                null,
                 null,
                 null);
         assertTrue(capturedContinueLastSession.get());
+        assertNull(capturedModel.get());
+        assertNull(capturedEffort.get());
+        assertNull(capturedConversation.get());
 
-        // Test explicit false
+        // Test explicit false (new session)
         tool.invokeClaudeCodeCli(
                 "Refactor App.java to improve logging",
                 null,
                 "sonnet",
+                null,
                 "bypassPermissions",
                 60,
                 null,
-                false);
+                false,
+                null);
         assertFalse(capturedContinueLastSession.get());
+        assertNull(capturedConversation.get());
+
+        // Test explicit conversation ID overrides continue_last_session (never passes -c)
+        tool.invokeClaudeCodeCli(
+                "Follow up",
+                null,
+                "opus",
+                " MAX ",
+                "bypassPermissions",
+                60,
+                null,
+                true,
+                "  claude-sess-1  ");
+        assertFalse(capturedContinueLastSession.get());
+        assertEquals("claude-sess-1", capturedConversation.get());
+        assertEquals("opus", capturedModel.get());
+        assertEquals("max", capturedEffort.get());
     }
 
     @Test
@@ -133,10 +171,12 @@ class InvokeClaudeCodeCliToolTest {
                         prompt,
                         workingDirectory,
                         model,
+                        effort,
                         permissionMode,
                         timeoutSeconds,
                         extraArgs,
-                        continueLastSession) ->
+                        continueLastSession,
+                        conversation) ->
                         new ClaudeCodeExecutionResult(
                                 -1,
                                 "",
@@ -151,7 +191,7 @@ class InvokeClaudeCodeCliToolTest {
                 new InvokeClaudeCodeCliTool(null, timeoutRunner, "claude", 10);
         ToolResultBlock errorBlock =
                 tool.invokeClaudeCodeCli(
-                        "Long running claude task", null, null, null, 10, null, true);
+                        "Long running claude task", null, null, null, null, 10, null, true, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -170,7 +210,7 @@ class InvokeClaudeCodeCliToolTest {
     void testEmptyPromptHandling() throws Exception {
         InvokeClaudeCodeCliTool tool = new InvokeClaudeCodeCliTool(null);
         ToolResultBlock errorBlock =
-                tool.invokeClaudeCodeCli("   ", null, null, null, null, null, true);
+                tool.invokeClaudeCodeCli("   ", null, null, null, null, null, null, true, null);
 
         assertNotNull(errorBlock);
         assertEquals(ToolResultState.ERROR, errorBlock.getState());
@@ -180,6 +220,24 @@ class InvokeClaudeCodeCliToolTest {
         JsonNode node = MAPPER.readTree(outputText);
         assertFalse(node.get("success").asBoolean());
         assertTrue(node.get("error").asText().contains("empty"));
+    }
+
+    @Test
+    @DisplayName("Tool should reject unsupported effort values with error ToolResultBlock")
+    void testInvalidEffortHandling() throws Exception {
+        InvokeClaudeCodeCliTool tool = new InvokeClaudeCodeCliTool(null);
+        ToolResultBlock errorBlock =
+                tool.invokeClaudeCodeCli(
+                        "Check effort", null, null, "ultra", null, null, null, false, null);
+
+        assertNotNull(errorBlock);
+        assertEquals(ToolResultState.ERROR, errorBlock.getState());
+        assertEquals(-1, errorBlock.getMetadata().get("exitCode"));
+
+        String outputText = ((TextBlock) errorBlock.getOutput().get(0)).getText();
+        JsonNode node = MAPPER.readTree(outputText);
+        assertFalse(node.get("success").asBoolean());
+        assertTrue(node.get("error").asText().contains("Invalid effort value"));
     }
 
     @Test
@@ -314,5 +372,98 @@ class InvokeClaudeCodeCliToolTest {
                 runner.buildCommand("claude", "continue task", null, null, "-c -p", true);
         assertEquals(
                 List.of("claude", "--output-format", "json", "-c", "-p", "continue task"), cmd5);
+
+        // 6. Explicit conversation ID (--resume), model, and effort omit -c
+        List<String> cmd6 =
+                runner.buildCommand(
+                        "claude",
+                        "resume task",
+                        "opus",
+                        "xhigh",
+                        "bypassPermissions",
+                        null,
+                        true,
+                        "sess-abc-123");
+        assertEquals(
+                List.of(
+                        "claude",
+                        "--resume",
+                        "sess-abc-123",
+                        "-p",
+                        "--output-format",
+                        "json",
+                        "--model",
+                        "opus",
+                        "--effort",
+                        "xhigh",
+                        "--permission-mode",
+                        "bypassPermissions",
+                        "resume task"),
+                cmd6);
+
+        // 7. Explicit conversation ID strips conflicting -c from extra_args and deduplicates
+        // --effort
+        List<String> cmd7 =
+                runner.buildCommand(
+                        "claude",
+                        "resume clean",
+                        null,
+                        "high",
+                        null,
+                        "-c --effort=max --verbose",
+                        true,
+                        "sess-xyz-99");
+        assertEquals(
+                List.of(
+                        "claude",
+                        "--resume",
+                        "sess-xyz-99",
+                        "-p",
+                        "--output-format",
+                        "json",
+                        "--effort=max",
+                        "--verbose",
+                        "resume clean"),
+                cmd7);
+
+        // 8. --resume in extra_args suppresses -c
+        List<String> cmd8 =
+                runner.buildCommand(
+                        "claude",
+                        "extra resume",
+                        null,
+                        null,
+                        null,
+                        "--resume sess-extra",
+                        true,
+                        null);
+        assertEquals(
+                List.of(
+                        "claude",
+                        "-p",
+                        "--output-format",
+                        "json",
+                        "--resume",
+                        "sess-extra",
+                        "extra resume"),
+                cmd8);
+    }
+
+    @Test
+    @DisplayName("ClaudeCodeJsonUtils should extract session_id and conversation_id cleanly")
+    void testExtractConversationId() {
+        assertEquals(
+                "sess-001",
+                ClaudeCodeJsonUtils.extractConversationId(
+                        "{\"type\":\"result\",\"session_id\":\"sess-001\",\"result\":\"ok\"}"));
+        assertEquals(
+                "conv-002",
+                ClaudeCodeJsonUtils.extractConversationId("{\"conversation_id\":\"conv-002\"}"));
+        assertEquals(
+                "sess-last",
+                ClaudeCodeJsonUtils.extractConversationId(
+                        "[{\"type\":\"init\"},{\"type\":\"result\",\"session_id\":\"sess-last\"}]"));
+        assertNull(ClaudeCodeJsonUtils.extractConversationId("{\"status\":\"ok\"}"));
+        assertNull(ClaudeCodeJsonUtils.extractConversationId("plain text"));
     }
 }

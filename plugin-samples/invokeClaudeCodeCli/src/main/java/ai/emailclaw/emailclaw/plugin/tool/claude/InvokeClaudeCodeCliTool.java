@@ -20,7 +20,10 @@ import io.agentscope.core.tool.ToolParam;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -37,6 +40,8 @@ public class InvokeClaudeCodeCliTool {
 
     public static final String DEFAULT_CLI_PATH = "claude";
     public static final int DEFAULT_TIMEOUT_SECONDS = 300;
+    public static final Set<String> ALLOWED_EFFORTS =
+            Set.of("low", "medium", "high", "xhigh", "max");
 
     private volatile PluginContext context;
     private final ClaudeCodeProcessRunner processRunner;
@@ -110,18 +115,36 @@ public class InvokeClaudeCodeCliTool {
      * @param prompt The task description or prompt to send to Claude Code CLI
      * @param cliPath Optional executable path for claude (defaults to 'claude')
      * @param model Optional model name or alias override (passed via {@code --model})
+     * @param effort Optional effort level for the current session (passed via {@code --effort}:
+     *     low|medium|high|xhigh|max)
      * @param permissionMode Optional permission mode (passed via {@code --permission-mode})
      * @param timeoutSeconds Optional execution timeout in seconds (defaults to 300)
      * @param extraArgs Optional additional command-line arguments to pass to the claude binary
-     * @param continueLastSession Whether to continue the last session (-c). Defaults to true.
+     * @param continueLastSession Whether to continue the last session (-c / --continue). Defaults
+     *     to true when {@code conversation} is omitted. Set to false (and omit {@code
+     *     conversation}) to start a new session.
+     * @param conversation Optional previous Claude Code session ID or name to pass via {@code
+     *     --resume} (Resume a conversation by session ID or name). Takes precedence over {@code
+     *     -c}/{@code --continue}.
      * @return Structured {@link ToolResultBlock} containing output text, execution state, and metadata
      */
     @Tool(
             name = "invokeClaudeCodeCli",
             description =
-                    "Invoke Claude Code CLI using 'claude -p [OPTIONS] [PROMPT]' to execute coding"
-                            + " tasks, analyze code, explain files, or apply project modifications"
-                            + " non-interactively, returning structured JSON results.")
+                    "Invoke Claude Code CLI using 'claude -p --output-format json [OPTIONS]"
+                            + " [PROMPT]' to execute coding tasks, analyze code, explain files, or"
+                            + " apply project modifications non-interactively, returning structured"
+                            + " JSON results (including session_id). Supports optional --model"
+                            + " (Model for the current session) and --effort (Effort level:"
+                            + " low|medium|high|xhigh|max). Session selection rules: (1) If the"
+                            + " user asks to start a new session when calling claude, do NOT pass"
+                            + " -c, --continue, -r, or --resume (set continue_last_session=false"
+                            + " and omit conversation). (2) If the user does NOT ask for a new"
+                            + " session, first check the conversation history for any session ID"
+                            + " returned by claude (e.g. session_id); if found, pass it via the"
+                            + " conversation parameter (--resume: Resume a conversation by session"
+                            + " ID or name). (3) If no historical claude session ID exists, use"
+                            + " continue_last_session=true (adds -c, equivalent to --continue).")
     public ToolResultBlock invokeClaudeCodeCli(
             @ToolParam(
                             name = "prompt",
@@ -138,16 +161,26 @@ public class InvokeClaudeCodeCliTool {
             @ToolParam(
                             name = "model",
                             description =
-                                    "Optional model name or alias to pass to Claude Code CLI via"
-                                            + " --model (e.g. 'sonnet', 'opus', 'haiku',"
-                                            + " 'claude-sonnet-5').",
+                                    "Optional model for the current Claude Code session to pass via"
+                                        + " --model (e.g. 'sonnet', 'opus', 'haiku', 'fable', or a"
+                                        + " full model name). Omit or leave empty to use the Claude"
+                                        + " Code default model.",
                             required = false)
                     String model,
+            @ToolParam(
+                            name = "effort",
+                            description =
+                                    "Optional effort level for the current Claude Code session to"
+                                            + " pass via --effort (low|medium|high|xhigh|max). Omit"
+                                            + " or leave empty to use the Claude Code default"
+                                            + " effort.",
+                            required = false)
+                    String effort,
             @ToolParam(
                             name = "permission_mode",
                             description =
                                     "Optional permission mode (e.g. 'bypassPermissions', 'auto',"
-                                            + " 'plan', 'acceptEdits', 'dontAsk').",
+                                            + " 'plan', 'acceptEdits', 'dontAsk', 'manual').",
                             required = false)
                     String permissionMode,
             @ToolParam(
@@ -161,23 +194,53 @@ public class InvokeClaudeCodeCliTool {
                             name = "extra_args",
                             description =
                                     "Optional additional command-line arguments to pass to the"
-                                            + " claude binary.",
+                                            + " claude binary. Do not include -c, --continue, -r,"
+                                            + " or --resume when starting a new session.",
                             required = false)
                     String extraArgs,
             @ToolParam(
                             name = "continue_last_session",
                             description =
-                                    "Whether to continue the last session (-c / --continue)."
-                                            + " Defaults to true.",
+                                    "Whether to continue the most recent Claude Code conversation"
+                                        + " in the current directory (-c / --continue). Defaults to"
+                                        + " true when 'conversation' is omitted. Set to false (and"
+                                        + " omit 'conversation') when the user requests a new"
+                                        + " session so neither -c, --continue, -r, nor --resume is"
+                                        + " passed. Ignored when 'conversation' is provided.",
                             required = false)
-                    Boolean continueLastSession) {
-        boolean effectiveContinue = continueLastSession == null || continueLastSession;
+                    Boolean continueLastSession,
+            @ToolParam(
+                            name = "conversation",
+                            description =
+                                    "Optional previous Claude Code session ID or name to pass via"
+                                            + " --resume (Resume a conversation by session ID or"
+                                            + " name). When the user does not request a new session"
+                                            + " and a session_id from claude exists in history,"
+                                            + " pass that ID here (takes precedence over"
+                                            + " -c/--continue). Omit when starting a new session.",
+                            required = false)
+                    String conversation) {
+        String normalizedModel = (model != null && !model.isBlank()) ? model.trim() : null;
+        String normalizedEffort =
+                (effort != null && !effort.isBlank())
+                        ? effort.trim().toLowerCase(Locale.ROOT)
+                        : null;
+        String normalizedConversation =
+                (conversation != null && !conversation.isBlank()) ? conversation.trim() : null;
+        boolean effectiveContinue =
+                normalizedConversation == null
+                        && (continueLastSession == null || continueLastSession);
         LOGGER.log(
                 Level.INFO,
-                "InvokeClaudeCodeCli tool call initiated: promptLength={0}, model={1},"
-                        + " permissionMode={2}, continueLastSession={3}",
+                "InvokeClaudeCodeCli tool call initiated: promptLength={0}, model={1}, effort={2},"
+                        + " permissionMode={3}, continueLastSession={4}, conversation={5}",
                 new Object[] {
-                    prompt != null ? prompt.length() : 0, model, permissionMode, effectiveContinue
+                    prompt != null ? prompt.length() : 0,
+                    normalizedModel,
+                    normalizedEffort,
+                    permissionMode,
+                    effectiveContinue,
+                    normalizedConversation
                 });
 
         if (prompt == null || prompt.isBlank()) {
@@ -194,6 +257,22 @@ public class InvokeClaudeCodeCliTool {
                     .build();
         }
 
+        if (normalizedEffort != null && !ALLOWED_EFFORTS.contains(normalizedEffort)) {
+            String errorMsg =
+                    "Invalid effort value '"
+                            + effort
+                            + "'. Allowed values are: low, medium, high, xhigh, max.";
+            LOGGER.log(Level.WARNING, "InvokeClaudeCodeCli tool call rejected: {0}", errorMsg);
+            return ToolResultBlock.builder()
+                    .output(
+                            TextBlock.builder()
+                                    .text(ClaudeCodeJsonUtils.createErrorJson(errorMsg, -1))
+                                    .build())
+                    .state(ToolResultState.ERROR)
+                    .metadata(Map.of("exitCode", -1, "error", errorMsg))
+                    .build();
+        }
+
         Path targetWorkingDir = getProjectOrWorkspaceBase();
         int effectiveTimeout =
                 (timeoutSeconds != null && timeoutSeconds > 0)
@@ -205,14 +284,17 @@ public class InvokeClaudeCodeCliTool {
         LOGGER.log(
                 Level.INFO,
                 "Launching Claude Code CLI tool execution: cliPath={0}, workingDir={1},"
-                        + " timeout={2}s, model={3}, permissionMode={4}, continueLastSession={5}",
+                        + " timeout={2}s, model={3}, effort={4}, permissionMode={5},"
+                        + " continueLastSession={6}, conversation={7}",
                 new Object[] {
                     actualCliPath,
                     targetWorkingDir,
                     effectiveTimeout,
-                    model,
+                    normalizedModel,
+                    normalizedEffort,
                     permissionMode,
-                    effectiveContinue
+                    effectiveContinue,
+                    normalizedConversation
                 });
 
         ClaudeCodeExecutionResult result =
@@ -220,11 +302,13 @@ public class InvokeClaudeCodeCliTool {
                         actualCliPath,
                         prompt,
                         targetWorkingDir,
-                        model,
+                        normalizedModel,
+                        normalizedEffort,
                         permissionMode,
                         effectiveTimeout,
                         extraArgs,
-                        effectiveContinue);
+                        effectiveContinue,
+                        normalizedConversation);
 
         LOGGER.log(
                 Level.INFO,
@@ -274,16 +358,26 @@ public class InvokeClaudeCodeCliTool {
         }
 
         String cleanJson = ClaudeCodeJsonUtils.extractCleanJson(result.stdout());
-        Map<String, Object> metadata =
-                Map.of(
-                        "exitCode", result.exitCode(),
-                        "timedOut", false,
-                        "workingDirectory", targetWorkingDir.toString());
+        String returnedConversationId = ClaudeCodeJsonUtils.extractConversationId(cleanJson);
+        if (returnedConversationId != null) {
+            LOGGER.log(
+                    Level.INFO, "Claude Code CLI returned session ID: {0}", returnedConversationId);
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("exitCode", result.exitCode());
+        metadata.put("timedOut", false);
+        metadata.put("workingDirectory", targetWorkingDir.toString());
+        if (returnedConversationId != null) {
+            metadata.put("conversationId", returnedConversationId);
+        } else if (normalizedConversation != null) {
+            metadata.put("conversationId", normalizedConversation);
+        }
 
         return ToolResultBlock.builder()
                 .output(TextBlock.builder().text(cleanJson).build())
                 .state(ToolResultState.SUCCESS)
-                .metadata(metadata)
+                .metadata(Map.copyOf(metadata))
                 .build();
     }
 

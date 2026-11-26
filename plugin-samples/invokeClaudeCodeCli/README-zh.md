@@ -115,13 +115,20 @@ claude -c -p --output-format json "使用 Claude Code 重构项目认证鉴权�
 
 | 参数名 | 类型 | 必填 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **是** | - | 发送给 Claude Code CLI 的任务 Prompt（通过 `claude -p [OPTIONS] [PROMPT]` 传递）。 |
+| `prompt` | String | **是** | - | 发送给 Claude Code CLI 的任务 Prompt（通过 `claude -p --output-format json [OPTIONS] [PROMPT]` 传递，自动返回含 `session_id` 的结构化 JSON）。 |
 | `cli_path` | String | 否 | `claude` | 指定 Claude Code CLI 可执行路径。 |
-| `model` | String | 否 | `null` | 指定大模型名称或别名（通过 `--model` 传递，如 `sonnet`, `opus`, `haiku`, `claude-sonnet-5`）。 |
-| `permission_mode` | String | 否 | `null` | 指定权限模式（通过 `--permission-mode` 传递，如 `bypassPermissions`, `auto`, `plan`, `acceptEdits`）。 |
+| `model` | String | 否 | `null` | 可选的当前会话模型覆盖（通过 `--model` 传递，如 `sonnet`、`opus`、`haiku`、`fable` 或完整模型名），为空时使用 Claude Code 默认模型。 |
+| `effort` | String | 否 | `null` | 可选的当前会话推理强度（通过 `--effort` 传递，可选值：`low`、`medium`、`high`、`xhigh`、`max`），为空时使用 Claude Code 默认强度。 |
+| `permission_mode` | String | 否 | `null` | 指定权限模式（通过 `--permission-mode` 传递，如 `bypassPermissions`、`auto`、`plan`、`acceptEdits`、`dontAsk`、`manual`）。 |
 | `timeout_seconds` | Integer | 否 | `300` | 单次执行超时时间（秒）。 |
-| `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--dangerously-skip-permissions`, `--verbose`, `--bare` 等）。 |
-| `continue_last_session` | Boolean | 否 | `true` | 是否继续当前目录下最近一次会话（`-c` / `--continue`）。设为 `false` 则开启新会话执行。 |
+| `extra_args` | String | 否 | `null` | 附加 CLI 参数（如 `--dangerously-skip-permissions`、`--verbose`、`--bare` 等）。新开 session 时请勿包含 `-c`、`--continue`、`-r` 或 `--resume`。 |
+| `continue_last_session` | Boolean | 否 | `true` | 当未提供 `conversation` 时，是否继续当前目录下最近一次会话（`-c` / `--continue`）。新开 session 时请设为 `false` 且省略 `conversation`。 |
+| `conversation` | String | 否 | `null` | 可选的历史 Claude Code 会话 ID 或名称，映射为 `--resume <ID>`（Resume a conversation by session ID or name），优先级高于 `-c`/`--continue`；新开 session 时省略。 |
+
+### 会话（Session）传递规则
+1. **用户要求新开 session**：不传递 `-c`、`--continue`、`-r`、`--resume`（设置 `continue_last_session=false` 且省略 `conversation`）。
+2. **用户未要求新开 session 且历史中存在 Claude Code 传递的 `session_id`**：通过 `conversation` 传递 `--resume <ID>` 恢复指定会话。
+3. **用户未要求新开 session 且历史中无 session ID**：保持 `continue_last_session=true`，附加 `-c`（等效于 `--continue`）。
 
 ---
 

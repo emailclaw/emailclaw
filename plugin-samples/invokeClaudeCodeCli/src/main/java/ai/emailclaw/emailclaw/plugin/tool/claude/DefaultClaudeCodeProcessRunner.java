@@ -51,46 +51,69 @@ public class DefaultClaudeCodeProcessRunner implements ClaudeCodeProcessRunner {
     /**
      * Builds the command arguments for claude execution.
      *
-     * <p>When continueLastSession is true, generates {@code claude -c -p [OPTIONS] [PROMPT]}
-     * to continue the most recent recorded conversation in the current directory.
-     * When false, generates {@code claude -p [OPTIONS] [PROMPT]} to start a new execution.
+     * <p>Session flag precedence:
+     * <ol>
+     *   <li>If {@code conversation} is non-blank (or {@code -r}/{@code --resume} is present in
+     *       {@code extraArgs}), resumes that specific session via {@code --resume <id>} without
+     *       passing {@code -c}/{@code --continue}.</li>
+     *   <li>Otherwise, if {@code continueLastSession} is true, adds {@code -c} to continue the
+     *       most recent recorded conversation in the current directory.</li>
+     *   <li>Otherwise, omits {@code -c}, {@code --continue}, {@code -r}, and {@code --resume} to
+     *       start a brand-new session.</li>
+     * </ol>
      */
     List<String> buildCommand(
             String cliPath,
             String prompt,
             String model,
+            String effort,
             String permissionMode,
             String extraArgs,
-            boolean continueLastSession) {
+            boolean continueLastSession,
+            String conversation) {
         List<String> command = new ArrayList<>();
         String effectiveCliPath =
                 (cliPath != null && !cliPath.isBlank()) ? cliPath.trim() : "claude";
         String resolvedCliPath = pathResolver.resolveCliPath(effectiveCliPath);
         command.add(resolvedCliPath);
 
+        String normalizedConversation =
+                (conversation != null && !conversation.isBlank()) ? conversation.trim() : null;
+
         boolean hasContinue = false;
+        boolean hasResume = false;
         boolean hasPrint = false;
         boolean hasOutputFormat = false;
         boolean hasModel = false;
+        boolean hasEffort = false;
         boolean hasPermissionMode = false;
         List<String> extraTokens = new ArrayList<>();
 
         if (extraArgs != null && !extraArgs.isBlank()) {
             for (String token : extraArgs.trim().split("\\s+")) {
                 if (!token.isBlank()) {
-                    if ("-c".equals(token) || "--continue".equals(token)) {
+                    if (isContinueFlag(token)) {
                         hasContinue = true;
+                    }
+                    if ("-r".equals(token)
+                            || "--resume".equals(token)
+                            || token.startsWith("--resume=")) {
+                        hasResume = true;
                     }
                     if ("-p".equals(token) || "--print".equals(token)) {
                         hasPrint = true;
                     }
-                    if ("--output-format".equals(token)) {
+                    if ("--output-format".equals(token) || token.startsWith("--output-format=")) {
                         hasOutputFormat = true;
                     }
-                    if ("--model".equals(token)) {
+                    if ("--model".equals(token) || token.startsWith("--model=")) {
                         hasModel = true;
                     }
-                    if ("--permission-mode".equals(token)) {
+                    if ("--effort".equals(token) || token.startsWith("--effort=")) {
+                        hasEffort = true;
+                    }
+                    if ("--permission-mode".equals(token)
+                            || token.startsWith("--permission-mode=")) {
                         hasPermissionMode = true;
                     }
                     extraTokens.add(token);
@@ -98,7 +121,18 @@ public class DefaultClaudeCodeProcessRunner implements ClaudeCodeProcessRunner {
             }
         }
 
-        if (continueLastSession && !hasContinue) {
+        boolean useResume = normalizedConversation != null || hasResume;
+        if (useResume && hasContinue) {
+            LOGGER.warning(
+                    "Both --resume and -c/--continue were supplied; prioritizing --resume and"
+                            + " stripping conflicting -c/--continue from extra_args");
+            extraTokens.removeIf(DefaultClaudeCodeProcessRunner::isContinueFlag);
+        }
+
+        if (normalizedConversation != null && !hasResume) {
+            command.add("--resume");
+            command.add(normalizedConversation);
+        } else if (!useResume && continueLastSession && !hasContinue) {
             command.add("-c");
         }
 
@@ -116,6 +150,11 @@ public class DefaultClaudeCodeProcessRunner implements ClaudeCodeProcessRunner {
             command.add(model.trim());
         }
 
+        if (effort != null && !effort.isBlank() && !hasEffort) {
+            command.add("--effort");
+            command.add(effort.trim());
+        }
+
         if (permissionMode != null && !permissionMode.isBlank() && !hasPermissionMode) {
             command.add("--permission-mode");
             command.add(permissionMode.trim());
@@ -129,19 +168,47 @@ public class DefaultClaudeCodeProcessRunner implements ClaudeCodeProcessRunner {
         return command;
     }
 
+    /**
+     * Backward-compatible overload of {@link #buildCommand} without explicit effort level or
+     * conversation ID.
+     */
+    List<String> buildCommand(
+            String cliPath,
+            String prompt,
+            String model,
+            String permissionMode,
+            String extraArgs,
+            boolean continueLastSession) {
+        return buildCommand(
+                cliPath, prompt, model, null, permissionMode, extraArgs, continueLastSession, null);
+    }
+
+    private static boolean isContinueFlag(String token) {
+        return "-c".equals(token) || "--continue".equals(token) || token.startsWith("--continue=");
+    }
+
     @Override
     public ClaudeCodeExecutionResult execute(
             String cliPath,
             String prompt,
             Path workingDirectory,
             String model,
+            String effort,
             String permissionMode,
             int timeoutSeconds,
             String extraArgs,
-            boolean continueLastSession) {
+            boolean continueLastSession,
+            String conversation) {
         List<String> command =
                 buildCommand(
-                        cliPath, prompt, model, permissionMode, extraArgs, continueLastSession);
+                        cliPath,
+                        prompt,
+                        model,
+                        effort,
+                        permissionMode,
+                        extraArgs,
+                        continueLastSession,
+                        conversation);
 
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         if (workingDirectory != null) {
@@ -165,8 +232,17 @@ public class DefaultClaudeCodeProcessRunner implements ClaudeCodeProcessRunner {
 
         LOGGER.log(
                 Level.INFO,
-                "Launching Claude Code CLI process: command={0}, workingDir={1}, timeout={2}s",
-                new Object[] {command, workingDirectory, timeoutSeconds});
+                "Launching Claude Code CLI process: command={0}, workingDir={1}, timeout={2}s,"
+                        + " model={3}, effort={4}, continueLastSession={5}, conversation={6}",
+                new Object[] {
+                    command,
+                    workingDirectory,
+                    timeoutSeconds,
+                    model,
+                    effort,
+                    continueLastSession,
+                    conversation
+                });
 
         Process process;
         try {
