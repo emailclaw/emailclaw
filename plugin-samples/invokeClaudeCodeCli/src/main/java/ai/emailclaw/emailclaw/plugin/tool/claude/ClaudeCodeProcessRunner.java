@@ -27,10 +27,14 @@ public interface ClaudeCodeProcessRunner {
      * @param prompt User prompt or instruction to execute
      * @param workingDirectory Working directory context for the execution
      * @param model Optional model name override (passed via {@code --model})
+     * @param effort Optional effort level for the current session (passed via {@code --effort}:
+     *     low|medium|high|xhigh|max)
      * @param permissionMode Optional permission mode (passed via {@code --permission-mode})
      * @param timeoutSeconds Maximum execution duration before timing out
      * @param extraArgs Additional command-line flags or arguments
      * @param continueLastSession Whether to resume the most recent recorded session (-c / --continue)
+     * @param conversation Optional previous Claude Code session ID or name to resume via {@code
+     *     --resume}
      * @return Execution result containing exit code, stdout, stderr, and status
      */
     ClaudeCodeExecutionResult execute(
@@ -38,8 +42,35 @@ public interface ClaudeCodeProcessRunner {
             String prompt,
             Path workingDirectory,
             String model,
+            String effort,
             String permissionMode,
             int timeoutSeconds,
             String extraArgs,
-            boolean continueLastSession);
+            boolean continueLastSession,
+            String conversation);
+
+    /**
+     * Overload for backward compatibility without explicit effort level or conversation ID.
+     */
+    default ClaudeCodeExecutionResult execute(
+            String cliPath,
+            String prompt,
+            Path workingDirectory,
+            String model,
+            String permissionMode,
+            int timeoutSeconds,
+            String extraArgs,
+            boolean continueLastSession) {
+        return execute(
+                cliPath,
+                prompt,
+                workingDirectory,
+                model,
+                null,
+                permissionMode,
+                timeoutSeconds,
+                extraArgs,
+                continueLastSession,
+                null);
+    }
 }

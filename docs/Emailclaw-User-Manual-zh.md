@@ -261,7 +261,7 @@ Subject: 为 8 月产品评审整理竞品摘要
 
 Emailclaw 以独立插件的形式原生支持调度业界四大顶级 AI 编码与自主 Agent CLI：
 - **`invokeAntigravityCli`**：以无头模式（`--output-format json`）调用 Google Antigravity CLI (`agy`) 进行非交互式编码与自动化开发，支持 `conversation`（`--conversation`）、`model`（`--model`）与 `effort`（`--effort`：`low|medium|high|xhigh|max`）。
-- **`invokeClaudeCodeCli`**：调用 Anthropic Claude Code CLI (`claude`) 执行代码分析、漏洞排查与精准重构。
+- **`invokeClaudeCodeCli`**：以 JSON 模式（`claude -p --output-format json`）调用 Anthropic Claude Code CLI (`claude`) 执行代码分析、漏洞排查与精准重构，支持 `conversation`（`--resume <ID>`）、`model`（`--model`）与 `effort`（`--effort`：`low|medium|high|xhigh|max`）。
 - **`invokeCodexCli`**：以 JSONL 模式（`codex exec --json`）调用 OpenAI Codex CLI (`codex`) 自动化执行编程任务与代码审查，支持 `conversation`（`codex exec resume <ID>`）、`model`（`-m`）与 `effort`（`-c model_reasoning_effort="<none|minimal|low|medium|high|xhigh>"`）。
 - **`invokeOpencodeCli`**：调用 OpenCode CLI (`opencode`) 运行开源与多模型编程工作流。
 
@@ -289,17 +289,18 @@ cp emailclaw-plugin-tool-invokeOpencodeCli-1.0.1.jar ~/emailclaw/plugins/
 - **环境丰富（Subprocess PATH Enrichment）**：启动底层进程前，插件会自动将可执行文件所在目录注入子进程的 `PATH` 环境变量，确保 CLI 内部依赖的其它子工具链（如 Node、Python、Git）均能正常运行。
 
 #### 会话续接（`conversation`）与按次 `model` / `effort` 参数控制
-`invokeAntigravityCli` 与 `invokeCodexCli` 均已支持基于会话 ID 的多轮精准续接，以及可选的按次模型与推理强度覆盖（三个参数均可为空，为空时使用对应 CLI 的默认配置）：
+`invokeAntigravityCli`、`invokeClaudeCodeCli` 与 `invokeCodexCli` 均已支持基于会话 ID 的多轮精准续接，以及可选的按次模型与推理强度覆盖（三个参数均可为空，为空时使用对应 CLI 的默认配置）：
 
 | 工具插件 | 指定会话恢复（`conversation`） | 默认续聊回退（`continue_last_session=true`） | 模型覆盖（`model`） | 推理强度（`effort`） | 结构化输出与回传 ID |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`invokeAntigravityCli`** | `--conversation <ID>`（Resume a previous conversation by ID） | `-c`（等效于 `--continue`） | `--model <MODEL>` | `--effort <low\|medium\|high\|xhigh\|max>` | `--output-format json`（`conversation_id`） |
+| **`invokeClaudeCodeCli`** | `--resume <ID>`（Resume a conversation by session ID or name） | `-c`（等效于 `--continue`） | `--model <MODEL>` | `--effort <low\|medium\|high\|xhigh\|max>` | `--output-format json`（`session_id`） |
 | **`invokeCodexCli`** | `codex exec resume [OPTIONS] <ID> [PROMPT]` | `codex exec resume --last` | `-m <MODEL>` | `-c model_reasoning_effort="<none\|minimal\|low\|medium\|high\|xhigh>"` | `--json` JSONL（`thread_id`） |
 
-**两款工具统一遵循的会话选择规则：**
-1. **用户要求新开 session**：设置 `continue_last_session=false` 且省略 `conversation`，命令中不传递 `-c`/`--continue`/`--conversation`（`agy`）或 `resume`/`--last`/`<SESSION_ID>`（`codex`）。
+**上述工具统一遵循的会话选择规则：**
+1. **用户要求新开 session**：设置 `continue_last_session=false` 且省略 `conversation`，命令中不传递 `-c`/`--continue`/`--conversation`（`agy`）、`-c`/`--continue`/`-r`/`--resume`（`claude`）或 `resume`/`--last`/`<SESSION_ID>`（`codex`）。
 2. **用户未要求新开 session 且历史中存在 CLI 回传的 session/thread ID**：通过 `conversation` 传递该 ID 精准恢复对应会话（优先级高于 `-c` / `resume --last`，并自动剔除 `extra_args` 中冲突的 `-c`/`--continue`/`--last` 参数）。
-3. **用户未要求新开 session 且历史中无 session ID**：保持默认 `continue_last_session=true`，自动附加 `-c`（`agy`）或 `resume --last`（`codex`）。
+3. **用户未要求新开 session 且历史中无 session ID**：保持默认 `continue_last_session=true`，自动附加 `-c`（`agy`、`claude`）或 `resume --last`（`codex`）。
 
 ### 8.2 Hermes 闭环自学习与技能自演进系统
 

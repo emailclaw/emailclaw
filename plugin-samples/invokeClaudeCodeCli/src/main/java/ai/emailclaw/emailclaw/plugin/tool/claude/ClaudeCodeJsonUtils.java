@@ -136,6 +136,59 @@ public final class ClaudeCodeJsonUtils {
     }
 
     /**
+     * Extracts the Claude Code CLI session/conversation ID from a JSON response string if present.
+     *
+     * <p>Checks standard field names ({@code session_id}, {@code sessionId},
+     * {@code conversation_id}, {@code conversationId}) on a JSON object, or scans from the last
+     * element backwards when the payload is a JSON array (e.g., aggregated stream-json events).
+     *
+     * @param jsonOutput Clean JSON string returned by the CLI
+     * @return The extracted non-blank session/conversation ID, or {@code null} if absent
+     */
+    public static String extractConversationId(String jsonOutput) {
+        if (jsonOutput == null || jsonOutput.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode root = MAPPER.readTree(jsonOutput);
+            if (root == null) {
+                return null;
+            }
+            if (root.isObject()) {
+                return readConversationIdFromObject(root);
+            }
+            if (root.isArray()) {
+                for (int i = root.size() - 1; i >= 0; i--) {
+                    JsonNode element = root.get(i);
+                    if (element != null && element.isObject()) {
+                        String id = readConversationIdFromObject(element);
+                        if (id != null) {
+                            return id;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Unable to parse session/conversation ID from Claude output", e);
+        }
+        return null;
+    }
+
+    private static String readConversationIdFromObject(JsonNode node) {
+        String[] candidateKeys = {"session_id", "sessionId", "conversation_id", "conversationId"};
+        for (String key : candidateKeys) {
+            JsonNode value = node.get(key);
+            if (value != null && value.isString()) {
+                String text = value.asString();
+                if (text != null && !text.isBlank()) {
+                    return text.trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Creates a standardized JSON error response.
      *
      * @param errorMessage Descriptive error message

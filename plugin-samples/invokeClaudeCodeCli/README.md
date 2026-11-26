@@ -113,13 +113,20 @@ If you wish to customize the executable path or default timeout, you can edit Em
 
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `prompt` | String | **Yes** | - | Task description or prompt sent to Claude Code CLI via `claude -p [OPTIONS] [PROMPT]`. |
+| `prompt` | String | **Yes** | - | Task description or prompt sent to Claude Code CLI via `claude -p --output-format json [OPTIONS] [PROMPT]`. |
 | `cli_path` | String | No | `claude` | Path or binary name for the Claude Code CLI executable. |
-| `model` | String | No | `null` | Optional model override passed via `--model` (e.g. `sonnet`, `opus`, `haiku`, `claude-sonnet-5`). |
-| `permission_mode` | String | No | `null` | Optional permission mode passed via `--permission-mode` (e.g. `bypassPermissions`, `auto`, `plan`, `acceptEdits`). |
+| `model` | String | No | `null` | Optional model for the current session passed via `--model` (e.g. `sonnet`, `opus`, `haiku`, `fable`, or a full model name). Omit or leave empty to use the Claude Code default model. |
+| `effort` | String | No | `null` | Optional effort level for the current session passed via `--effort` (`low`, `medium`, `high`, `xhigh`, or `max`). Omit or leave empty to use the Claude Code default effort. |
+| `permission_mode` | String | No | `null` | Optional permission mode passed via `--permission-mode` (e.g. `bypassPermissions`, `auto`, `plan`, `acceptEdits`, `dontAsk`, `manual`). |
 | `timeout_seconds` | Integer | No | `300` | Optional timeout limit in seconds. |
-| `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--dangerously-skip-permissions`, `--verbose`, `--bare`). |
-| `continue_last_session` | Boolean | No | `true` | Whether to continue the most recent conversation in the directory (`-c` / `--continue`). If `false`, starts a new conversation. |
+| `extra_args` | String | No | `null` | Additional CLI flags (e.g. `--dangerously-skip-permissions`, `--verbose`, `--bare`). Do not include `-c`, `--continue`, `-r`, or `--resume` when starting a new session. |
+| `continue_last_session` | Boolean | No | `true` | Whether to continue the most recent conversation in the directory (`-c` / `--continue`) when `conversation` is omitted. Set to `false` (and omit `conversation`) when starting a new session. |
+| `conversation` | String | No | `null` | Optional previous Claude Code session ID or name to pass via `--resume` (*Resume a conversation by session ID or name*). Takes precedence over `-c`/`--continue`. Omit when starting a new session. |
+
+### Session Selection Rules
+1. **New session requested**: Do not pass `-c`, `--continue`, `-r`, or `--resume` (`continue_last_session=false`, omit `conversation`).
+2. **Continue with historical Claude Code session ID**: If conversation history contains a `session_id` returned by Claude Code, pass it via `conversation` (`--resume <ID>`).
+3. **Continue without historical session ID**: If no historical Claude Code session ID exists, use `continue_last_session=true` (adds `-c`, equivalent to `--continue`).
 
 ---
 
